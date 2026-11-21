@@ -54,6 +54,22 @@ Initial rugby ingestion is in place: `calendar_legacy/` contains independently c
 
 The GitHub Actions workflow runs offline regression tests and a snapshot-bootstrap smoke test; Atlas ingestion remains manual-only in GitHub Actions. For local runs on `slagg`, the importer reads `~/.mongodb/pvr` (plain MongoDB URI) using system Python; `MONGODB_URI` remains an optional override. GitHub-hosted Atlas imports still require a secret and allowlisted network egress. The original `mbligh/calendar` and `mbligh/tools` workflows remain unchanged. Google Calendar publishing from Atlas, F1, and release/download handling are not yet migrated.
 
+## Release indexers (initial implementation)
+
+Independently executable `indexers/bbc` (BBC iPlayer iBL brand, default PWR)
+and `indexers/youtube` (yt-dlp /streams listing, default PWR) emit a common
+JSONL release format. The existing `mbligh/tools/video/rugbypass` now also
+provides `--list-videos --jsonl` / `--list-games --jsonl`, retaining its
+existing human-readable and download functions. `index_releases` validates
+and upserts those release records into Atlas `pvr.releases` by stable source
+URI, without modifying episode matching or download state. See
+[INDEXERS.md](INDEXERS.md) for examples.
+
+These indexers currently run independently for manual inspection. Future
+orchestration will match releases to canonical episodes and schedule source
+checks for recent missing/upgradeable content. No existing
+`mbligh/calendar` or daily PVR metadata cron jobs are changed.
+
 ## Initial implementation and migration
 
 1. Define/version the canonical episode, release, and adapter JSON schemas; implement MongoDB collections/indexes and a small CLI.
