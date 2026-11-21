@@ -158,3 +158,21 @@ arbitrary historical seasons, so the script rejects a mismatched season.
 The source uses a website-exposed key and may change. Unit tests run offline
 using synthetic responses; a live full-season run was not available in the
 development environment.
+
+
+## Formula 1 episode import (2026-11-21)
+
+The preview-first executable import_f1 converts official f1_data season
+snapshots into spoiler-free PVR episodes for series formula-1. Pre-season
+testing is deliberately excluded. Numbering is round*10 + session offset:
+FP1=1, FP2=2, FP3=3, Sprint Qualifying=4, Sprint=5, Qualifying=6,
+Race=7. The official session code, not the inconsistent sessionType label,
+is authoritative. Only actual sessions are created, leaving sparse numbers.
+Stable IDs use f1:<meetingSessionKey>, independent of round and rescheduling.
+
+The importer stores UTC times, circuit, official meeting/session IDs, NFO
+XML and suggested paths under Formula_1/Season_YYYY. It previews by default;
+--jsonl exports full records; --apply is required for Atlas upserts and
+refuses conflicts with existing season/episode numbering. It never deletes
+absent sessions. See F1_IMPORT.md. No Atlas changes or calendar publications
+were performed as part of this addition.
