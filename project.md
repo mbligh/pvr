@@ -136,7 +136,10 @@ copy across filesystems), and only removes the source **after** recording
 the new destination and marking the source record moved in Atlas. The
 `files` collection retains original provenance through `previous_file_id`
 and `moved_to`. `jobs` records success/failure and possible reconciliation
-needs. See [FILING.md](FILING.md).
+needs. The configured sports-library root may be a symlink (as
+`/data/sports` is on slagg); the filer follows that root while rejecting
+symlinked series/season subdirectories and retaining the configured path
+in Atlas. See [FILING.md](FILING.md).
 
 The standalone read-only `select_recording` CLI and
 `selection/quality.py` now rank local, physically verified `pvr.files`
