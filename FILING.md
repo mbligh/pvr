@@ -42,8 +42,18 @@ original inventory state have been updated in Atlas.
 
 No unrelated files are touched, including the two recordings of
 `S2026E101`. No existing canonical destination file or NFO is overwritten;
-`destination_exists` is a hard stop. The command never selects which
-recording is best or replaces a previous version.
+`destination_exists` is a hard stop.
+
+**Preferred recording protection:** If Atlas already lists a physically
+present, verified file for the **same episode** under the sports library,
+the filer reports `status=already_published` and makes no changes, even
+when that recording has a noncanonical filename. This prevents a downloaded
+YouTube alternative from being promoted over an existing BBC recording.
+The check is episode-specific: a BBC recording for S2026E101 does **not**
+block filing YouTube S2025E102. The filer does not yet rank recording
+quality or select replacements; intentional upgrades will be a separate
+operation. Files merely left in `/data/incoming` do not count as already
+published.
 
 ## Data and publication model
 
