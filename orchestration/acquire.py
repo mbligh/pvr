@@ -94,13 +94,16 @@ def local_published(records, sports_root):
 def planning_rows(database, *, sports_root="/data/sports",
                   incoming_root="/data/incoming", season=None,
                   min_age_hours=3, retry_after_hours=6, hostname=None,
-                  max_candidates=3, now=None):
+                  max_candidates=3, sources=SOURCES, now=None):
     """Return (rows, counts) for due PWR episodes; no writes/downloads.
 
     Rows may request 'file', 'download_then_file',
     'download_candidates_then_file', or 'skip'.
     """
     hostname = host_name(hostname)
+    sources = tuple(dict.fromkeys(sources))
+    if not sources or any(source not in SOURCES for source in sources):
+        raise ValueError("At least one supported source is required")
     sports_root = pathlib.Path(sports_root).expanduser()
     incoming_root = pathlib.Path(incoming_root).expanduser()
     if not sports_root.is_absolute() or not incoming_root.is_absolute():
@@ -131,7 +134,7 @@ def planning_rows(database, *, sports_root="/data/sports",
     if not ids:
         return [], {"fixtures": len(episodes), "due": 0}
     releases = list(database.releases.find({
-        "episode_id": {"$in": ids}, "source": {"$in": list(SOURCES)},
+        "episode_id": {"$in": ids}, "source": {"$in": list(sources)},
     }))
     by_episode = {}
     for release in releases:
