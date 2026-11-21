@@ -199,6 +199,35 @@ multi-source trials are required before enabling unattended operation.
 Further work includes better remote metadata estimation, quality upgrades
 of already-published files, broader RugbyPass discovery and cleanup.
 
+## RugbyPass international and Nations Championship expansion (2026-11-21)
+
+The new `matchers/rugbypass.py` and preview-first `match_rugbypass`
+link RugbyPass **full-match replays** to the existing numbered
+`rugby-mens-intl`, `rugby-womens-intl` (including WXV) and
+`rugby-nations` fixtures in Atlas. Titles must explicitly identify
+competition/gender, home and away countries in order, and fall within a
+bounded publication time after scheduled kickoff. Explicit Nations
+Championship replay titles route to `rugby-nations`, not the duplicated
+`NC:` men's-international calendar records. Ties and unnumbered fixtures
+remain unmatched, as do unlabelled or unavailable replays. Existing
+manual and PWR links are never rewritten.
+
+`refresh_releases --apply` runs this matcher following RugbyPass
+catalogue import, leaving the original PWR matcher in place.
+`download_release`, `filing/publish.py`, and `file_recording`
+allow all three series with the same staged downloads, exact canonical
+stored NFO XML, quality ranking, no-clobber publication and Atlas history.
+`acquire_missing --series <id>` selects a single series; international
+series are deliberately RugbyPass-only while the original PWR multi-source
+default is unchanged. Worker default remains preview/one episode and
+host-local locking prevents duplicate workers. No cron job or live media
+download was performed as part of the code commits.
+
+See [MATCHING.md](MATCHING.md) and [ACQUISITION.md](ACQUISITION.md).
+The primary remaining gaps are missing Nations episode numbering, duplicate
+World Rugby/Google fixture reconciliation, non-RugbyPass international
+providers, upgrading published recordings and cleanup.
+
 ## Initial implementation and migration
 
 1. Define/version the canonical episode, release, and adapter JSON schemas; implement MongoDB collections/indexes and a small CLI.
