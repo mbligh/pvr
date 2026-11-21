@@ -55,6 +55,46 @@ quality or select replacements; intentional upgrades will be a separate
 operation. Files merely left in `/data/incoming` do not count as already
 published.
 
+## Quality selection (local files)
+
+Before a new file is published, the filer uses the same policy as the
+read-only `select_recording` command:
+
+1. Exclude any recording with height below 720 pixels.
+2. Exclude any recording shorter than 3,600 seconds (one hour).
+3. Among qualifying recordings with frame rate **>=50 fps**, choose the
+   **largest physical file in bytes**.
+4. If there are no qualifying >=50 fps recordings, choose the largest
+   qualifying recording under 50 fps.
+
+Exactly 720 pixels, 3,600 seconds and 50 fps **pass** the thresholds.
+Files with missing duration/resolution/frame-rate information are not
+eligible until re-probed. Missing, moved, symlinked, or changed files are
+not eligible either. Equal-size candidates are resolved by stable file ID.
+File size is deliberately used as the ranking metric: there is no additional
+BBC preference, 60fps preference, video-codec preference or bitrate weighting.
+
+```sh
+# Explain which S2025E102 file is preferred, without modifying anything:
+python3 select_recording 'rugby-womens-pwr:pwr-289127@mbligh.github.io'
+
+# Compare BBC and YouTube copies of S2026E101:
+python3 select_recording 'rugby-womens-pwr:pwr-295034@mbligh.github.io'
+```
+
+If an incoming source loses the quality comparison, `file_recording`
+reports `not_preferred`. If its height, duration or FPS fails validation,
+it reports `ineligible`. In both cases, `--apply` does nothing.
+
+If a recording for that episode is **already in the media library**, it is
+never automatically replaced. An incoming file that wins the comparison
+against an already-published recording is reported as
+`upgrade_available` for future explicit replacement; a losing incoming
+file reports `already_published`. Existing destination collisions still
+stop publication. Selection never deletes or moves files, never writes
+Atlas, and never triggers downloads. `file_recording` acts only when the
+selected eligible candidate is not blocked by an existing publication.
+
 ## Data and publication model
 
 - The source must already have a `pvr.files` entry for the current host
