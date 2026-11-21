@@ -44,12 +44,25 @@ def main(argv=None):
         print(f"Teletz: pages={pages if pages is not None else 'input'} "
               f"verified_f1_comments={len(bundles)} releases={release_count}",
               file=sys.stderr)
-        for bundle in bundles:
-            if args.bundle:
+        if args.bundle:
+            for bundle in bundles:
                 print(json.dumps(bundle, ensure_ascii=False))
-            else:
+        else:
+            # index_releases requires unique URIs in each JSONL batch.
+            # The --bundle path retains every individual source observation.
+            unique = {}
+            for bundle in bundles:
                 for release in bundle["releases"]:
-                    print(json.dumps(release, ensure_ascii=False))
+                    uri = release["uri"]
+                    if uri not in unique:
+                        unique[uri] = release
+                        release["metadata"]["observation_ids"] = []
+                    obs_ids = unique[uri]["metadata"]["observation_ids"]
+                    oid = bundle["observation"]["_id"]
+                    if oid not in obs_ids:
+                        obs_ids.append(oid)
+            for release in unique.values():
+                print(json.dumps(release, ensure_ascii=False))
         return 0
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
         print(f"reddit_teletz: {exc}", file=sys.stderr)

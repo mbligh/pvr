@@ -150,6 +150,24 @@ class RedditTeletzTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid TransferNow"):
             importer.read_bundles(io.StringIO(json.dumps(bundle) + "\n"))
 
+    def test_release_only_deduplicates_reposted_link(self):
+        other = comment()
+        other["id"] = "t1_anothercomment"
+        with tempfile.TemporaryDirectory() as path:
+            fixture = Path(path) / "reddit.json"
+            fixture.write_text(json.dumps({"comments": [comment(), other]}))
+            run = subprocess.run(
+                [sys.executable, str(ROOT / "indexers/reddit_teletz"),
+                 "--input", str(fixture)],
+                capture_output=True, text=True, check=True)
+            records = [json.loads(line) for line in run.stdout.splitlines()]
+            self.assertEqual(len(records), 1)
+            self.assertEqual(len(records[0]["metadata"]["observation_ids"]), 2)
+            validated = subprocess.run(
+                [sys.executable, str(ROOT / "index_releases"), "--dry-run"],
+                input=run.stdout, capture_output=True, text=True, check=True)
+            self.assertEqual(json.loads(validated.stdout)["valid"], 1)
+
     def test_cli_bundle_is_compatible_with_index_releases(self):
         with tempfile.TemporaryDirectory() as path:
             fixture = Path(path) / "reddit.json"
