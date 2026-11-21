@@ -18,13 +18,15 @@ jobs:
         run: |
           python - <<'PY'
           import pathlib
-          for path in [pathlib.Path("import_rugby"), *pathlib.Path("calendar_legacy").glob("*.py")]:
+          for path in [pathlib.Path("import_rugby"), pathlib.Path("index_releases"), *pathlib.Path("indexers").glob("*"), *pathlib.Path("calendar_legacy").glob("*.py")]:
               compile(path.read_text(), str(path), "exec")
           PY
       - name: Test rugby adapters
         env:
           PYTHONPATH: calendar_legacy
         run: python -m unittest discover -s calendar_legacy -p 'test_*.py'
+      - name: Test release indexers and importer
+        run: python -m unittest discover -s tests -p 'test_*.py'
       - name: Exercise rugby import against published spoiler-free snapshots
         run: python import_rugby --dry-run --no-refresh
   import:
