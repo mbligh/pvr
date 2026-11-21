@@ -119,10 +119,12 @@ verified recording (host/path, episode, source URI, size and technical
 metadata). A database error after publication deliberately leaves the video
 on disk for inventory recovery. See [DOWNLOADING.md](DOWNLOADING.md).
 
-No automatic source choice, downloader batch scheduling, canonical filing/NFO
-publication, or quality upgrade policy is implemented yet. The initial
-single-match trial uses an existing 2025/26 YouTube replay linked to S2025E102;
-no download has been performed on slagg by these GitHub changes.
+This paragraph describes the initial YouTube trial. The subsequent
+quality selector, canonical filer, multi-provider download adapters,
+refresh_releases importer/matcher, and bounded acquire_missing worker are
+documented below. Source selection uses measured local media properties;
+explicit published-file upgrades and remote quality prediction remain future
+work.
 
 ## Canonical file publisher (PWR)
 
