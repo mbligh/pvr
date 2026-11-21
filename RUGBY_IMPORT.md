@@ -12,6 +12,15 @@ The rugby scraping and spoiler-free processing modules from mbligh/calendar have
 
 All supported fixture calendars are imported, including fixtures without a trustworthy season episode number (episode = null).
 
+## Case-sensitive media-library paths
+
+Episode NFO paths use the case of the series display name, e.g.
+`Rugby_Womens_PWR/Season_2026/Rugby_Womens_PWR-s2026e101-....nfo`.
+The calendar slug (`rugby-womens-pwr`) remains lowercase for stable IDs.
+If a series directory differs from the display name, set `library_dir` in its
+`calendar_legacy/calendars.json` entry. This only changes PVR metadata paths;
+no existing video files or the original calendar repository are renamed.
+
 ## Data and historical safety
 
 On the first run, import_rugby downloads the published spoiler-free ICS snapshots and rugby metadata manifest from mbligh/calendar. Future runs use the saved Atlas state, not fresh historical data. The merger preserves fixtures after their accepted kickoff and only accepts explicit cancellation signals. Previously assigned episode numbers are retained.
