@@ -411,3 +411,36 @@ and shares the lock with PWR. The run_f1 one-shot wrapper refreshes Reddit
 and imports verified observations before attempting acquisition, aborting
 if discovery/import fails. No crontab is installed automatically. See
 F1_AUTOMATION.md.
+
+
+## Scheduler ownership and Atlas-backed calendar consumer (2026-11-21)
+
+Canonical fixture metadata creators now live under `schedulers/`:
+`schedulers/rugby/importer.py`, `schedulers/rugby/pwr_history.py`,
+`schedulers/f1.py`, and `schedulers/f1_data.py`. Vendored rugby
+source/calendar/numbering code, formerly in `calendar_legacy/`, is now
+maintained in `schedulers/rugby/legacy/`; the old directory was removed.
+`import_rugby`, `import_pwr_history`, `import_f1`, and `f1_data`
+remain top-level compatibility CLIs so existing slagg cron and callers
+do not change. `indexers/` discover releases; `downloaders/` handle
+recording transfers. Release import/matching remains separate from
+`pvr.episodes` scheduling. See [schedulers/README.md](schedulers/README.md).
+
+The `mbligh/calendar` repository now has an opt-in `export_atlas` CLI
+to preview rugby ICS files derived from `pvr.episodes` using the existing
+calendar freeze-at-kickoff merger. It preserves the source UID suffixes and
+already accepted past events, and never reads media releases. This is
+**not yet the live calendar publisher**: its hourly GitHub Action still
+fetches source calendars and generates the legacy NFO archive. The
+exporter must be exercised on slagg and its published fixture/UID diff
+reviewed before cutover; Atlas IP allowlisting prevents relying on a
+GitHub-hosted Actions runner. The scheduler still bootstraps old history
+from previously published calendar *data* only when Atlas lacks snapshots,
+but no longer imports code from the calendar checkout.
+
+Required later migrations: explicit cancellation status propagation from
+scheduler to episodes, the separate WXV fixture/episode/NFO split (the
+current World Rugby women's feed still includes WXV), safe calendar
+publication handoff to the Atlas exporter, and retirement of duplicate
+calendar fetching and NFO logic after production validation. Keep
+`Rugby_Nations` unchanged pending the user's folder rename.
