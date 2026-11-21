@@ -32,7 +32,10 @@ def share_from_release(uri, url):
     wanted = source_id(uri)
     if not isinstance(url, str):
         raise ValueError("Release is missing its TransferNow URL")
-    share = transfernow.parse_share(url)
+    try:
+        share = transfernow.parse_share(url)
+    except transfernow.TransferNowError as exc:
+        raise ValueError(f"Invalid stored TransferNow URL: {exc}") from exc
     if share.transfer_id != wanted:
         raise ValueError("Release source ID and TransferNow URL disagree")
     return share
