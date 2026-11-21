@@ -20,7 +20,7 @@ DEFAULT_ROOT = "/data/sports/Rugby_Womens_PWR"
 
 
 def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
-         hostname=None, verbose=False, stream=sys.stdout,
+         hostname=None, verbose=False, show_unseen=False, stream=sys.stdout,
          summary_stream=sys.stderr):
     roots = list(roots) if roots is not None else [DEFAULT_ROOT]
     if not roots:
@@ -33,7 +33,8 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
 
     episodes = list(database.episodes.find(
         {"series_id": SERIES_ID, "season": {"$gte": 2025}},
-        {"_id": 1, "series_id": 1, "season": 1, "episode": 1, "nfo_path": 1}
+        {"_id": 1, "series_id": 1, "season": 1, "episode": 1,
+         "scheduled": 1, "nfo_path": 1}
     ))
     if not episodes:
         raise ValueError("No PWR episodes found; import fixtures first")
@@ -46,6 +47,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
     rows = []
     now = dt.datetime.now(dt.timezone.utc)
     files_per_episode = collections.Counter()
+    observed_episodes = set()
 
     for path in walk_videos(roots):
         counts["scanned"] += 1
@@ -74,6 +76,8 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                     item["media"] = media
                 item["bytes"] = before.st_size
                 item["mtime_ns"] = before.st_mtime_ns
+                if not probe:
+                    observed_episodes.add(episode["_id"])
                 if probe:
                     data = {
                         "_id": f"{hostname}:{path.absolute()}",
@@ -92,6 +96,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                     }
                     rows.append(data)
                     files_per_episode[episode["_id"]] += 1
+                    observed_episodes.add(episode["_id"])
             except (OSError, ValueError) as exc:
                 item["status"] = "probe_error"
                 item["reason"] = str(exc)
@@ -99,6 +104,30 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         counts[item["status"]] += 1
         if verbose or item["status"] != "unmatched":
             print(json.dumps(item, ensure_ascii=False), file=stream)
+
+    # Absence is scoped to the supplied roots and scan time; it is not a
+    # claim that the fixture's recording does not exist somewhere else.
+    unseen = []
+    for episode in episodes:
+        scheduled = episode.get("scheduled")
+        if not isinstance(scheduled, dt.datetime):
+            continue
+        if scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=dt.timezone.utc)
+        if scheduled + dt.timedelta(hours=3) > now:
+            continue
+        if episode["_id"] not in observed_episodes:
+            unseen.append(episode)
+    if show_unseen:
+        for episode in sorted(unseen, key=lambda e: (
+                e["season"], e.get("episode") or -1, e["_id"])):
+            print(json.dumps({
+                "status": "not_found_in_roots",
+                "episode_id": episode["_id"],
+                "season": episode["season"],
+                "episode": episode.get("episode"),
+                "scheduled": episode["scheduled"].isoformat(),
+            }), file=stream)
 
     # All filesystem observations are complete before any Atlas updates.
     if apply and rows:
@@ -111,6 +140,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         "unmatched": counts["unmatched"], "conflict": counts["conflict"],
         "probe_error": counts["probe_error"],
         "episodes_with_files": len(files_per_episode),
+        "past_episodes_not_found_in_roots": len(unseen),
         "written": len(rows) if apply else 0,
     }
     print(json.dumps(report, sort_keys=True), file=summary_stream)
@@ -165,6 +195,8 @@ def main(argv=None):
     parser.add_argument("--host", help="Host identifier in Atlas, default system hostname")
     parser.add_argument("--verbose", action="store_true",
                         help="Show unmatched video files too")
+    parser.add_argument("--show-unseen", action="store_true",
+                        help="List past episodes without an identified file in scanned roots")
     parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
     args = parser.parse_args(argv)
     if args.apply and args.no_probe:
@@ -184,7 +216,8 @@ def main(argv=None):
             client.admin.command("ping")
             scan(client[args.database], roots=args.root, apply=args.apply,
                  probe=not args.no_probe, ffprobe=args.ffprobe,
-                 hostname=args.host, verbose=args.verbose)
+                 hostname=args.host, verbose=args.verbose,
+                 show_unseen=args.show_unseen)
     except (OSError, ValueError) as exc:
         print(f"PVR inventory: {exc}", file=sys.stderr)
         return 1
