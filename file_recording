@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""File one inventoried PWR or Formula 1 recording using its canonical Atlas NFO.
+"""File one inventoried rugby or Formula 1 recording using its canonical Atlas NFO.
 
 Preview by default. --apply safely publishes the video + NFO, records the
 new location, and only then removes the original recording.
@@ -17,6 +17,7 @@ from filing.publish import (
     canonical_paths, ensure_unchanged, publish, stat_identity, validate_nfo,
 )
 from matchers.pwr import SERIES_ID
+from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
 from selection.quality import select_episode
 from selection.f1_files import select_f1_episode
 
@@ -66,7 +67,7 @@ def plan(database, source, *, sports_root="/data/sports", hostname=None):
     if not isinstance(episode_id, str):
         raise ValueError("Source has no verified episode association")
     episode = database.episodes.find_one({"_id": episode_id})
-    if not episode or episode.get("series_id") not in (SERIES_ID, F1_SERIES):
+    if not episode or episode.get("series_id") not in (SERIES_ID, F1_SERIES, *INTERNATIONAL_SERIES):
         raise ValueError("Source is not linked to a supported canonical episode")
     series_id = episode["series_id"]
     if series_id == SERIES_ID and episode.get("season", 0) < 2025:
