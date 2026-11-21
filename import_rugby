@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Import spoiler-free rugby fixture metadata into MongoDB Atlas.
+
+Existing calendar code is deliberately copied unchanged into calendar_legacy/.
+Current mbligh/calendar publication is not modified.
+
+Bootstrap from the published ICS snapshots, NOT newly fetched historical scores.
+Subsequent imports use snapshots and numbering assignments retained in Atlas.
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from zoneinfo import ZoneInfo
+
+ROOT = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "calendar_legacy"))
+
+from icalendar import Calendar  # noqa: E402
+import filter as calendar_filter  # noqa: E402
+import plex_nfo  # noqa: E402
+from pwr import fetch_pwr  # noqa: E402
+from world_rugby import fetch_world_rugby  # noqa: E402
+
+LEGACY_BASE = "https://raw.githubusercontent.com/mbligh/calendar/main/docs/"
+UTC = dt.timezone.utc
+
+
+def legacy_content(filename):
+    """Initial snapshots preserve existing spoiler-free historical data and numbering."""
+    req = urllib.request.Request(LEGACY_BASE + filename, headers={
+        "User-Agent": "mbligh-pvr/0.1", "Accept": "application/octet-stream"
+    })
+    with urllib.request.urlopen(req, timeout=45) as response:
+        return response.read()
+
+
+def read_snapshot(db, slug):
+    record = db.calendar_snapshots.find_one({"_id": slug}) if db is not None else None
+    if record:
+        return Calendar.from_ical(record["ics"].encode("utf-8"))
+    return Calendar.from_ical(legacy_content(slug + ".ics"))
+
+
+def old_manifest(db):
+    record = db.metadata_state.find_one({"_id": "rugby_manifest"}) if db is not None else None
+    if record:
+        return record["value"]
+    data = json.loads(legacy_content("rugby-metadata-manifest.json"))
+    if data.get("schema_version") != 2:
+        raise ValueError("Legacy manifest schema is not version 2")
+    return data
+
+
+def fetch_calendar(entry, now):
+    kind = entry.get("type")
+    if kind == "pwr":
+        return fetch_pwr(entry["url"])
+    if kind == "world-rugby":
+        return fetch_world_rugby(entry["group"], now)
+    url = entry.get("url")
+    if not url:
+        import urllib.parse
+        url = ("https://calendar.google.com/calendar/ical/"
+               + urllib.parse.quote(entry["id"], safe="") + "/public/basic.ics")
+    return calendar_filter.fetch(url)
+
+
+def build_catalogue(db, config, now, refresh):
+    """Build in memory first. No Atlas writes until ALL source parsing/numbering succeeds."""
+    config = json.loads(json.dumps(config))
+    # PREM's direct match API requires licensed credentials. Existing public
+    # Premiership calendar is still imported via its score-free ICS.
+    if not (os.environ.get("PREM_APP_ID") and os.environ.get("PREM_API_KEY")):
+        config["plex_sources"] = [entry for entry in config.get("plex_sources", [])
+                                  if entry.get("type") != "prem"]
+
+    prior_manifest = old_manifest(db)
+    snapshots = {}
+    zone = ZoneInfo(config.get("timezone", "UTC"))
+    with tempfile.TemporaryDirectory(prefix="pvr-rugby-") as temp:
+        output = pathlib.Path(temp)
+        docs = output / "docs"
+        docs.mkdir()
+        for entry in config["calendars"]:
+            slug = entry["slug"]
+            previous = read_snapshot(db, slug)
+            if refresh:
+                source = fetch_calendar(entry, now)
+                merged = calendar_filter.merge(source, previous, now, zone, entry["name"])
+            else:
+                merged = previous
+            data = merged.to_ical()
+            if not merged.walk("VEVENT"):
+                raise ValueError("Empty rugby calendar: " + slug)
+            snapshots[slug] = data.decode("utf-8")
+            (docs / (slug + ".ics")).write_bytes(data)
+        (docs / "rugby-metadata-manifest.json").write_text(
+            json.dumps(prior_manifest), encoding="utf-8"
+        )
+        # Reuse the legacy numbering, NFO generation, and old assignment
+        # preservation rather than reinventing the episode algorithm.
+        output_files, manifest = plex_nfo.build(config, docs, now)
+
+    episodes = []
+    for fixture in manifest["fixtures"]:
+        record = {
+            "_id": fixture["id"],
+            "series_id": fixture["competition"],
+            "season": fixture["season"],
+            "episode": fixture["episode"],
+            "title": fixture["home"] + " vs " + fixture["away"],
+            "scheduled": dt.datetime.fromisoformat(fixture["kickoff_utc"]).astimezone(UTC),
+            "home": fixture["home"],
+            "away": fixture["away"],
+            "round": fixture["round"],
+            "venue": fixture["venue"],
+            "showtitle": fixture["showtitle"],
+            "nfo_path": fixture["nfo"],
+            "external_ids": {"rugbypass": fixture.get("rugbypass_id")},
+            "metadata_provider": "calendar/rugby",
+        }
+        if fixture["nfo"]:
+            record["nfo"] = output_files[fixture["nfo"]].decode("utf-8")
+        episodes.append(record)
+    if not episodes:
+        raise ValueError("No rugby episode metadata built")
+    return snapshots, manifest, episodes
+
+
+def persist(db, snapshots, manifest, episodes, now):
+    from pymongo import UpdateOne
+
+    # Never delete merely missing fixtures or existing acquisition state.
+    operations = [
+        UpdateOne({"_id": episode["_id"]}, {
+            "$set": {k: v for k, v in episode.items() if k != "_id"}
+                    | {"metadata_updated_at": now},
+            "$setOnInsert": {"created_at": now}
+        }, upsert=True)
+        for episode in episodes
+    ]
+    db.episodes.bulk_write(operations, ordered=False)
+    # Commit snapshot state only after the episode records have been stored.
+    for slug, ics in snapshots.items():
+        db.calendar_snapshots.update_one({"_id": slug}, {
+            "$set": {"ics": ics, "updated_at": now}
+        }, upsert=True)
+    db.metadata_state.update_one({"_id": "rugby_manifest"}, {
+        "$set": {"value": manifest, "updated_at": now}
+    }, upsert=True)
+    db.episodes.create_index([("series_id", 1), ("season", 1), ("episode", 1)])
+    db.episodes.create_index([("scheduled", 1)])
+    return len(episodes)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=pathlib.Path,
+                        default=ROOT / "calendar_legacy" / "calendars.json")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    parser.add_argument("--no-refresh", action="store_true",
+                        help="Import existing spoiler-free calendar snapshots without fetching live APIs")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Parse and report only; does not require Atlas credentials")
+    args = parser.parse_args()
+    config = json.loads(args.config.read_text(encoding="utf-8"))
+    now = dt.datetime.now(UTC)
+
+    client = None
+    db = None
+    if not args.dry_run:
+        uri = os.environ.get("MONGODB_URI")
+        if not uri:
+            parser.error("MONGODB_URI environment variable is required without --dry-run")
+        from pymongo import MongoClient
+        client = MongoClient(uri, serverSelectionTimeoutMS=15000)
+        client.admin.command("ping")
+        db = client[args.database]
+    try:
+        snapshots, manifest, episodes = build_catalogue(
+            db, config, now, refresh=not args.no_refresh
+        )
+        print(json.dumps({
+            "calendars": len(snapshots),
+            "episodes": len(episodes),
+            "numbered": sum(e["episode"] is not None for e in episodes),
+            "preview": args.dry_run,
+            "database": args.database if not args.dry_run else None,
+        }, indent=2))
+        if db is not None:
+            persist(db, snapshots, manifest, episodes, now)
+            print("MongoDB upsert complete")
+    finally:
+        if client:
+            client.close()
+
+
+if __name__ == "__main__":
+    main()
