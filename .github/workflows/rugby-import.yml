@@ -25,6 +25,8 @@ jobs:
         env:
           PYTHONPATH: calendar_legacy
         run: python -m unittest discover -s calendar_legacy -p 'test_*.py'
+      - name: Exercise rugby import against published spoiler-free snapshots
+        run: python import_rugby --dry-run --no-refresh
   import:
     # Manual until Atlas secret and network access are configured.
     if: github.event_name == 'workflow_dispatch'
