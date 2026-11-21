@@ -150,7 +150,8 @@ See [ACQUISITION.md](ACQUISITION.md).
 
 After `refresh_releases --apply` imports the RugbyPass JSONL catalogue,
 it also invokes `match_rugbypass` for numbered men's internationals,
-women's internationals (including WXV) and Nations Championship fixtures.
+women's internationals, Nations Championship and the separate WXV
+series (WXV fixture migration pending).
 The original PWR match remains separate. All associations are conservative
 and preserve existing links; the importer's RugbyPass source listing remains
 limited to accessible/featured full-match sections. For detailed matching
