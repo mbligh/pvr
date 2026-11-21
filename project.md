@@ -160,25 +160,42 @@ There is still no automatic download selection or batch scheduling.
 
 ## First bounded missing-recording acquisition worker
 
-`acquire_missing` (see [ACQUISITION.md](ACQUISITION.md)) is a one-shot,
-preview-first PWR batch worker. It uses canonical Atlas episode metadata,
-already-linked YouTube releases, measured local file quality and the existing
-download/file tools. Due numbered fixtures are considered only after a
-configurable post-kickoff delay (default 3 hours); by default it shows just
-one actionable episode and makes no changes. `--apply --limit N` downloads
-and files at most N missing episodes, reusing an eligible already-downloaded
-recording before contacting the provider. It refuses unattended upgrades of
-published recordings, ambiguous multiple remote sources, output collisions,
-stale/moved inventory requiring reconciliation and rapid retries of failed
-YouTube downloads (default 6-hour cooldown). A nonblocking host-local
-`flock` prevents overlapping runs and errors halt the batch. Each download
-and filing step retains its independent MongoDB job history.
+`refresh_releases` now refreshes BBC iPlayer PWR, YouTube PWR and RugbyPass
+full-match catalogues, validates source IDs, upserts discovered releases
+into Atlas, and calls the existing matcher's unambiguous fixture linker.
+Preview queries providers without Atlas writes; `--apply` refreshes and
+links. The existing RugbyPass script's private auth is reused for catalogue
+retrieval; YouTube metadata comes from yt-dlp, BBC from the iBL programme
+API. This is provider discovery, not a guaranteed complete historical archive.
 
-This is not a complete automatic PVR scheduler: indexers and matchers are
-still manual, only the YouTube downloader exists, and no remote quality
-prediction, replacement of published recordings, or cleanup is performed.
-No cron job was installed as part of the change; users can run it manually
-and then schedule it on slagg once its behavior is verified.
+The `download_release` adapter additionally handles `bbc:PID` through
+get_iplayer and `rugbypass:ID` through the existing authenticated
+`~/tools/video/rugbypass` script, without changing the existing YouTube
+or Formula 1 TransferNow paths. Both new adapters stage source MP4s,
+remux with ffmpeg stream copy, verify via ffprobe and publish an exact MKV
+using no-clobber semantics. BBC uses an isolated get_iplayer profile
+so personal postprocessing hooks and download history are untouched.
+The central filer remains the only producer of canonical NFO sidecars.
+
+`acquire_missing` remains a one-shot, preview-first PWR batch worker:
+`--refresh` optionally invokes the source refresh first; `--apply`
+makes Atlas/media changes; `--limit N` caps episodes (default 1).
+A source filter and `--max-candidates` (default 3, maximum 5) bound the
+provider comparison. For multiple finished matched releases of one
+unpublished episode, the worker downloads all missing candidates within
+that cap, measures real media FPS/resolution/duration/size, then selects
+the preferred recording using the existing quality policy and files it.
+This is necessary because format and size metadata may be unavailable
+until media is downloaded. Previously downloaded eligible media is
+reused and compared with newly available alternatives. Unselected
+recordings are retained in incoming, published recordings are never
+automatically replaced, and a failed candidate halts the batch without
+publishing a partial comparison. Local flock and retry cooldowns remain.
+
+See [ACQUISITION.md](ACQUISITION.md). No crontab was changed; manual
+multi-source trials are required before enabling unattended operation.
+Further work includes better remote metadata estimation, quality upgrades
+of already-published files, broader RugbyPass discovery and cleanup.
 
 ## Initial implementation and migration
 
