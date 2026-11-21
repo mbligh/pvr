@@ -266,3 +266,15 @@ links are warned about rather than asserted to be expired. This changes no
 Atlas records and does not download, check links or write media files. The
 existing tools/transfernow/transfernow downloader is a future adapter
 candidate; it remains in mbligh/tools for now. See REDDIT_TELETZ.md.
+
+
+## TransferNow downloader relocation (2026-11-21)
+
+The standalone TransferNow CLI formerly maintained in mbligh/tools/transfernow
+is now an executable `./transfernow` in the PVR root with its importable
+implementation in `downloaders/transfernow.py`. Its original website API,
+metadata listing, HEAD checks, curl resume, size verification and standalone
+CLI are preserved. The original offline tests were moved to
+`tests/test_transfernow.py` and run in the PVR CI suite. TransferNow remains
+separate from discovery and episode selection; the PVR-managed job/recording
+adapter must explicitly call the importable module. See TRANSFERNOW.md.

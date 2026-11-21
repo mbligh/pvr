@@ -131,8 +131,8 @@ quality are not probed or verified. A posted date over five days ago triggers
 an advisory *unverified* warning, not an expired declaration or exclusion.
 Neither the score nor the winner is written back to MongoDB.
 
-The existing mbligh/tools/transfernow/transfernow Python CLI was inspected.
-It already supports --list and --check (metadata/header probes), as well as
-resumable downloads with curl. It has *not* been moved or wired into PVR yet;
-the next phase can adapt it to accept a selected source URI and use PVR jobs,
-file inventory and download state without duplicating its logic.
+TransferNow is now maintained by PVR: `./transfernow` is the standalone
+command and `downloaders/transfernow.py` is its importable implementation.
+The downloader supports `--list`, `--check`, resumable transfers with curl,
+and complete-file size verification. It remains separate from release
+discovery and ranking; see [TRANSFERNOW.md](TRANSFERNOW.md).
