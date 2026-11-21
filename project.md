@@ -158,6 +158,28 @@ the newly acquired recording is better, or `already_published` otherwise.
 An explicit replacement/upgrade mechanism remains to be implemented.
 There is still no automatic download selection or batch scheduling.
 
+## First bounded missing-recording acquisition worker
+
+`acquire_missing` (see [ACQUISITION.md](ACQUISITION.md)) is a one-shot,
+preview-first PWR batch worker. It uses canonical Atlas episode metadata,
+already-linked YouTube releases, measured local file quality and the existing
+download/file tools. Due numbered fixtures are considered only after a
+configurable post-kickoff delay (default 3 hours); by default it shows just
+one actionable episode and makes no changes. `--apply --limit N` downloads
+and files at most N missing episodes, reusing an eligible already-downloaded
+recording before contacting the provider. It refuses unattended upgrades of
+published recordings, ambiguous multiple remote sources, output collisions,
+stale/moved inventory requiring reconciliation and rapid retries of failed
+YouTube downloads (default 6-hour cooldown). A nonblocking host-local
+`flock` prevents overlapping runs and errors halt the batch. Each download
+and filing step retains its independent MongoDB job history.
+
+This is not a complete automatic PVR scheduler: indexers and matchers are
+still manual, only the YouTube downloader exists, and no remote quality
+prediction, replacement of published recordings, or cleanup is performed.
+No cron job was installed as part of the change; users can run it manually
+and then schedule it on slagg once its behavior is verified.
+
 ## Initial implementation and migration
 
 1. Define/version the canonical episode, release, and adapter JSON schemas; implement MongoDB collections/indexes and a small CLI.
