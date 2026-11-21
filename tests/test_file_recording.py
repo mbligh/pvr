@@ -259,6 +259,42 @@ class FilingCLITests(unittest.TestCase):
                          "rugby-nations")
         self.assertFalse(self.source.exists())
 
+    def test_new_existing_rugby_directories_can_be_planned_without_creation(self):
+        # A directory whitelist must not silently exclude the user's
+        # established Six Nations, Lions, World Cup or WXV series when
+        # numbered/NFO-backed episodes become available.
+        for series_id, dirname, title in (
+                ("rugby-mens-6n", "Rugby_Mens_6N", "Rugby Mens 6N"),
+                ("rugby-mens-lions", "Rugby_Mens_Lions", "Rugby Mens Lions"),
+                ("rugby-mens-world-cup", "Rugby_Mens_World_Cup", "Rugby Mens World Cup"),
+                ("rugby-womens-6n", "Rugby_Womens_6N", "Rugby Womens 6N"),
+                ("rugby-womens-lions", "Rugby_Womens_Lions", "Rugby Womens Lions"),
+                ("rugby-womens-world-cup", "Rugby_Womens_World_Cup", "Rugby Womens World Cup"),
+                ("rugby-womens-wxv", "Rugby_Womens_WXV", "Rugby Womens WXV"),
+        ):
+            with self.subTest(series_id=series_id):
+                episode_id = f"{series_id}:test"
+                stem = f"{dirname}-s2026e101-Canada_v_England_20261017"
+                self.db.episodes.find_one.return_value = {
+                    "_id": episode_id, "series_id": series_id,
+                    "season": 2026, "episode": 101,
+                    "nfo_path": f"{dirname}/Season_2026/{stem}.nfo",
+                    "nfo": (f"<episodedetails><showtitle>{title}</showtitle>"
+                            "<season>2026</season><episode>101</episode>"
+                            "</episodedetails>"),
+                }
+                self.original.update(series_id=series_id, episode_id=episode_id,
+                                     season=2026, episode=101)
+                self.db.files.find.return_value = [dict(self.original)]
+                preview = self.run_cli()
+                self.assertEqual(preview["status"], "ready")
+                self.assertEqual(preview["series_id"], series_id)
+                self.assertEqual(
+                    preview["destination"],
+                    str(self.sports / dirname / "Season_2026" / (stem + ".mkv")))
+                self.assertFalse((self.sports / dirname).exists())
+        self.db.jobs.insert_one.assert_not_called()
+
     def test_preview_does_not_create_directories_or_write_atlas(self):
         result = self.run_cli()
         self.assertEqual(result["status"], "ready")
