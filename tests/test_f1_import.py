@@ -1,12 +1,10 @@
 """Offline tests for F1 episode numbering, timetables and NFO generation."""
-import importlib.machinery
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-ROOT = Path(__file__).resolve().parents[1]
-f1 = importlib.machinery.SourceFileLoader("pvr_import_f1", str(ROOT / "import_f1")).load_module()
+from schedulers import f1
 
 
 class F1ImportTests(unittest.TestCase):
