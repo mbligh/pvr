@@ -29,6 +29,33 @@ command -v ffprobe
 `yt-dlp` performs the media fetch. FFmpeg is needed for merging/remuxing;
 `ffprobe` verifies the completed recording.
 
+**System downloader configuration:** This adapter deliberately does **not**
+override the format selector (`-f`) or format sorter (`-S`). The
+`mbligh/apt` `yt-dlp-sabr` package installs `/etc/yt-dlp.conf` with
+`--remote-components ejs:npm`, `-f bv+ba/b` and
+`-S res:1080,+vcodec:avc`. Those options must remain in effect because
+YouTube's format and PO-token requirements can change; the adapter should
+not force a different format. The initial adapter version mistakenly forced
+`bv*+ba/b`, which overrode the package's selector and may trigger 403
+media-download failures.
+
+If a YouTube download fails with HTTP 403, check which executable/package
+and JS challenge support are in effect, without downloading anything:
+
+```sh
+command -v yt-dlp
+yt-dlp --version
+dpkg-query -W yt-dlp-sabr 2>/dev/null || true
+yt-dlp --verbose --list-formats \
+  'https://www.youtube.com/watch?v=8CFBWPSG3vc'
+```
+
+Look for missing Deno/EJS challenge support, skipped formats, or PO-token
+warnings. This **may not** fix every 403: some formats/clients require
+video-specific PO tokens even with an up-to-date yt-dlp. The adapter
+preserves and reports the yt-dlp error rather than trying insecure or
+unverified client workarounds automatically.
+
 ## Single-match trial
 
 The indexed YouTube match **Trailfinders Women vs Exeter Chiefs** (25 October
