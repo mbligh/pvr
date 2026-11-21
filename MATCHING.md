@@ -71,3 +71,73 @@ score-free NFO generator. Until it has been run with `--apply`, YouTube
 recordings of 2025/26 games correctly report `no_fixture`. Older matches
 from 2024/25 and other seasons remain unmatched until their fixtures have
 been imported.
+
+## RugbyPass men's/women's internationals and Nations Championship
+
+The separate `match_rugbypass` command matches already indexed RugbyPass
+**full-match replays** against the numbered canonical fixtures in Atlas for
+`rugby-mens-intl`, `rugby-womens-intl`, and `rugby-nations`.
+PWR matching is unchanged.
+
+```sh
+cd ~/pvr
+git pull
+
+# Explain RugbyPass-to-fixture associations without modifying Atlas:
+python3 match_rugbypass
+
+# Include unmatched, ambiguous and ineligible catalogue records:
+python3 match_rugbypass --verbose
+
+# After inspecting, store only unique links:
+python3 match_rugbypass --apply
+
+# Restrict to one series:
+python3 match_rugbypass --series rugby-nations
+```
+
+Rules for automatic matches:
+
+- **Competition labels determine the canonical destination series.** The
+  RugbyPass label `Nations Championship` maps **only** to
+  `rugby-nations`, even though the same matches are present in the
+  men's-international calendar (usually with `NC:` prefixes).
+  `Women's International` and `WXV` map to `rugby-womens-intl`.
+  Explicit men's-international, Nations Cup, Pacific Nations Cup and
+  Rugby's Greatest Rivalry labels map to `rugby-mens-intl`.
+  Unlabelled content is ignored; a missing gender label is not assumed
+  to mean men. `Nations Cup` is not `Nations Championship`.
+- Require a title whose last component is `Full Match Replay` and whose
+  first component contains exactly one `home v away` pairing.
+  Highlights, commentary, previews and old vault matches with no
+  relevant competition label are excluded.
+- Match **home and away in the correct order**, using normalized accents,
+  national flag emoji, `NC:` prefixes, gender markers and a small explicit
+  nickname list (All Blacks/New Zealand, Wallabies/Australia,
+  Springboks/South Africa, USA/United States). `Australia A` remains
+  distinct from `Australia`; `England A` remains distinct from
+  `England`. No fuzzy similarity or score-based association.
+- RugbyPass's `published` field is **replay publication**, not kickoff.
+  Require publication between four hours before the fixture kickoff and
+  three days afterwards (configurable `--max-delay-days 0..7`).
+  Dates must include timezone information.
+- If multiple fixtures have identical sides within that window, return
+  `ambiguous`, never pick the closest. Duplicate World Rugby/Google
+  fixture entries for some women's matches are a real example.
+  Unnumbered fixtures (or those lacking canonical NFO XML/path) return
+  `unnumbered_fixture` and are not linked until the importer provides
+  complete metadata.
+- Unavailable or known sub-one-hour recordings are excluded. Already linked
+  releases are never changed. Every successful link includes competition,
+  teams, published and scheduled timestamps, publication delay and matching
+  method in Atlas `match_details`.
+
+`refresh_releases --apply` now runs this matcher after importing the
+RugbyPass catalogue, in addition to the existing PWR matcher. The source
+catalogue is not an exhaustive historical replay listing; matches absent
+from its accessible sections remain undiscovered. An unnumbered Nations
+Championship fixture may become linkable after a later `import_rugby`
+updates its canonical episode number/NFO.
+
+See [ACQUISITION.md](ACQUISITION.md) for preview-only acquisition and safe
+canonical filing of those matches.
