@@ -86,6 +86,25 @@ are added to Atlas only when the user runs it with `--apply`; see
 checks for recent missing/upgradeable content. No existing
 `mbligh/calendar` or daily PVR metadata cron jobs are changed.
 
+## Local recording inventory (first adapter)
+
+The `inventory_files` CLI now scans existing PWR recordings from the local
+filesystem, resolving canonical identities through filename season/episode,
+NFO sidecars, and exact already-linked source IDs. It uses `ffprobe` to
+capture duration, codec, resolution, frame rate, audio tracks and sizes.
+Preview is the default; `--apply` upserts verified observations to the
+separate Atlas `files` collection. Records have stable IDs based on host and
+absolute path, preserve existing associations and do not move or overwrite
+media. Multiple files may satisfy one episode. The first default scan root is
+`/data/sports/Rugby_Womens_PWR`; operators can add or substitute arbitrary
+`--root` paths including `/data/incoming`. See [INVENTORY.md](INVENTORY.md).
+
+This only inventories **existing** files, it does not download new recordings,
+select between quality options, or mark vanished files missing. Its episode
+matching is currently scoped to PWR Season_2025 onward; other competitions
+will get their own identity adapters. No user filesystem scan has yet been run
+and no Atlas file records have been written by this change.
+
 ## Initial implementation and migration
 
 1. Define/version the canonical episode, release, and adapter JSON schemas; implement MongoDB collections/indexes and a small CLI.
