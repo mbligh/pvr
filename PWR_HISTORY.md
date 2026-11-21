@@ -10,9 +10,9 @@ explicitly named `2025/26`: 18 regular-season rounds (72 fixtures),
 round 19 (two semifinals) and round 20 (one final).
 
 The `import_pwr_history` CLI intentionally reuses
-`calendar_legacy/pwr.fetch_pwr`, which allowlists fixture IDs, kickoff times,
+`schedulers/rugby/legacy/pwr.fetch_pwr`, which allowlists fixture IDs, kickoff times,
 team names, round numbers and venues and **never copies scores or match
-outcomes**. It then calls `calendar_legacy/plex_nfo.build` for the same
+outcomes**. It then calls `schedulers/rugby/legacy/plex_nfo.build` for the same
 existing season, round-based episode numbering and XML NFO conventions as
 `import_rugby`.
 
