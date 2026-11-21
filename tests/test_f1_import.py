@@ -2,6 +2,8 @@
 import importlib.machinery
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
 f1 = importlib.machinery.SourceFileLoader("pvr_import_f1", str(ROOT / "import_f1")).load_module()
@@ -59,6 +61,28 @@ class F1ImportTests(unittest.TestCase):
         data["meetings"][1]["sessions"][0]["session"] = "bad"
         with self.assertRaisesRegex(ValueError, "unknown"):
             f1.build_episodes(data)
+
+    def test_us_central_alias_without_legacy_tzdb_link(self):
+        # Some Debian installations have America/Chicago but not US/Central.
+        data = self.payload()
+        meeting = data["meetings"][1]
+        meeting["event"]["meetingTimezone"] = "US/Central"
+        for session in meeting["sessions"]:
+            session["timezone"] = "US/Central"
+            session["startTime"] = session["startTime"].replace("2026-08-28", "2026-10-23")
+            session["endTime"] = session["endTime"].replace("2026-08-28", "2026-10-23")
+            session["gmtOffset"] = "-05:00"
+
+        def no_legacy_alias(name):
+            if name == "US/Central":
+                raise ZoneInfoNotFoundError(name)
+            return ZoneInfo(name)
+
+        with patch.object(f1, "ZoneInfo", side_effect=no_legacy_alias):
+            episodes = f1.build_episodes(data)
+        self.assertEqual(len(episodes), 7)
+        self.assertEqual(episodes[0]["timezone"], "America/Chicago")
+        self.assertEqual(episodes[0]["scheduled"].isoformat(), "2026-10-23T14:00:00+00:00")
 
     def test_xml_escaping(self):
         xml = f1.xml_nfo("Grand Prix & Qualifying", 2026, 127, "2026-08-28", "Circuit & cars")

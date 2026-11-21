@@ -174,5 +174,7 @@ The importer stores UTC times, circuit, official meeting/session IDs, NFO
 XML and suggested paths under Formula_1/Season_YYYY. It previews by default;
 --jsonl exports full records; --apply is required for Atlas upserts and
 refuses conflicts with existing season/episode numbering. It never deletes
-absent sessions. See F1_IMPORT.md. No Atlas changes or calendar publications
+absent sessions. F1 normalizes the legacy US/Central alias to America/Chicago before timezone
+conversion, since not all tzdata installations contain backward links.
+See F1_IMPORT.md. No Atlas changes or calendar publications
 were performed as part of this addition.

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import unicodedata
 import xml.etree.ElementTree as ET
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = pathlib.Path(__file__).resolve().parent
 UTC = dt.timezone.utc
@@ -30,6 +30,8 @@ SESSION_NAMES = {"p1": "Practice 1", "p2": "Practice 2", "p3": "Practice 3",
                  "ss": "Sprint Qualifying", "s": "Sprint",
                  "q": "Qualifying", "r": "Race"}
 ROUND_PATTERN = re.compile(r"^ROUND\s+(\d+)$", re.IGNORECASE)
+# F1 may return legacy tzdb links absent from minimal tzdata packages.
+TIMEZONE_ALIASES = {"US/Central": "America/Chicago"}
 
 
 def slug(text):
@@ -54,7 +56,11 @@ def session_times(session, meeting):
     tzname = session.get("timezone") or meeting.get("meetingTimezone")
     if not tzname:
         raise ValueError("Missing F1 session timezone")
-    zone = ZoneInfo(tzname)
+    tzname = TIMEZONE_ALIASES.get(tzname, tzname)
+    try:
+        zone = ZoneInfo(tzname)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"Timezone {tzname!r} unavailable; install the system tzdata package") from exc
     local_times = []
     for field in ("startTime", "endTime"):
         raw = session.get(field)
@@ -151,7 +157,9 @@ def build_episodes(payload):
                 "meeting_name": name, "meeting_key": key,
                 "session_code": code, "session_name": session_name,
                 "session_key": session_key, "venue": circuit, "location": location,
-                "timezone": session.get("timezone") or meeting.get("meetingTimezone"),
+                "timezone": TIMEZONE_ALIASES.get(
+                    session.get("timezone") or meeting.get("meetingTimezone"),
+                    session.get("timezone") or meeting.get("meetingTimezone")),
                 "nfo_path": f"{LIBRARY_DIR}/Season_{year}/{base}.nfo",
                 "nfo": xml_nfo(title, year, number, aired, plot),
                 "external_ids": {"formula1_meeting": key,

@@ -20,6 +20,10 @@ not modify media files, releases, or existing calendars.
 - Stable ID is f1:<meetingSessionKey>. External IDs preserve meetingKey
   and meetingSessionKey. Rescheduling does not change the primary ID.
 
+The upstream US/Central legacy timezone label is normalized to America/Chicago,
+which avoids missing-link errors on minimal Debian timezone installations.
+The IANA timezone database (system tzdata package) is still required.
+
 Local start and end times, timezone and GMT offset are checked and converted
 to UTC in Atlas. The local date is used for NFO aired. Validation rejects
 duplicate episode numbers, duplicate session IDs, unknown session codes,
