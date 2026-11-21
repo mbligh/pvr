@@ -76,11 +76,15 @@ association by canonical home/away teams and a ±2-day recording date window.
 `matchers/pwr.py` contains the nine-team canonical vocabulary and known
 aliases. It preserves existing links, rejects ambiguous/unavailable/non-match
 content, and writes `episode_id` to release documents only with `--apply`.
-See [MATCHING.md](MATCHING.md). The 2025/26 PWR historical fixtures are not
-yet in Atlas; their releases remain unmatched until fixture import expands
-historically. Future orchestration will schedule source checks for recent
-missing/upgradeable content. No existing `mbligh/calendar` or daily PVR
-metadata cron jobs are changed.
+See [MATCHING.md](MATCHING.md). A separate preview-first
+`import_pwr_history` command now supports the verified `202501` PWR fixture
+feed (75 matches, including semifinals and final), reusing the score-free
+calendar adapter and legacy season/round numbering plus NFO generation.
+It preserves all existing Season_2026 fixture records. The 2025 records
+are added to Atlas only when the user runs it with `--apply`; see
+[PWR_HISTORY.md](PWR_HISTORY.md). Future orchestration will schedule source
+checks for recent missing/upgradeable content. No existing
+`mbligh/calendar` or daily PVR metadata cron jobs are changed.
 
 ## Initial implementation and migration
 
