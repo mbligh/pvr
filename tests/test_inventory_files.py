@@ -85,6 +85,12 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(evidence, ["release_id"])
         self.assertIsNone(error)
 
+    def test_release_id_conflicting_with_season_directory_is_not_linked(self):
+        p = media(self.root / "Rugby_Womens_PWR/Season_2026" /
+                  "Premiership_Womens_Rugby-m0034hxp.mkv")
+        self.assertIn("Season directory disagrees",
+                      self.check(p)[3])
+
     def test_unrelated_program_not_matched_by_season_number(self):
         p = media(self.root / "incoming" / "Completely_Another_Show-s2025e101.mkv")
         self.assertEqual(self.check(p), (None, None, [], None))
