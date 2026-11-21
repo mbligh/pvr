@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh BBC, YouTube and RugbyPass catalogues and link PWR fixtures.
+"""Refresh BBC, YouTube and RugbyPass catalogues and match known rugby fixtures.
 
 Without --apply: query providers and preview counts, no Atlas writes.
 With --apply: validate all source responses before upserting and matching.
@@ -98,12 +98,20 @@ def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
             indexer.upsert_releases(database, validated[source])
         matched = matcher.run(database, apply=True,
                               stream=io.StringIO(), summary_stream=io.StringIO())
+        if "rugbypass" in sources:
+            national = load_file("pvr_refresh_match_rugbypass", "match_rugbypass")
+            national_report = national.run(
+                database, apply=True, stream=io.StringIO(),
+                summary_stream=io.StringIO())
+        else:
+            national_report = None
     else:
         matched = None
+        national_report = None
     outcome = {"mode": "apply" if apply else "preview",
                "sources": list(sources), "releases": counts,
                "total_releases": sum(counts.values()),
-               "matching": matched,
+               "matching": matched, "international_matching": national_report,
                "note": "Preview does not link newly discovered releases" if not apply else None}
     print(json.dumps(outcome, sort_keys=True), file=output)
     return outcome
