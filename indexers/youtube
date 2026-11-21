@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""YouTube channel streams indexer using the local yt-dlp executable."""
+import argparse
+import json
+import re
+import subprocess
+import sys
+
+DEFAULT_URL = "https://www.youtube.com/@ThePWROfficial/streams"
+VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def convert_video(video):
+    if not isinstance(video, dict):
+        return None
+    video_id = video.get("id")
+    title = video.get("title")
+    if not isinstance(video_id, str) or not VIDEO_ID.fullmatch(video_id):
+        return None
+    if not isinstance(title, str) or not title.strip():
+        return None
+    status = video.get("live_status")
+    if status in ("is_live", "is_upcoming", "post_live"):
+        return None  # Do not treat incomplete streams as finished recordings.
+    record = {
+        "source": "youtube",
+        "id": video_id,
+        "uri": "youtube:" + video_id,
+        "title": title.strip(),
+        "type": "video",
+    }
+    # The flat listing sometimes omits live_status. Do not falsely claim
+    # that an unknown-status entry is a completed replay.
+    if status in ("was_live", "not_live"):
+        record["available"] = True
+    metadata = {}
+    for field in ("live_status", "channel", "channel_id", "uploader", "webpage_url"):
+        if isinstance(video.get(field), str):
+            metadata[field] = video[field]
+    if isinstance(video.get("duration"), (int, float)):
+        record["duration"] = video["duration"]
+    stamp = video.get("release_timestamp") or video.get("timestamp")
+    if isinstance(stamp, (int, float)):
+        import datetime as dt
+        record["published"] = dt.datetime.fromtimestamp(
+            stamp, dt.timezone.utc).isoformat()
+    elif isinstance(video.get("upload_date"), str) and re.fullmatch(
+            r"\d{8}", video["upload_date"]):
+        record["published"] = (video["upload_date"][:4] + "-"
+                               + video["upload_date"][4:6] + "-"
+                               + video["upload_date"][6:])
+    if metadata:
+        record["metadata"] = metadata
+    return record
+
+
+def discover(url=DEFAULT_URL, *, search=None, limit=100, binary="yt-dlp",
+             execute=subprocess.run):
+    if not url.startswith("https://www.youtube.com/"):
+        raise ValueError("Only HTTPS YouTube channel and playlist URLs are supported")
+    command = [binary, "--flat-playlist", "--dump-json", "--ignore-errors",
+               "--playlist-end", str(limit), "--no-warnings", url]
+    result = execute(command, capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise RuntimeError(f"yt-dlp exited {result.returncode}: {result.stderr.strip()[:500]}")
+    found = {}
+    term = search.casefold() if search else ""
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            video = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError("yt-dlp emitted non-JSON output") from exc
+        release = convert_video(video)
+        if release and (not term or term in release["title"].casefold()):
+            found[release["id"]] = release
+    return list(found.values())
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--url", default=DEFAULT_URL,
+                        help="YouTube /streams, /videos or playlist URL")
+    parser.add_argument("--search", help="Case-insensitive video title substring")
+    parser.add_argument("--limit", type=int, default=100,
+                        help="Maximum listed videos (default 100)")
+    parser.add_argument("--yt-dlp", default="yt-dlp", help="yt-dlp executable")
+    args = parser.parse_args(argv)
+    if not 1 <= args.limit <= 5000:
+        parser.error("--limit must be 1-5000")
+    try:
+        releases = discover(args.url, search=args.search, limit=args.limit,
+                            binary=args.yt_dlp)
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(f"YouTube indexer: {exc}", file=sys.stderr)
+        return 1
+    for record in releases:
+        print(json.dumps(record, ensure_ascii=False))
+    print(f"YouTube: {len(releases)} releases", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
