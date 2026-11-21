@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Download one Atlas-matched source URI to an explicit local destination.
 
-Preview-only by default. Supports YouTube and matched teletz TransferNow
-releases; --apply downloads a
-single already-matched recording, verifies it with ffprobe, and records the
-file and job result in MongoDB Atlas. Does not file or rename library media.
+Preview-only by default. Supports YouTube, BBC iPlayer, RugbyPass, and
+matched teletz TransferNow releases; --apply downloads a single already-
+matched recording, verifies it with ffprobe, and records the file and job
+result in MongoDB Atlas. Does not file or rename library media.
 """
 import argparse
 import datetime as dt
@@ -17,6 +17,8 @@ import uuid
 
 from downloaders.youtube import download as download_youtube
 from downloaders.youtube import youtube_id
+from downloaders.bbc import download as download_bbc, bbc_id
+from downloaders.rugbypass import download as download_rugbypass, rugbypass_id
 from downloaders.transfernow_pvr import (download as download_transfernow,
                                         share_from_release, source_id as transfernow_id)
 from matchers.pwr import SERIES_ID
@@ -28,6 +30,14 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         youtube_id(uri)
         expected_series = SERIES_ID
         adapter = "youtube"
+    elif uri.startswith("bbc:"):
+        bbc_id(uri)
+        expected_series = SERIES_ID
+        adapter = "bbc"
+    elif uri.startswith("rugbypass:"):
+        rugbypass_id(uri)
+        expected_series = SERIES_ID
+        adapter = "rugbypass"
     elif uri.startswith("reddit-teletz:"):
         transfernow_id(uri)
         expected_series = "formula-1"
@@ -132,9 +142,11 @@ def register(database, checked, media, *, now=None):
 
 
 def run(database, uri, destination, *, apply=False, allow_existing_episode=False,
-        yt_dlp="yt-dlp", ffprobe="ffprobe", ffmpeg="ffmpeg", hostname=None,
-        downloader=download_youtube, transfernow_downloader=download_transfernow,
-        output=sys.stdout):
+        yt_dlp="yt-dlp", get_iplayer="get_iplayer",
+        rugbypass="~/tools/video/rugbypass", ffprobe="ffprobe", ffmpeg="ffmpeg",
+        hostname=None, downloader=download_youtube,
+        bbc_downloader=download_bbc, rugbypass_downloader=download_rugbypass,
+        transfernow_downloader=download_transfernow, output=sys.stdout):
     """Plan, and optionally execute exactly one verified download."""
     checked = plan(database, uri, destination, hostname=hostname,
                    allow_existing_episode=allow_existing_episode)
@@ -158,6 +170,14 @@ def run(database, uri, destination, *, apply=False, allow_existing_episode=False
             media = transfernow_downloader(
                 uri, checked["source_url"], checked["destination"],
                 ffprobe=ffprobe, ffmpeg=ffmpeg)
+        elif checked["adapter"] == "bbc":
+            media = bbc_downloader(
+                uri, checked["destination"], get_iplayer=get_iplayer,
+                ffmpeg=ffmpeg, ffprobe=ffprobe)
+        elif checked["adapter"] == "rugbypass":
+            media = rugbypass_downloader(
+                uri, checked["destination"], rugbypass=rugbypass,
+                ffmpeg=ffmpeg, ffprobe=ffprobe)
         else:
             media = downloader(uri, checked["destination"], yt_dlp=yt_dlp,
                                ffprobe=ffprobe)
@@ -195,6 +215,8 @@ def main(argv=None):
     parser.add_argument("--allow-existing-episode", action="store_true",
                         help="Explicitly permit a second recording for an already-owned episode")
     parser.add_argument("--yt-dlp", default="yt-dlp")
+    parser.add_argument("--get-iplayer", default="get_iplayer")
+    parser.add_argument("--rugbypass", default="~/tools/video/rugbypass")
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--host", help="Stable host name (default local hostname)")
@@ -216,7 +238,8 @@ def main(argv=None):
             result = run(client[args.database], args.uri, args.destination,
                          apply=args.apply,
                          allow_existing_episode=args.allow_existing_episode,
-                         yt_dlp=args.yt_dlp, ffprobe=args.ffprobe,
+                         yt_dlp=args.yt_dlp, get_iplayer=args.get_iplayer,
+                         rugbypass=args.rugbypass, ffprobe=args.ffprobe,
                          ffmpeg=args.ffmpeg,
                          hostname=args.host)
     except Exception as exc:
