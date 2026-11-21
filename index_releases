@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Validate and upsert JSONL indexer releases into the PVR MongoDB database.
+
+Usage: python3 index_releases < <(python3 indexers/bbc)
+       python3 indexers/youtube | python3 index_releases
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import re
+import sys
+
+SOURCE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def validate(record):
+    if not isinstance(record, dict):
+        raise ValueError("Release must be a JSON object")
+    source, id_, uri, title = (record.get(k) for k in ("source", "id", "uri", "title"))
+    if not isinstance(source, str) or not SOURCE.fullmatch(source):
+        raise ValueError("Invalid source")
+    if not isinstance(id_, str) or not IDENTIFIER.fullmatch(id_):
+        raise ValueError("Invalid release ID")
+    if uri != source + ":" + id_:
+        raise ValueError("Release URI does not match source and ID")
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError("Release title must be nonempty")
+    for name in ("available",):
+        if name in record and not isinstance(record[name], bool):
+            raise ValueError(f"{name} must be boolean when specified")
+    if "metadata" in record and not isinstance(record["metadata"], dict):
+        raise ValueError("metadata must be an object")
+    return record
+
+
+def read_records(input_file):
+    records = {}
+    for line_no, line in enumerate(input_file, 1):
+        if not line.strip():
+            continue
+        try:
+            item = validate(json.loads(line))
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Line {line_no}: {exc}") from exc
+        if item["uri"] in records:
+            raise ValueError(f"Line {line_no}: duplicate release URI {item['uri']}")
+        # Keep source-specific content as metadata without allowing the
+        # indexer to overwrite operational fields such as episode_id, _id,
+        # first_seen, last_seen or download status.
+        allowed = {"source", "id", "uri", "title", "type", "available",
+                   "published", "duration", "metadata"}
+        records[item["uri"]] = {k: v for k, v in item.items() if k in allowed}
+    return records
+
+
+def upsert_releases(database, records, now=None):
+    from pymongo import UpdateOne
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    database.releases.create_index([("source", 1), ("id", 1)], unique=True)
+    database.releases.create_index([("episode_id", 1)])
+    operations = [
+        UpdateOne({"_id": uri}, {
+            "$set": dict(record, last_seen=now),
+            "$setOnInsert": {"first_seen": now}
+        }, upsert=True)
+        for uri, record in records.items()
+    ]
+    if not operations:
+        return {"matched": 0, "modified": 0, "upserted": 0}
+    result = database.releases.bulk_write(operations, ordered=False)
+    return {"matched": result.matched_count, "modified": result.modified_count,
+            "upserted": result.upserted_count}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Validate records without a MongoDB connection")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    try:
+        records = read_records(sys.stdin)
+    except ValueError as exc:
+        print(f"Indexer input: {exc}", file=sys.stderr)
+        return 1
+    if args.dry_run:
+        print(json.dumps({"valid": len(records), "preview": True}))
+        return 0
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        path = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            uri = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"Cannot read MongoDB URI from {path}: {exc}", file=sys.stderr)
+            return 1
+    if not uri:
+        print("Empty MongoDB URI", file=sys.stderr)
+        return 1
+    from pymongo import MongoClient
+    with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+        client.admin.command("ping")
+        summary = upsert_releases(client[args.database], records)
+    print(json.dumps(summary, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
