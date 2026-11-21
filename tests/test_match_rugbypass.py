@@ -103,8 +103,8 @@ class MatchNationalReplays(unittest.TestCase):
 
     def test_ambiguous_womens_duplicate_feed_is_not_matched(self):
         when = dt.datetime(2026, 10, 17, 1, tzinfo=UTC)
-        a = fixture(rb.WOMENS, "Australia", "Scotland", when, number=102, id_="w1")
-        b = fixture(rb.WOMENS, "♀️Australia 🇦🇺", "🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland",
+        a = fixture(rb.WXV, "Australia", "Scotland", when, number=102, id_="w1")
+        b = fixture(rb.WXV, "♀️Australia 🇦🇺", "🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland",
                     when + dt.timedelta(hours=1), number=103, id_="w2")
         vod = release("Australia v Scotland | WXV Global Series 2026 | Full Match Replay",
                       "2026-10-17T04:30:00Z")
