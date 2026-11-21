@@ -103,7 +103,7 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         "season": episode["season"], "episode": episode["episode"],
         "existing_files": present,
         "source_title": release.get("title"),
-        "adapter": adapter, "series_id": expected_series,
+        "adapter": adapter, "series_id": episode["series_id"],
         "source_url": (release.get("metadata") or {}).get("url")
             if adapter == "transfernow" else None,
     }
