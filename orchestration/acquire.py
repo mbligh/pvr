@@ -1,12 +1,13 @@
-"""Preview-first missing-PWR-episode orchestration.
+"""Plan missing PWR recordings across BBC, YouTube and RugbyPass.
 
-Only YouTube downloads are supported at this stage, and only when an
-episode has exactly one matched, finished YouTube release. Decisions rely
-on the local Atlas inventory and the existing quality selection policy.
+All remote candidates for a due, unpublished episode are evaluated before
+publication: without media download we cannot reliably compare FPS or file
+size. The planner is read-only; the worker enforces explicit limits.
 """
 import datetime as dt
 import os
 import pathlib
+import re
 import socket
 import stat
 
@@ -14,8 +15,14 @@ from filing.publish import canonical_paths, validate_nfo
 from matchers.pwr import SERIES_ID
 from selection.quality import evaluate_file, select
 
-INCOMING_NAME = "pvr-{id}.mkv"
+SOURCES = ("bbc", "youtube", "rugbypass")
+SOURCE_ORDER = {name: i for i, name in enumerate(SOURCES)}
 BLOCKED_LIVE_STATES = {"is_live", "is_upcoming", "post_live"}
+ID_PATTERNS = {
+    "bbc": re.compile(r"^[a-z][a-z0-9]{7}$"),
+    "youtube": re.compile(r"^[A-Za-z0-9_-]{11}$"),
+    "rugbypass": re.compile(r"^[0-9]{1,16}$"),
+}
 
 
 def aware(value):
@@ -40,43 +47,58 @@ def release_is_ready(release):
     return True
 
 
-def local_published(records, sports_root):
-    """Any existing inventoried recording in the library blocks auto-filing.
+def validate_release(release):
+    """Return a safe source ID, or None for a malformed source document."""
+    uri = release.get("_id")
+    source = release.get("source")
+    if not isinstance(uri, str) or source not in ID_PATTERNS:
+        return None
+    prefix, colon, source_id = uri.partition(":")
+    if colon != ":" or prefix != source or not ID_PATTERNS[source].fullmatch(source_id):
+        return None
+    return source_id
 
-    A file can be published but below preferred quality; upgrades are
-    separate from this missing-episode acquisition workflow.
-    """
+
+def incoming_path(root, release):
+    source_id = validate_release(release)
+    if source_id is None:
+        raise ValueError("Invalid source URI")
+    source = release["source"]
+    # Retain the existing YouTube paths so previous operator downloads and
+    # Atlas history are not silently abandoned.
+    name = f"pvr-{source_id}.mkv" if source == "youtube" else f"pvr-{source}-{source_id}.mkv"
+    return pathlib.Path(root) / name
+
+
+def local_published(records, sports_root):
+    """A physically present registered library file blocks unattended upgrades."""
     root = pathlib.Path(sports_root).absolute()
     for item in records:
         if item.get("file_state") == "moved":
             continue
-        path = item.get("path")
-        if not isinstance(path, str):
+        value = item.get("path")
+        if not isinstance(value, str):
             continue
-        candidate = pathlib.Path(path)
-        if not candidate.is_absolute() or not candidate.is_relative_to(root):
+        path = pathlib.Path(value)
+        if not path.is_absolute() or not path.is_relative_to(root):
             continue
         try:
-            info = os.lstat(candidate)
+            st = os.lstat(path)
         except OSError:
             continue
-        if stat.S_ISREG(info.st_mode) and info.st_size > 0:
-            # A published file with stale inventory metadata still counts.
-            # Re-inventory/repair must be explicit, never silently publish
-            # a second file because the size or mtime has changed.
-            return path
+        if stat.S_ISREG(st.st_mode) and st.st_size:
+            return str(path)
     return None
 
 
 def planning_rows(database, *, sports_root="/data/sports",
                   incoming_root="/data/incoming", season=None,
                   min_age_hours=3, retry_after_hours=6, hostname=None,
-                  now=None):
-    """Return (rows, counts) for all potentially due PWR fixtures.
+                  max_candidates=3, now=None):
+    """Return (rows, counts) for due PWR episodes; no writes/downloads.
 
-    No filesystem or Atlas writes. Each row has one of:
-    file, download_then_file, or skip. Remote release formats are
-    intentionally *not* guessed from release metadata.
+    Rows may request 'file', 'download_then_file',
+    'download_candidates_then_file', or 'skip'.
     """
     hostname = host_name(hostname)
     sports_root = pathlib.Path(sports_root).expanduser()
@@ -85,8 +107,8 @@ def planning_rows(database, *, sports_root="/data/sports",
         raise ValueError("Library and incoming roots must be absolute")
     if not sports_root.is_dir() or not incoming_root.is_dir():
         raise ValueError("Library and incoming roots must already exist")
-    if min_age_hours < 0 or retry_after_hours < 0:
-        raise ValueError("Age and retry delay cannot be negative")
+    if min_age_hours < 0 or retry_after_hours < 0 or not 1 <= max_candidates <= 5:
+        raise ValueError("Invalid age, retry delay or candidate limit")
     now = aware(now) or dt.datetime.now(dt.timezone.utc)
     cutoff = now - dt.timedelta(hours=min_age_hours)
     query = {"series_id": SERIES_ID, "season": {"$gte": 2025}}
@@ -95,124 +117,131 @@ def planning_rows(database, *, sports_root="/data/sports",
             raise ValueError("PWR season must be 2025 or later")
         query["season"] = season
     episodes = list(database.episodes.find(query))
-    # Recent fixtures first by default, older-first for an explicit season
-    # backfill. The date ordering does not alter the canonical episode ID.
     episodes.sort(key=lambda ep: (
         aware(ep.get("scheduled")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
         ep.get("_id", "")), reverse=season is None)
-    episodes_due = [
+    due = [
         ep for ep in episodes
         if isinstance(ep.get("episode"), int)
         and (scheduled := aware(ep.get("scheduled"))) is not None
         and scheduled <= cutoff
         and ep.get("status") not in ("cancelled", "canceled")
     ]
-    ids = [ep["_id"] for ep in episodes_due]
+    ids = [ep["_id"] for ep in due]
     if not ids:
         return [], {"fixtures": len(episodes), "due": 0}
     releases = list(database.releases.find({
-        "episode_id": {"$in": ids}, "source": "youtube",
+        "episode_id": {"$in": ids}, "source": {"$in": list(SOURCES)},
     }))
-    releases_by_ep = {}
+    by_episode = {}
     for release in releases:
         if release_is_ready(release):
-            releases_by_ep.setdefault(release["episode_id"], []).append(release)
-    records = list(database.files.find({
-        "episode_id": {"$in": ids}, "host": hostname,
-    }))
-    records_by_ep = {}
+            by_episode.setdefault(release["episode_id"], []).append(release)
+    records = list(database.files.find({"episode_id": {"$in": ids}, "host": hostname}))
+    files_by_episode = {}
     for record in records:
-        records_by_ep.setdefault(record["episode_id"], []).append(record)
-    # Historical failures may indicate a temporary source block. Avoid
-    # hammering YouTube while leaving an explicit zero-delay override.
-    recent_jobs_by_source = set()
+        files_by_episode.setdefault(record["episode_id"], []).append(record)
+    recent_jobs = set()
     if retry_after_hours:
-        recent_jobs = database.jobs.find({
+        jobs = database.jobs.find({
             "type": "download", "host": hostname,
             "status": {"$in": ["failed", "running"]},
             "started_at": {"$gte": now - dt.timedelta(hours=retry_after_hours)},
         })
-        recent_jobs_by_source = {
-            j.get("source_uri") for j in recent_jobs if j.get("source_uri")
-        }
+        recent_jobs = {j.get("source_uri") for j in jobs if j.get("source_uri")}
+
     rows = []
-    for ep in episodes_due:
-        episode_id = ep["_id"]
+    for episode in due:
+        eid = episode["_id"]
         base = {
-            "episode_id": episode_id, "season": ep["season"],
-            "episode": ep["episode"], "scheduled": aware(ep["scheduled"]).isoformat(),
+            "episode_id": eid, "season": episode["season"],
+            "episode": episode["episode"],
+            "scheduled": aware(episode["scheduled"]).isoformat(),
         }
 
-        def skip(reason, **more):
-            rows.append(dict(base, action="skip", reason=reason, **more))
+        def skip(reason, **extra):
+            rows.append(dict(base, action="skip", reason=reason, **extra))
 
         try:
-            validate_nfo(ep)
-            target, nfo = canonical_paths(ep, sports_root)
+            validate_nfo(episode)
+            destination, nfo = canonical_paths(episode, sports_root)
         except (ValueError, KeyError) as exc:
             skip("invalid_canonical_metadata", detail=str(exc))
             continue
-        if os.path.lexists(target) or os.path.lexists(nfo):
-            skip("canonical_destination_exists", destination=str(target))
+        if os.path.lexists(destination) or os.path.lexists(nfo):
+            skip("canonical_destination_exists", destination=str(destination))
             continue
-        existing = records_by_ep.get(episode_id, [])
+        existing = files_by_episode.get(eid, [])
         published = local_published(existing, sports_root)
         if published:
             skip("already_published", path=published)
             continue
-        # If a previous publication has been recorded as moved but the
-        # destination is gone, do not silently redownload and hide data loss.
-        if any(r.get("file_state") == "moved" for r in existing):
+        if any(record.get("file_state") == "moved" for record in existing):
             skip("previous_publication_needs_reconciliation")
             continue
-        choice = select([evaluate_file(r) for r in existing])
-        if choice["preferred_path"]:
-            path = pathlib.Path(choice["preferred_path"])
-            if path.suffix.lower() != ".mkv":
-                skip("preferred_file_not_mkv", path=str(path))
+        choice = select([evaluate_file(record) for record in existing])
+        preferred = choice["preferred_path"]
+        if preferred and pathlib.Path(preferred).suffix.lower() != ".mkv":
+            skip("preferred_file_not_mkv", path=preferred)
+            continue
+
+        seen = {r.get("release_uri") for r in existing if r.get("release_uri")}
+        remote = []
+        invalid = False
+        for release in by_episode.get(eid, []):
+            uri = release.get("_id")
+            if validate_release(release) is None:
+                invalid = True
                 continue
-            rows.append(dict(base, action="file", source=str(path),
-                             preferred_file_id=choice["preferred_file_id"],
-                             destination=str(target)))
-            continue
-        # Exclude already downloaded source IDs regardless of ineligible or
-        # stale metadata: never automatically repeat the same download.
-        seen_releases = {r.get("release_uri") for r in existing if r.get("release_uri")}
-        candidate_releases = [r for r in releases_by_ep.get(episode_id, [])
-                              if r.get("_id") not in seen_releases]
-        if not candidate_releases:
-            skip("no_new_youtube_release")
-            continue
-        if len(candidate_releases) != 1:
-            skip("multiple_unranked_youtube_releases",
-                 release_uris=sorted(r["_id"] for r in candidate_releases))
-            continue
-        release = candidate_releases[0]
-        uri = release["_id"]
-        if not isinstance(uri, str) or not uri.startswith("youtube:"):
+            if (isinstance(release.get("duration"), (float, int)) and
+                    release["duration"] < 3600):
+                continue
+            if (isinstance((release.get("metadata") or {}).get("duration"), (float, int)) and
+                    release["metadata"]["duration"] < 3600):
+                continue
+            if uri not in seen:
+                remote.append(release)
+        # Invalid metadata must not lead to an unverified partial comparison.
+        if invalid:
             skip("invalid_release_uri")
             continue
-        video_id = uri.removeprefix("youtube:")
-        if (len(video_id) != 11 or
-                not all(c.isascii() and (c.isalnum() or c in "-_") for c in video_id)):
-            skip("invalid_release_uri")
+        remote.sort(key=lambda r: (SOURCE_ORDER[r["source"]], r["_id"]))
+        if remote and len(remote) + (1 if preferred else 0) > max_candidates:
+            skip("too_many_source_candidates", sources=[r["_id"] for r in remote],
+                 existing_preferred=preferred)
             continue
-        duration = release.get("duration")
-        if isinstance(duration, (float, int)) and duration < 3600:
-            skip("known_short_release", source_uri=uri, duration_seconds=duration)
+        if any(r["_id"] in recent_jobs for r in remote):
+            skip("recent_failed_or_running_download",
+                 sources=[r["_id"] for r in remote if r["_id"] in recent_jobs])
             continue
-        if uri in recent_jobs_by_source:
-            skip("recent_failed_or_running_download", source_uri=uri)
+        claimed = []
+        for release in remote:
+            incoming = incoming_path(incoming_root, release)
+            if os.path.lexists(incoming) or any(
+                    r.get("path") == str(incoming) for r in existing):
+                claimed.append(str(incoming))
+        if claimed:
+            skip("incoming_destination_exists_or_inventoried", paths=claimed)
             continue
-        incoming = incoming_root / INCOMING_NAME.format(id=video_id)
-        if os.path.lexists(incoming):
-            skip("incoming_destination_exists", source_uri=uri,
-                 destination=str(incoming))
+
+        if not remote:
+            if preferred:
+                rows.append(dict(base, action="file", source=preferred,
+                                 preferred_file_id=choice["preferred_file_id"],
+                                 destination=str(destination)))
+            else:
+                skip("no_new_supported_release")
             continue
-        if any(r.get("path") == str(incoming) for r in existing):
-            skip("incoming_inventory_conflict", source_uri=uri)
-            continue
-        rows.append(dict(base, action="download_then_file",
-                         source_uri=uri, incoming=str(incoming),
-                         destination=str(target)))
-    return rows, {"fixtures": len(episodes), "due": len(episodes_due)}
+        downloads = [{
+            "source_uri": release["_id"],
+            "incoming": str(incoming_path(incoming_root, release)),
+        } for release in remote]
+        if len(downloads) == 1 and not preferred:
+            rows.append(dict(base, action="download_then_file",
+                             **downloads[0], destination=str(destination)))
+        else:
+            rows.append(dict(base, action="download_candidates_then_file",
+                             downloads=downloads,
+                             existing_preferred=preferred,
+                             destination=str(destination)))
+    return rows, {"fixtures": len(episodes), "due": len(due)}
