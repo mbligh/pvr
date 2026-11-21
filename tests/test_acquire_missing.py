@@ -81,7 +81,9 @@ class AcquisitionTests(unittest.TestCase):
             sports_root=str(self.sports), incoming_root=str(self.incoming),
             now=NOW, stream=io.StringIO(), summary_stream=io.StringIO(),
             downloader=downloader or unexpected, filer=filer or unexpected,
-            **kwargs)
+            selector=lambda db, eid, host: {
+                "preferred_path": str(self.incoming / "pvr-A1BcD2EfG3H.mkv")
+            }, **kwargs)
 
     def test_preview_is_read_only(self):
         row, = self.rows()
@@ -145,17 +147,19 @@ class AcquisitionTests(unittest.TestCase):
 
     def test_local_ineligible_same_release_is_not_redownloaded(self):
         self.record(self.incoming / "short.mkv", seconds=1000)
-        self.assertEqual(self.rows()[0]["reason"], "no_new_youtube_release")
+        self.assertEqual(self.rows()[0]["reason"], "no_new_supported_release")
 
     def test_existing_incoming_destination_is_skipped(self):
         (self.incoming / "pvr-A1BcD2EfG3H.mkv").write_bytes(b"untracked")
         self.assertEqual(self.rows()[0]["reason"], "incoming_destination_exists")
 
-    def test_multiple_remote_releases_not_ranked_without_quality(self):
+    def test_multiple_remote_releases_are_downloaded_before_quality_comparison(self):
         self.releases.append(dict(RELEASE, _id="youtube:AbCdEfGhIjK"))
         row, = self.rows()
-        self.assertEqual(row["reason"], "multiple_unranked_youtube_releases")
-        self.assertEqual(len(row["release_uris"]), 2)
+        self.assertEqual(row["action"], "download_candidates_then_file")
+        self.assertEqual(len(row["downloads"]), 2)
+        self.assertEqual({x["source_uri"] for x in row["downloads"]},
+                         {URI, "youtube:AbCdEfGhIjK"})
 
     def test_short_release_and_cooldown_are_skipped(self):
         self.releases[0]["duration"] = 1200
@@ -188,6 +192,101 @@ class AcquisitionTests(unittest.TestCase):
         summary = self.run_cli(apply=True, downloader=download)
         self.assertEqual(summary["failed"], 1)
         self.assertEqual(summary["filed"], 0)
+
+    def test_bbc_and_youtube_remote_candidates_are_both_acquired(self):
+        bbc = dict(RELEASE, _id="bbc:m0012345", source="bbc")
+        self.releases.append(bbc)
+        row, = self.rows()
+        self.assertEqual(row["action"], "download_candidates_then_file")
+        self.assertEqual([x["source_uri"] for x in row["downloads"]],
+                         ["bbc:m0012345", URI])
+        calls = []
+        def download(db, uri, path, **kw):
+            self.assertTrue(kw["allow_existing_episode"])
+            self.assertTrue(kw["apply"])
+            calls.append(uri)
+            return {"status": "downloaded"}
+        selected = self.incoming / "pvr-bbc-m0012345.mkv"
+        def filer(db, path, **kw):
+            self.assertEqual(path, str(selected))
+            calls.append("file")
+            return {"status": "filed"}
+        report = CLI.run(
+            self.db, apply=True, hostname="slagg", sources=("bbc", "youtube"),
+            sports_root=str(self.sports), incoming_root=str(self.incoming),
+            now=NOW, downloader=download, filer=filer,
+            selector=lambda db, eid, host: {"preferred_path": str(selected)},
+            stream=io.StringIO(), summary_stream=io.StringIO())
+        self.assertEqual(calls, ["bbc:m0012345", URI, "file"])
+        self.assertEqual((report["downloaded"], report["filed"]), (2, 1))
+
+    def test_bbc_rugbypass_youtube_candidate_limit(self):
+        self.releases.append(dict(RELEASE, _id="bbc:m0012345", source="bbc"))
+        self.releases.append(dict(RELEASE, _id="rugbypass:1048390", source="rugbypass"))
+        row, = self.rows()
+        self.assertEqual(row["action"], "download_candidates_then_file")
+        self.assertEqual(len(row["downloads"]), 3)
+        capped, = self.rows(max_candidates=2)
+        self.assertEqual(capped["reason"], "too_many_source_candidates")
+        youtube_only, = self.rows(sources=("youtube",))
+        self.assertEqual(youtube_only["action"], "download_then_file")
+
+    def test_existing_eligible_local_file_still_compares_new_source(self):
+        local = self.incoming / "pvr-A1BcD2EfG3H.mkv"
+        self.record(local)
+        self.releases.append(dict(RELEASE, _id="bbc:m0012345", source="bbc"))
+        row, = self.rows()
+        self.assertEqual(row["action"], "download_candidates_then_file")
+        self.assertEqual(row["downloads"][0]["source_uri"], "bbc:m0012345")
+        self.assertEqual(row["existing_preferred"], str(local))
+
+    def test_partial_multisource_failure_never_files(self):
+        self.releases.append(dict(RELEASE, _id="bbc:m0012345", source="bbc"))
+        calls = []
+        def download(db, uri, path, **kwargs):
+            calls.append(uri)
+            if uri == URI:
+                raise RuntimeError("YouTube 403")
+            return {"status": "downloaded"}
+        summary = self.run_cli(apply=True, downloader=download)
+        self.assertEqual(summary["downloaded"], 1)
+        self.assertEqual(summary["filed"], 0)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(calls, ["bbc:m0012345", URI])
+
+    def test_unexpected_skip_in_batch_returns_failure(self):
+        def download(db, uri, path, **kwargs):
+            return {"status": "already_owned"}
+        summary = self.run_cli(apply=True, downloader=download)
+        self.assertEqual(summary["skipped_on_apply"], 1)
+        self.assertEqual(summary["failed"], 1)
+
+    def test_preview_refresh_is_read_only_and_calls_provider_discovery(self):
+        called = []
+        def refresh(db, **kwargs):
+            called.append(kwargs["apply"])
+            self.assertEqual(kwargs["sources"], ("bbc", "youtube", "rugbypass"))
+            return {"mode": "preview", "total_releases": 4}
+        summary = self.run_cli(refresh=True, refresh_fn=refresh)
+        self.assertEqual(called, [False])
+        self.assertEqual(summary["planned"], 1)
+        self.db.jobs.insert_one.assert_not_called()
+
+    def test_apply_refresh_occurs_before_download(self):
+        called = []
+        def refresh(db, **kwargs):
+            called.append("refresh")
+            self.assertTrue(kwargs["apply"])
+            return {"mode": "apply", "total_releases": 1}
+        def download(db, uri, path, **kwargs):
+            called.append("download")
+            return {"status": "downloaded"}
+        def file(db, source, **kwargs):
+            called.append("file")
+            return {"status": "filed"}
+        self.run_cli(apply=True, refresh=True, refresh_fn=refresh,
+                     downloader=download, filer=file)
+        self.assertEqual(called, ["refresh", "download", "file"])
 
     def test_worker_lock_refuses_overlap(self):
         with CLI.acquire_lock(self.incoming):
