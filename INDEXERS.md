@@ -110,3 +110,38 @@ F1 episodes, use --bundle and the preview-first import_teletz consumer.
 It maintains pvr.source_observations containing full comments and
 content hashes to detect edits. It does not change watch-teletz email cron.
 See REDDIT_TELETZ.md for commands and limitations.
+
+
+## Combined source catalogue refresh and matching
+
+The new one-shot `refresh_releases` CLI fetches BBC iPlayer PWR brand
+episodes, metadata-enriched YouTube PWR streams, and RugbyPass featured
+full-match replays. It validates all source records before writing any
+of the current discovery batch to Atlas, reuses the `index_releases`
+importer, then runs the existing conservative PWR fixture matcher.
+
+```sh
+# Discovery-only preview (queries providers; does not write Atlas):
+python3 refresh_releases
+
+# Refresh and match unambiguous releases:
+python3 refresh_releases --apply
+
+# Refresh just YouTube with 100 videos:
+python3 refresh_releases --source youtube --youtube-limit 100 --apply
+
+# Query RugbyPass using the existing authenticated local script:
+python3 refresh_releases --source rugbypass --rugbypass-pages 5 --apply
+```
+
+Optional flags: `--source` (repeatable for bbc/youtube/rugbypass),
+`--bbc-pages`, `--youtube-limit`, `--rugbypass-pages`,
+`--rugbypass` (default `~/tools/video/rugbypass`) and `--yt-dlp`.
+
+Preview fetches current source listings but **does not match new releases
+against Atlas until --apply**. Existing links are never overwritten by
+matching. Unlike a full historical archive, the RugbyPass listing only
+covers currently featured/accessible sections and iPlayer only returns
+currently listed episodes. The worker `acquire_missing --refresh` can
+invoke this exact procedure before scheduling its bounded downloads.
+See [ACQUISITION.md](ACQUISITION.md).
