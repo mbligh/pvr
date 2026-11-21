@@ -41,7 +41,7 @@ class RefreshTests(unittest.TestCase):
 
     def test_source_mismatch_aborts_before_any_writes(self):
         self.releases["bbc"][0]["source"] = "youtube"
-        with self.assertRaisesRegex(ValueError, "mismatched source"):
+        with self.assertRaisesRegex(ValueError, "Release URI does not match source"):
             CLI.run(self.db, apply=True, discover=self.discover,
                     output=io.StringIO())
         self.db.releases.bulk_write.assert_not_called()
