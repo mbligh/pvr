@@ -128,6 +128,52 @@ def build_catalogue(db, config, now, refresh):
         if fixture["nfo"]:
             record["nfo"] = output_files[fixture["nfo"]].decode("utf-8")
         episodes.append(record)
+    # ICS feeds for Six Nations and Premiership can lack reliable round/episode
+    # numbers. They still represent real scheduled fixtures and belong in Atlas.
+    # The published manifest above remains authoritative where numbering exists.
+    known_ids = {ep["_id"] for ep in episodes}
+    for entry in config["calendars"]:
+        slug = entry["slug"]
+        calendar = Calendar.from_ical(snapshots[slug].encode("utf-8"))
+        for event in calendar.walk("VEVENT"):
+            uid = str(event.get("UID", "")).strip()
+            if not uid:
+                continue
+            fixture_id = slug + ":" + uid
+            if fixture_id in known_ids:
+                continue
+            start = calendar_filter.start_time(event, zone)
+            if start is None:
+                continue
+            title = str(event.get("SUMMARY", "")).strip()
+            # These snapshots are already spoiler-filtered, but avoid merging
+            # other non-fixture events into the episode catalogue.
+            teams = plex_nfo.VERSUS.split(title, maxsplit=1)
+            if len(teams) != 2:
+                continue
+            timed = isinstance(event.decoded("DTSTART"), dt.datetime)
+            season = (start.astimezone(plex_nfo.UK).year
+                      if entry.get("type") == "world-rugby"
+                      else plex_nfo.season_year(start))
+            episode = {
+                "_id": fixture_id,
+                "series_id": slug,
+                "season": season,
+                "episode": None,
+                "title": title,
+                "scheduled": start.astimezone(UTC) if timed else None,
+                "scheduled_date": start.date().isoformat() if not timed else None,
+                "home": teams[0].strip(),
+                "away": teams[1].strip(),
+                "round": None,
+                "venue": str(event.get("LOCATION", "")).strip(),
+                "showtitle": entry.get("nfo_showtitle", entry["name"]),
+                "nfo_path": None,
+                "external_ids": {},
+                "metadata_provider": "calendar/rugby",
+            }
+            episodes.append(episode)
+            known_ids.add(fixture_id)
     if not episodes:
         raise ValueError("No rugby episode metadata built")
     return snapshots, manifest, episodes
