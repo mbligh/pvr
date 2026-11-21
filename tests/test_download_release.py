@@ -212,6 +212,32 @@ class AtlasDownloaderTests(unittest.TestCase):
         self.assertEqual(file_upsert.kwargs["upsert"], True)
         self.assertTrue(self.destination.exists())
 
+    def test_bbc_and_rugbypass_adapter_dispatch_and_provenance(self):
+        for uri, source, option, kw_name in [
+                ("bbc:m0034hxp", "bbc", "bbc_downloader", "get_iplayer"),
+                ("rugbypass:1048390", "rugbypass", "rugbypass_downloader",
+                 "rugbypass")]:
+            with self.subTest(source=source):
+                self.destination.unlink(missing_ok=True)
+                self.db.releases.find_one.return_value = dict(
+                    RELEASE, _id=uri, source=source,
+                    id=uri.split(":", 1)[1])
+                observed = []
+                def adapter(received_uri, destination, **kwargs):
+                    self.assertEqual(received_uri, uri)
+                    self.assertIn(kw_name, kwargs)
+                    pathlib.Path(destination).write_bytes(b"full video")
+                    observed.append(kwargs)
+                    return MEDIA
+                result = self.run_cli(apply=True, **{option: adapter})
+                self.assertEqual(result["status"], "downloaded")
+                self.assertEqual(result["adapter"], source)
+                self.assertEqual(observed[0]["ffprobe"], "ffprobe")
+                self.assertEqual(self.db.jobs.insert_one.call_args.args[0]["adapter"],
+                                 source)
+                self.assertEqual(self.db.files.update_one.call_args.args[1]
+                                 ["$set"]["release_uri"], uri)
+
     def test_failed_download_creates_failed_job_but_no_file(self):
         def fail(uri, destination, **kwargs):
             raise RuntimeError("source unavailable")
