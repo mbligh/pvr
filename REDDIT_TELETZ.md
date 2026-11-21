@@ -136,3 +136,12 @@ command and `downloaders/transfernow.py` is its importable implementation.
 The downloader supports `--list`, `--check`, resumable transfers with curl,
 and complete-file size verification. It remains separate from release
 discovery and ranking; see [TRANSFERNOW.md](TRANSFERNOW.md).
+
+## Downloading a selected F1 release manually
+
+After ./select_f1_releases identifies a source, use ./transfernow --check URL
+to inspect link availability without downloading or changing Atlas.
+./download_release URI --destination /absolute/path.mkv previews the
+Atlas-matched source and --apply explicitly downloads that one recording.
+It validates the media and adds a job and file record. It never substitutes
+a fallback release automatically. See TRANSFERNOW.md for details.

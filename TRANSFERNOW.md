@@ -72,3 +72,42 @@ should be used first to verify storage reachability on the target system.
 ```sh
 python3 -m unittest discover -s tests -p 'test_transfernow.py' -v
 ```
+
+## Using a selected PVR release
+
+The standalone core accepts a TransferNow sharing URL. PVR's download_release
+command instead accepts a matched reddit-teletz: URI already stored in Atlas.
+
+Preview without accessing TransferNow or writing to MongoDB:
+
+    ./download_release reddit-teletz:20261121rg0NQzAH \
+      --destination /data/incoming/pvr-20261121rg0NQzAH.mkv
+
+Check the source without downloading:
+
+    ./transfernow --check https://www.transfernow.net/dl/20261121rg0NQzAH
+
+Explicitly acquire that release:
+
+    ./download_release reddit-teletz:20261121rg0NQzAH \
+      --destination /data/incoming/pvr-20261121rg0NQzAH.mkv --apply
+
+The adapter validates that URI and stored URL agree, accepts exactly one
+supported video file in the transfer, checks the signed storage URL,
+downloads to a temporary staging directory on the destination filesystem,
+remuxes non-MKV video losslessly with ffmpeg, and validates with ffprobe.
+The final .mkv is atomically hard-linked into place without replacing an
+existing file. Success and failure are recorded in pvr.jobs; successful
+recordings are registered in pvr.files.
+
+Requirements: system Python, curl, ffmpeg, ffprobe and pymongo (already
+required by the PVR Atlas tools). Downloads require explicit --apply.
+
+The standalone ./transfernow preserves .part files for resumable transfers.
+The PVR adapter uses temporary staging and therefore currently discards
+partials between PVR job attempts. That needs improving before scheduling
+unattended multi-gigabyte downloads.
+
+Automatic release fallback, availability recording in MongoDB, bulk selection
+and scheduled downloads are not yet implemented. This command downloads
+exactly the source URI specified and never silently chooses another one.

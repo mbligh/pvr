@@ -278,3 +278,16 @@ CLI are preserved. The original offline tests were moved to
 `tests/test_transfernow.py` and run in the PVR CI suite. TransferNow remains
 separate from discovery and episode selection; the PVR-managed job/recording
 adapter must explicitly call the importable module. See TRANSFERNOW.md.
+
+## PVR-managed TransferNow downloads (2026-11-21)
+
+The preview-first download_release command now accepts a matched
+reddit-teletz: URI for a canonical Formula 1 episode. The adapter validates
+the Atlas release and URL, downloads exactly one video with the migrated
+TransferNow implementation, remuxes if necessary, probes with ffprobe,
+publishes with atomic no-clobber linking and registers Atlas file/job state.
+No download occurs without --apply. Source fallback, availability recording,
+and scheduling remain separate future work. The PVR adapter currently
+discards incomplete temporary staging between attempts, unlike the
+standalone ./transfernow CLI which supports persistent .part resumption.
+See TRANSFERNOW.md.
