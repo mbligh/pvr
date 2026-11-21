@@ -18,7 +18,7 @@ jobs:
         run: |
           python - <<'PY'
           import pathlib
-          for path in [pathlib.Path("import_rugby"), pathlib.Path("index_releases"), pathlib.Path("match_releases"), *pathlib.Path("indexers").glob("*"), *pathlib.Path("matchers").glob("*.py"), *pathlib.Path("calendar_legacy").glob("*.py")]:
+          for path in [pathlib.Path("import_rugby"), pathlib.Path("import_pwr_history"), pathlib.Path("index_releases"), pathlib.Path("match_releases"), *pathlib.Path("indexers").glob("*"), *pathlib.Path("matchers").glob("*.py"), *pathlib.Path("calendar_legacy").glob("*.py")]:
               compile(path.read_text(), str(path), "exec")
           PY
       - name: Test rugby adapters
