@@ -44,7 +44,12 @@ To quickly enumerate titles/IDs without per-video requests, use:
     python3 indexers/youtube --flat --search "Lightning"
 
 Entries explicitly marked live, upcoming or still being processed are
-excluded. A flat-playlist entry with missing status is included but is
+excluded. During full metadata extraction, scheduled upcoming YouTube
+livestreams can make `yt-dlp` exit nonzero even with `--ignore-errors`.
+The indexer skips **only** known `This live event will begin in ...` errors
+while retaining successfully extracted recordings. Other errors remain fatal
+so a broken source does not silently result in an incomplete import.
+A flat-playlist entry with missing status is included but is
 *not asserted to be playable*. After refreshing the PVR checkout, you can
 backfill release dates without changing other release state:
 
