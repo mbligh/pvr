@@ -1,15 +1,14 @@
 # Downloading a matched PWR release
 
-`download_release` is the first PVR acquisition CLI. It downloads **one
-existing Atlas-matched YouTube release** to an **explicit absolute .mkv
-destination**, verifies the result with `ffprobe`, and stores the file
-inventory entry and download job in Atlas. Preview is the default; **only
-`--apply` makes changes**.
+`download_release` downloads **one existing Atlas-matched YouTube,
+BBC iPlayer, or RugbyPass release** to an **explicit absolute .mkv
+destination**, verifies it with `ffprobe`, and stores its file inventory
+and job in Atlas. It also retains the existing Formula 1 TransferNow
+adapter. Preview is the default; **only `--apply` makes changes**.
 
-It does not automatically select sources, file an episode in its final library
-location, generate new NFO sidecars, schedule batches, or delete recordings.
-The first version is deliberately single-release so quality and publishing
-behavior can be validated before automating downloads.
+This is the **single-release adapter**, separate from `acquire_missing`
+which performs multi-provider selection and canonical filing. This command
+does not generate NFOs, overwrite published media, or clean up alternatives.
 
 ## Prerequisites
 
@@ -55,6 +54,45 @@ warnings. This **may not** fix every 403: some formats/clients require
 video-specific PO tokens even with an up-to-date yt-dlp. The adapter
 preserves and reports the yt-dlp error rather than trying insecure or
 unverified client workarounds automatically.
+
+## BBC and RugbyPass adapters
+
+The adapters use an exact source URI and destination just like YouTube.
+BBC accepts `bbc:m0034hxp` (8-character iPlayer PID), and RugbyPass
+accepts `rugbypass:1048390` (numeric VOD ID). `--get-iplayer`,
+`--rugbypass`, and `--ffmpeg` override executable paths. BBC invokes
+`get_iplayer --pid` with an isolated temporary profile to avoid the
+operator's existing postprocessing hooks, history and preferences; quality
+is requested as `fhd,hd`. RugbyPass invokes the existing authenticated
+`~/tools/video/rugbypass` with a temporary `--output` path and
+`--no-fixture-nfo` to avoid legacy fixture filing.
+
+Both adapters stage an MP4 in a temporary directory, remux into MKV using
+`ffmpeg -c copy` (no transcoding), verify with `ffprobe`, then publish
+using an atomic no-clobber hard link. Temporary output is removed whether
+the download succeeds or fails. Errors from these third-party tools are
+summarized without exposing private token-bearing diagnostic URLs.
+
+BBC's iPlayer catalogue exposes only currently available episodes;
+RugbyPass relies on an existing private auth profile. The source-specific
+downloader can still fail for rights restrictions, expired auth, or media
+format issues; the existing failed job semantics apply.
+
+Example previews (no data transfer):
+
+```sh
+python3 download_release bbc:m0034hxp \
+  --destination /data/incoming/pvr-bbc-m0034hxp.mkv
+python3 download_release rugbypass:1048390 \
+  --destination /data/incoming/pvr-rugbypass-1048390.mkv
+```
+
+These particular example IDs are not necessarily *new missing PWR*
+releases: the BBC example is already linked to a published episode,
+and the RugbyPass example is from another rugby competition, so the PWR
+download command will deliberately reject it until it is linked to a
+supported episode. Multi-source PWR automation is described in
+[ACQUISITION.md](ACQUISITION.md).
 
 ## Single-match trial
 
