@@ -253,10 +253,16 @@ class AtlasDownloaderTests(unittest.TestCase):
                                   self.destination, hostname="slagg")
                 self.assertEqual(result["status"], "ready")
                 self.assertEqual(result["series_id"], series)
+                self.db.releases.find_one.return_value = dict(
+                    RELEASE, _id="bbc:m0034hxp", source="bbc",
+                    id="m0034hxp", episode_id=f"{series}:fixture")
                 with self.assertRaisesRegex(ValueError, "Only matched"):
                     CLI.plan(self.db, "bbc:m0034hxp",
                              self.destination, hostname="slagg")
         # Unknown series cannot be used as a way around the PWR restriction.
+        self.db.releases.find_one.return_value = dict(
+            RELEASE, _id="rugbypass:1051364", source="rugbypass",
+            id="1051364", episode_id="rugby-nations:fixture")
         self.db.episodes.find_one.return_value["series_id"] = "not-approved"
         with self.assertRaisesRegex(ValueError, "Only matched"):
             CLI.plan(self.db, "rugbypass:1051364",
