@@ -134,3 +134,27 @@ no download has been performed on slagg by these GitHub changes.
 6. Add the web UI once the stored state and CLIs are reliable.
 
 Keep this document updated as the design and implementation evolve.
+
+
+## Formula 1 calendar data prototype (2026-11-21)
+
+The standalone executable f1_data fetches the official season event listing from
+/v1/editorial-eventlisting/events, then fetches each event's complete details
+from /v1/event-tracker/meeting/{meetingKey}. The script discovers the API key
+from the public Formula 1 season HTML (NEXT_PUBLIC_GLOBAL_BROADCAST_APIKEY),
+with optional F1_API_KEY / --api-key override. It requires only Python 3.
+
+Usage: ./f1_data --year 2026 > f1-2026.json, or
+./f1_data --year 2026 --meeting 1279 | jq '.meetings[0].sessions'.
+--limit 2 makes short exploratory runs. Diagnostics are on stderr, JSON on
+stdout or at --output PATH. The output preserves listing-wide metadata and
+for each meeting the original listing event, the session schedule from
+meetingContext.timetables, and the entire returned event-tracker detail.
+
+This is a data discovery/test tool, not yet an Atlas metadata importer or
+calendar publisher. The event-listing endpoint currently returned the 2026
+season with 25 meetings (including testing); it is not verified to support
+arbitrary historical seasons, so the script rejects a mismatched season.
+The source uses a website-exposed key and may change. Unit tests run offline
+using synthetic responses; a live full-season run was not available in the
+development environment.
