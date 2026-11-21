@@ -228,3 +228,19 @@ links are rechecked on each scan, so edits can add new releases. A dedicated
 Sky source is preferred over MULTi Sky, then F1TV, but actual download
 selection is not yet implemented. No live Atlas writes or cron changes
 are part of this code change. See REDDIT_TELETZ.md.
+
+
+## Formula 1 Reddit release selection preview (2026-11-21)
+
+The standalone read-only select_f1_releases CLI queries Atlas pvr.episodes and
+pvr.releases, groups matched reddit-teletz TransferNow options by Formula 1
+episode, and prints all ranked alternatives with the selected URI and reasons.
+The JSON mode provides the same structured preview for tooling. Selection
+prefers dedicated Sky over MULTi with English Sky (even at 4K), then F1TV,
+then other/unknown. Within each commentary tier it prefers declared resolution
+and newer publication date, with stable deterministic tie-breaking.
+Unavailable/malformed links remain visible but cannot be selected, and older
+links are warned about rather than asserted to be expired. This changes no
+Atlas records and does not download, check links or write media files. The
+existing tools/transfernow/transfernow downloader is a future adapter
+candidate; it remains in mbligh/tools for now. See REDDIT_TELETZ.md.

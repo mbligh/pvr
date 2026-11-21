@@ -94,3 +94,45 @@ To use the existing common importer *without* raw observations or auto-matching:
 - Cron is not changed automatically. Start with manual --match/--apply
   checks; once verified, schedule a separate PVR indexer job (including
   Thursday/Monday) while retaining watch-teletz email notifications.
+
+
+## Preview F1 release selection
+
+After importing the Reddit releases, inspect the complete ranked alternatives
+for each F1 episode without modifying the database or downloading anything:
+
+    ./select_f1_releases --year 2026
+
+Filter by championship round or one numbered episode:
+
+    ./select_f1_releases --year 2026 --round 21
+    ./select_f1_releases --year 2026 --episode 216
+
+By default, only episodes with discovered Reddit releases are listed. Include
+episodes without releases with --all; emit structured JSON for downstream
+tools or custom inspection with --json:
+
+    ./select_f1_releases --year 2026 --all --json > f1-selection-preview.json
+
+The selector reads pvr.episodes and pvr.releases. It only considers source
+reddit-teletz and episodes explicitly associated by episode_id. Ranking is:
+
+1. Dedicated Sky commentary (even 1080p beats MULTi 4K).
+2. MULTi with English Sky audio.
+3. F1TV commentary.
+4. Dutch or any other/unknown commentary.
+
+Within each commentary class, prefer higher declared resolution, then newer
+posted date, then stable URI. The selector recomputes its preference rather
+than blindly trusting the indexer's preference_rank field. A release explicitly
+marked available=false or without a valid short TransferNow HTTPS URL cannot
+be selected, but remains listed for diagnosis. Release URLs and reported
+quality are not probed or verified. A posted date over five days ago triggers
+an advisory *unverified* warning, not an expired declaration or exclusion.
+Neither the score nor the winner is written back to MongoDB.
+
+The existing mbligh/tools/transfernow/transfernow Python CLI was inspected.
+It already supports --list and --check (metadata/header probes), as well as
+resumable downloads with curl. It has *not* been moved or wired into PVR yet;
+the next phase can adapt it to accept a selected source URI and use PVR jobs,
+file inventory and download state without duplicating its logic.

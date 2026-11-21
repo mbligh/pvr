@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Preview all matched Reddit/teletz F1 release options by episode.
+
+No source checks, downloads, files, jobs, or Atlas writes.
+
+Examples:
+    ./select_f1_releases --year 2026
+    ./select_f1_releases --round 21
+    ./select_f1_releases --episode 216
+    ./select_f1_releases --all --json
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import sys
+
+from selection.f1_releases import summarize
+
+
+def describe(candidate):
+    parts = [candidate["preference_reason"]]
+    parts.append(str(candidate["height"]) + "p" if candidate["height"] else "resolution unknown")
+    if candidate["audio_variant"]:
+        parts.append(str(candidate["audio_variant"]))
+    if candidate["uploader"]:
+        parts.append("uploader=" + str(candidate["uploader"]))
+    if candidate["delivery"]:
+        parts.append(str(candidate["delivery"]))
+    return " | ".join(parts)
+
+
+def render(report, *, stream=sys.stdout):
+    for group in report["episodes"]:
+        if group["episode"] is None:
+            label = f"S{group['season']} (unnumbered)"
+        else:
+            label = f"S{group['season']}E{group['episode']:03d}"
+        print(f"{label}  {group['title']}  ({group['episode_id']})", file=stream)
+        if not group["candidates"]:
+            print("    No Reddit releases", file=stream)
+        for index, option in enumerate(group["candidates"], 1):
+            status = "SELECT" if option["selected"] else (
+                "SKIP" if not option["selectable"] else "other")
+            print(f"  {index:2d}. [{status}] {describe(option)}", file=stream)
+            print(f"      {option['uri']}  {option['url'] or '(no URL)'}",
+                  file=stream)
+            posted = f"; posted {option['published']}" if option["published"] else ""
+            print(f"      {option['preference_reason']}{posted}; {option['warning']}",
+                  file=stream)
+        print(file=stream)
+    s = report["summary"]
+    print(f"Summary: {s['episodes_with_releases']}/{s['episodes']} episodes with "
+          f"releases, {s['release_options']} options, "
+          f"{s['episodes_with_selection']} selected, "
+          f"{s['excluded_options']} excluded, "
+          f"{s['episodes_without_releases']} without releases.",
+          file=stream)
+    print("This is a ranking preview; TransferNow availability and actual media "
+          "quality have NOT been verified.", file=stream)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", type=int,
+                        default=dt.datetime.now(dt.timezone.utc).year,
+                        help="F1 season (default: current UTC year)")
+    parser.add_argument("--round", type=int, dest="round_no",
+                        help="Show one championship round")
+    parser.add_argument("--episode", type=int, dest="episode_number",
+                        help="Show one numeric episode, e.g. 216")
+    parser.add_argument("--all", action="store_true",
+                        help="Show episodes without releases as well")
+    parser.add_argument("--json", action="store_true",
+                        help="Emit full structured selection preview JSON")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    if args.year < 1950 or args.year > 2100:
+        parser.error("--year must be between 1950 and 2100")
+    if args.round_no is not None and args.round_no < 1:
+        parser.error("--round must be positive")
+    if args.episode_number is not None and args.episode_number < 1:
+        parser.error("--episode must be positive")
+
+    mongo_uri = os.environ.get("MONGODB_URI")
+    if not mongo_uri:
+        credentials = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            mongo_uri = credentials.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI from {credentials}: {exc}")
+    if not mongo_uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(mongo_uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            result = summarize(client[args.database], year=args.year,
+                               round_no=args.round_no,
+                               episode_number=args.episode_number,
+                               include_missing=args.all)
+        if args.json:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            render(result)
+        return 0
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(f"F1 release selector: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
