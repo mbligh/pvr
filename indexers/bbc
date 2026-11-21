@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""BBC iPlayer episode indexer: stable, machine-readable PVR release records."""
+import argparse
+import datetime as dt
+import json
+import re
+import sys
+import urllib.parse
+import urllib.request
+
+IBL = "https://ibl.api.bbci.co.uk/ibl/v1"
+DEFAULT_BRAND = "m001mnb5"  # Premiership Women's Rugby
+PID = re.compile(r"^[a-z][a-z0-9]{7}$")
+
+
+def read_json(url):
+    request = urllib.request.Request(url, headers={
+        "User-Agent": "mbligh-pvr-indexer/0.1",
+        "Accept": "application/json",
+    })
+    with urllib.request.urlopen(request, timeout=45) as response:
+        return json.load(response)
+
+
+def parse_release_date(value):
+    if not isinstance(value, str):
+        return None
+    for fmt in ("%d %b %Y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(value, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def convert_episode(episode, brand):
+    if not isinstance(episode, dict):
+        return None
+    pid = episode.get("id")
+    if not isinstance(pid, str) or not PID.fullmatch(pid):
+        return None
+    # PWR usually has the match-up in the subtitle, not the brand title.
+    title = episode.get("subtitle") or episode.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    record = {
+        "source": "bbc",
+        "id": pid,
+        "uri": "bbc:" + pid,
+        "title": title.strip(),
+        "type": "episode",
+    }
+    if parsed := parse_release_date(episode.get("release_date")):
+        record["published"] = parsed
+    metadata = {"brand": brand}
+    for field in ("title", "subtitle", "tleo_id", "release_date"):
+        if isinstance(episode.get(field), str):
+            metadata[field] = episode[field]
+    record["metadata"] = metadata
+    return record
+
+
+def discover(brand, *, search=None, max_pages=20, fetch=read_json):
+    if not PID.fullmatch(brand):
+        raise ValueError("Invalid BBC programme brand PID")
+    found = {}
+    term = search.casefold() if search else ""
+    for page in range(1, max_pages + 1):
+        query = urllib.parse.urlencode({"per_page": 200, "page": page})
+        response = fetch(f"{IBL}/programmes/{brand}/episodes?{query}")
+        listing = response.get("programme_episodes")
+        if not isinstance(listing, dict) or not isinstance(listing.get("elements"), list):
+            raise ValueError("BBC iPlayer returned an unexpected programme_episodes response")
+        elements = listing["elements"]
+        for episode in elements:
+            if episode.get("type") not in ("episode", "episode_large"):
+                continue
+            record = convert_episode(episode, brand)
+            if record and (not term or term in record["title"].casefold()
+                           or term in record["metadata"].get("title", "").casefold()):
+                found[record["id"]] = record
+        count = listing.get("count")
+        if not elements or (isinstance(count, int) and page * 200 >= count):
+            break
+    return sorted(found.values(), key=lambda item: (item.get("published", ""), item["id"]),
+                  reverse=True)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--brand", default=DEFAULT_BRAND, help="BBC programme/brand PID")
+    parser.add_argument("--search", help="Case-insensitive episode title substring")
+    parser.add_argument("--pages", type=int, default=20, help="Maximum result pages, 1-20")
+    args = parser.parse_args(argv)
+    if not 1 <= args.pages <= 20:
+        parser.error("--pages must be 1-20")
+    try:
+        releases = discover(args.brand, search=args.search, max_pages=args.pages)
+    except (ValueError, OSError, KeyError) as exc:
+        print(f"BBC indexer: {exc}", file=sys.stderr)
+        return 1
+    for record in releases:
+        print(json.dumps(record, ensure_ascii=False))
+    print(f"BBC: {len(releases)} releases for brand {args.brand}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
