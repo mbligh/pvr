@@ -58,7 +58,10 @@ The GitHub Actions workflow runs offline regression tests and a snapshot-bootstr
 
 Independently executable `indexers/bbc` (BBC iPlayer iBL brand, default PWR)
 and `indexers/youtube` (yt-dlp /streams listing, default PWR) emit a common
-JSONL release format. The existing `mbligh/tools/video/rugbypass` now also
+JSONL release format. YouTube uses per-video, metadata-only extraction by
+default to recover archived livestream dates, preferring original release/broadcast
+timestamps to upload dates and recording the date's source in metadata; a
+`--flat` option provides fast listing without date enrichment. The existing `mbligh/tools/video/rugbypass` now also
 provides `--list-videos --jsonl` / `--list-games --jsonl`, retaining its
 existing human-readable and download functions. `index_releases` validates
 and upserts those release records into Atlas `pvr.releases` by stable source
