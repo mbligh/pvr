@@ -105,6 +105,25 @@ matching is currently scoped to PWR Season_2025 onward; other competitions
 will get their own identity adapters. No user filesystem scan has yet been run
 and no Atlas file records have been written by this change.
 
+## Initial verified downloader adapter
+
+`download_release` is a preview-first, single-release YouTube downloader
+accepting an existing Atlas source URI and explicit absolute output path.
+It validates the release-to-episode link, supported PWR season, and existing
+`pvr.files` records before transfer; already-owned episodes are skipped by
+default. The `downloaders/youtube.py` adapter downloads into a same-directory
+temporary staging area through yt-dlp/ffmpeg, verifies the recording with
+ffprobe, and publishes with atomic no-clobber hard-link semantics. On
+`--apply`, `pvr.jobs` tracks execution and `pvr.files` stores the newly
+verified recording (host/path, episode, source URI, size and technical
+metadata). A database error after publication deliberately leaves the video
+on disk for inventory recovery. See [DOWNLOADING.md](DOWNLOADING.md).
+
+No automatic source choice, downloader batch scheduling, canonical filing/NFO
+publication, or quality upgrade policy is implemented yet. The initial
+single-match trial uses an existing 2025/26 YouTube replay linked to S2025E102;
+no download has been performed on slagg by these GitHub changes.
+
 ## Initial implementation and migration
 
 1. Define/version the canonical episode, release, and adapter JSON schemas; implement MongoDB collections/indexes and a small CLI.
