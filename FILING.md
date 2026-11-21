@@ -5,11 +5,40 @@ the series directory with the canonical season/episode filename and the exact
 score-free NFO XML already stored in `pvr.episodes`. It is **preview-only**
 unless `--apply` is supplied.
 
-Supported series: Rugby Womens PWR (season 2025 onward), Rugby Mens Intl,
-Rugby Womens Intl, Rugby Nations Championships (2026 onward), and Formula 1.
+The filer recognizes these **exact, case-sensitive existing library
+directory names**. The entry names in Atlas are the stable series IDs;
+an entry in this table does not mean its fixtures have been imported or
+numbered yet.
+
+| Atlas series ID | Canonical library directory |
+|---|---|
+| `rugby-mens-6n` | `Rugby_Mens_6N` |
+| `rugby-mens-intl` | `Rugby_Mens_Intl` |
+| `rugby-mens-lions` | `Rugby_Mens_Lions` |
+| `rugby-mens-world-cup` | `Rugby_Mens_World_Cup` |
+| `rugby-nations` | `Rugby_Nations` |
+| `rugby-womens-6n` | `Rugby_Womens_6N` |
+| `rugby-womens-intl` | `Rugby_Womens_Intl` |
+| `rugby-womens-lions` | `Rugby_Womens_Lions` |
+| `rugby-womens-pwr` | `Rugby_Womens_PWR` |
+| `rugby-womens-world-cup` | `Rugby_Womens_World_Cup` |
+| `rugby-womens-wxv` | `Rugby_Womens_WXV` |
+
+The Formula 1 series remains at `Formula_1`, outside the rugby registry.
+Every source needs a numbered Atlas episode, an NFO whose showtitle matches
+the series, and a canonical `nfo_path` inside its registered directory.
+The filer never infers, renames or creates fixtures and will reject a path
+that disagrees with the registered series.
+
+**Existing WXV metadata:** imported WXV events are currently stored as
+`rugby-womens-intl`, with NFO paths beneath `Rugby_Womens_Intl`.
+Those records are unchanged. Routing new WXV media to
+`Rugby_Womens_WXV` requires a separate fixture/NFO migration before
+automatic matching/acquisition can file it. No existing media files were moved.
+
 This command is separate from `download_release`; the quality-selector
-and preview-first `acquire_missing` worker reuse it. Existing canonical
-NFO validation and no-overwrite checks apply to all supported series.
+and preview-first `acquire_missing` worker reuse it. Canonical NFO
+validation and no-overwrite checks apply to every registered series.
 
 ## Trial on slagg
 
