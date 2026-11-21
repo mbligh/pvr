@@ -229,7 +229,9 @@ class AtlasDownloaderTests(unittest.TestCase):
                     pathlib.Path(destination).write_bytes(b"full video")
                     observed.append(kwargs)
                     return MEDIA
-                result = self.run_cli(apply=True, **{option: adapter})
+                result = CLI.run(
+                    self.db, uri, self.destination, hostname="slagg",
+                    output=io.StringIO(), apply=True, **{option: adapter})
                 self.assertEqual(result["status"], "downloaded")
                 self.assertEqual(result["adapter"], source)
                 self.assertEqual(observed[0]["ffprobe"], "ffprobe")
