@@ -116,7 +116,10 @@ class TransferNowPvrAdapterTests(unittest.TestCase):
             adapter.download(
                 URI, URL, self.dest, inspect_link=self.check,
                 download_file=self.grab, probe=reject)
-        self.assertEqual(list(self.folder.iterdir()), [])
+        stage = adapter.staging_path(URI, self.dest)
+        self.assertTrue(stage.is_dir())
+        self.assertTrue((stage / "incoming.mkv").is_file())
+        self.assertFalse(self.dest.exists())
         def collide(url, entry, path):
             self.grab(url, entry, path)
             self.dest.write_bytes(b"some other download")
@@ -125,7 +128,131 @@ class TransferNowPvrAdapterTests(unittest.TestCase):
                 URI, URL, self.dest, inspect_link=self.check,
                 download_file=collide, probe=self.video)
         self.assertEqual(self.dest.read_bytes(), b"some other download")
+        self.assertTrue(stage.is_dir())  # no cleanup on failed publication
+
+
+    def test_real_core_resume_after_interruption_and_clean_on_success(self):
+        """Simulate two curl invocations; second retains first run's bytes."""
+        from unittest.mock import patch
+        from downloaders import transfernow
+
+        info = verified_info()
+        info["entry"]["size"] = 5
+        stages = []
+
+        def curl(command, **kwargs):
+            self.assertEqual(command[command.index("--continue-at") + 1], "-")
+            partial = Path(command[command.index("--output") + 1])
+            stages.append(partial)
+            if len(stages) == 1:
+                partial.write_bytes(b"me")
+                return subprocess.CompletedProcess(command, 28)
+            self.assertEqual(partial.read_bytes(), b"me")
+            with partial.open("ab") as output:
+                output.write(b"dia")
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(transfernow.subprocess, "run", side_effect=curl):
+            with self.assertRaisesRegex(transfernow.TransferNowError, "curl failed"):
+                adapter.download(
+                    URI, URL, self.dest, inspect_link=lambda uri, url: info,
+                    probe=self.video)
+            stage = adapter.staging_path(URI, self.dest)
+            self.assertTrue(stage.is_dir())
+            self.assertEqual((stage / "incoming.mkv.part").read_bytes(), b"me")
+            self.assertFalse(self.dest.exists())
+            result = adapter.download(
+                URI, URL, self.dest, inspect_link=lambda uri, url: info,
+                probe=self.video)
+        self.assertEqual(result, MEDIA)
+        self.assertEqual(self.dest.read_bytes(), b"media")
+        self.assertEqual(stages[0], stages[1])
+        self.assertFalse(stage.exists())
         self.assertEqual(list(self.folder.iterdir()), [self.dest])
+
+    def test_completed_source_survives_failed_remux_and_is_reused(self):
+        source_info = verified_info("video.mp4")
+        attempts = []
+        def use_cache(url, entry, output):
+            output = Path(output)
+            attempts.append(output)
+            if output.exists():
+                self.assertEqual(output.read_bytes(), b"media")
+            else:
+                output.write_bytes(b"media")
+        def break_remux(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, "", "unavailable")
+        with self.assertRaisesRegex(ValueError, "remux failed"):
+            adapter.download(
+                URI, URL, self.dest, inspect_link=lambda uri, url: source_info,
+                download_file=use_cache, execute=break_remux, probe=self.video)
+        stage = adapter.staging_path(URI, self.dest)
+        self.assertEqual((stage / "incoming.mp4").read_bytes(), b"media")
+        def remux(command, **kwargs):
+            Path(command[-1]).write_bytes(b"media")
+            return subprocess.CompletedProcess(command, 0, "", "")
+        result = adapter.download(
+            URI, URL, self.dest, inspect_link=lambda uri, url: source_info,
+            download_file=use_cache, execute=remux, probe=self.video)
+        self.assertEqual(result, MEDIA)
+        self.assertEqual(attempts[0], attempts[1])
+        self.assertFalse(stage.exists())
+        self.assertEqual(self.dest.read_bytes(), b"media")
+
+    def test_changed_metadata_refuses_to_reuse_previous_partial(self):
+        def interrupted(url, entry, output):
+            part = Path(str(output) + ".part")
+            part.write_bytes(b"part")
+            raise RuntimeError("network interruption")
+        with self.assertRaisesRegex(RuntimeError, "network interruption"):
+            adapter.download(URI, URL, self.dest, inspect_link=self.check,
+                             download_file=interrupted, probe=self.video)
+        stage = adapter.staging_path(URI, self.dest)
+        part = stage / "incoming.mkv.part"
+        self.assertEqual(part.read_bytes(), b"part")
+        altered = verified_info()
+        altered["entry"]["id"] = "another-file-id"
+        with self.assertRaisesRegex(ValueError, "metadata changed"):
+            adapter.download(
+                URI, URL, self.dest, inspect_link=lambda uri, url: altered,
+                download_file=lambda *a: self.fail("unsafe resumed transfer"),
+                probe=self.video)
+        self.assertEqual(part.read_bytes(), b"part")
+        self.assertFalse(self.dest.exists())
+
+    def test_staging_does_not_mix_destinations(self):
+        alternate = self.folder / "other.mkv"
+        self.assertNotEqual(adapter.staging_path(URI, self.dest),
+                            adapter.staging_path(URI, alternate))
+        self.assertEqual(adapter.staging_path(URI, self.dest),
+                         adapter.staging_path(URI, self.dest))
+
+    def test_rejects_symlinked_cached_part_without_touching_target(self):
+        def interrupted(url, entry, output):
+            raise RuntimeError("interrupted")
+        with self.assertRaisesRegex(RuntimeError, "interrupted"):
+            adapter.download(URI, URL, self.dest, inspect_link=self.check,
+                             download_file=interrupted, probe=self.video)
+        stage = adapter.staging_path(URI, self.dest)
+        victim = self.folder / "untouched"
+        victim.write_bytes(b"never change")
+        (stage / "incoming.mkv.part").symlink_to(victim)
+        with self.assertRaisesRegex(ValueError, "Unsafe staging file"):
+            adapter.download(URI, URL, self.dest, inspect_link=self.check,
+                             download_file=self.grab, probe=self.video)
+        self.assertEqual(victim.read_bytes(), b"never change")
+        self.assertFalse(self.dest.exists())
+
+    def test_refuses_parallel_write_to_same_cache(self):
+        def nested(url, entry, path):
+            with self.assertRaisesRegex(RuntimeError, "already running"):
+                adapter.download(URI, URL, self.dest, inspect_link=self.check,
+                                 download_file=self.grab, probe=self.video)
+            Path(path).write_bytes(b"media")
+        adapter.download(URI, URL, self.dest, inspect_link=self.check,
+                         download_file=nested, probe=self.video)
+        self.assertEqual(self.dest.read_bytes(), b"media")
+
 
 
 class TransferNowAtlasTests(unittest.TestCase):

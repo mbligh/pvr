@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import stat
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -209,6 +210,12 @@ def download(url, file_info, output, overwrite=False):
     expected = file_info["size"]
     output.parent.mkdir(parents=True, exist_ok=True)
     part = output.with_name(output.name + ".part")
+    for candidate in (output, part):
+        if os.path.lexists(candidate):
+            info = candidate.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise TransferNowError(
+                    f"Refusing unsafe TransferNow target: {candidate}")
     if output.exists() and not overwrite:
         if output.stat().st_size == expected and not looks_like_html(output):
             print(f"Already complete: {output}")

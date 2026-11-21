@@ -94,7 +94,7 @@ Explicitly acquire that release:
 
 The adapter validates that URI and stored URL agree, accepts exactly one
 supported video file in the transfer, checks the signed storage URL,
-downloads to a temporary staging directory on the destination filesystem,
+downloads to a persistent private staging directory on the destination filesystem,
 remuxes non-MKV video losslessly with ffmpeg, and validates with ffprobe.
 The final .mkv is atomically hard-linked into place without replacing an
 existing file. Success and failure are recorded in pvr.jobs; successful
@@ -103,10 +103,36 @@ recordings are registered in pvr.files.
 Requirements: system Python, curl, ffmpeg, ffprobe and pymongo (already
 required by the PVR Atlas tools). Downloads require explicit --apply.
 
-The standalone ./transfernow preserves .part files for resumable transfers.
-The PVR adapter uses temporary staging and therefore currently discards
-partials between PVR job attempts. That needs improving before scheduling
-unattended multi-gigabyte downloads.
+Both ./transfernow and the PVR adapter retain partial downloads across
+retries. The PVR adapter creates a private, deterministic
+.pvr-transfernow-TRANSFERID-HASH directory alongside the destination file,
+on the same filesystem. It contains a manifest.json identifying the
+exact source URI, original TransferNow file ID/name/size, sharing URL and
+destination, plus incoming.mp4.part (or the corresponding video extension).
+An interrupted download leaves those files untouched; the next invocation
+of the same --apply command resolves a fresh signed URL and resumes the
+remaining bytes with curl --continue-at -. If the original transfer metadata
+changes, PVR refuses to mix old and new bytes rather than guessing.
+
+A completed original download is also retained if remuxing or ffprobe fails,
+so the next attempt can retry processing without retransferring the video.
+Only after a fully verified MKV has been atomically published is its staging
+directory deleted. Simultaneous writers for the same transfer/destination
+are blocked by a non-blocking file lock.
+
+An old partial cannot be reused for a different destination, upload ID,
+filename, or file size. Unknown or corrupt manifests, symlinked staging
+files and hardlinked partials are rejected. If a transfer genuinely changes,
+the operator must manually inspect and remove its hidden staging directory
+before restarting; PVR does not silently discard potentially recoverable data.
+
+These persistent staging files occupy space until the download completes.
+Inspect abandoned staging directories with:
+
+    find /data/incoming -maxdepth 1 -type d -name '.pvr-transfernow-*'
+
+No automatic cleanup/expiry policy exists yet; do not delete a staging
+directory while its download process is running.
 
 Automatic release fallback, availability recording in MongoDB, bulk selection
 and scheduled downloads are not yet implemented. This command downloads

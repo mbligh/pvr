@@ -287,9 +287,13 @@ the Atlas release and URL, downloads exactly one video with the migrated
 TransferNow implementation, remuxes if necessary, probes with ffprobe,
 publishes with atomic no-clobber linking and registers Atlas file/job state.
 No download occurs without --apply. Source fallback, availability recording,
-and scheduling remain separate future work. The PVR adapter currently
-discards incomplete temporary staging between attempts, unlike the
-standalone ./transfernow CLI which supports persistent .part resumption.
+and scheduling remain separate future work. The PVR adapter now retains .part files and completed source media
+in per-release, per-destination private staging directories, bound to
+the original TransferNow file identity via a manifest. Interrupted
+downloads retry with refreshed signed storage URLs and curl resume.
+Changed metadata, symlinked cache files and concurrent writers fail
+closed. The cache is removed only after verified no-clobber publication;
+orphaned caches require explicit manual cleanup.
 See TRANSFERNOW.md.
 
 
@@ -310,3 +314,17 @@ exist, known dedicated Sky commentary is preferred over MULTi Sky, then
 F1TV, then other/unknown; within a tier prefer >=50 fps, resolution,
 and size. No media is moved on GitHub; ./file_recording --apply must run
 on the host with the real file and Atlas connection. See F1_IMPORT.md.
+
+## Persistent TransferNow retry staging (2026-11-21)
+
+The TransferNow PVR adapter now keeps its staging directory across
+interrupted downloads, keyed by both release URI and destination. A
+manifest binds partial bytes to the original transfer URL, file ID,
+filename and expected byte count, preventing silent reuse after metadata
+changes. The shared TransferNow core handles curl --continue-at -
+and complete-byte verification. Remux and ffprobe failures retain the
+fully downloaded original; staging is removed only after verified
+atomic no-clobber publication. A per-stage file lock rejects overlapping
+downloads. Cache entries are not automatically expired or garbage
+collected. This change does not enable unattended schedules, fallback
+selection, or downloads without --apply. See TRANSFERNOW.md.

@@ -120,5 +120,29 @@ class TransferNowTests(unittest.TestCase):
             cli.ensure_storage_url("https://evil.example.com/whatever")
 
 
+    def test_reject_symlink_and_hardlink_partial_before_curl(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            target = root / "media.mp4"
+            part = Path(str(target) + ".part")
+            victim = root / "other"
+            victim.write_bytes(b"data")
+            part.symlink_to(victim)
+            with patch.object(cli.subprocess, "run") as curl, self.assertRaisesRegex(
+                    cli.TransferNowError, "unsafe"):
+                cli.download("https://storage.transfernow.net/a",
+                             {"size": 4, "name": "media.mp4"}, target)
+            curl.assert_not_called()
+            part.unlink()
+            part.hardlink_to(victim)
+            with patch.object(cli.subprocess, "run") as curl, self.assertRaisesRegex(
+                    cli.TransferNowError, "unsafe"):
+                cli.download("https://storage.transfernow.net/a",
+                             {"size": 4, "name": "media.mp4"}, target)
+            curl.assert_not_called()
+            self.assertEqual(victim.read_bytes(), b"data")
+
+
 if __name__ == "__main__":
     unittest.main()
