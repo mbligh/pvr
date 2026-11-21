@@ -1,0 +1,66 @@
+{
+  "timezone": "America/New_York",
+  "calendars": [
+    {
+      "slug": "rugby-mens-intl",
+      "name": "Rugby Mens Intl",
+      "id": "ct240d39oc9kq21cq3bn70jii8@group.calendar.google.com",
+      "type": "world-rugby",
+      "group": "mens-intl",
+      "library_dir": "Rugby_Mens_Intl"
+    },
+    {
+      "slug": "rugby-nations",
+      "name": "Rugby Nations",
+      "nfo_showtitle": "Rugby Nations Championships",
+      "type": "world-rugby",
+      "group": "nations",
+      "library_dir": "Rugby_Nations"
+    },
+    {
+      "slug": "rugby-mens-prem",
+      "name": "Rugby Mens Prem",
+      "id": "tabtklk5mnmg80rau47c0mjff3b6r08u@import.calendar.google.com",
+      "url": "https://data.rugbyfixture.io/ical/v1/premiership.ics?uid=qsadkjhi"
+    },
+    {
+      "slug": "rugby-mens-6n",
+      "name": "Rugby Mens 6N",
+      "id": "vltlimfim9horepqch3uve5tdntn7nen@import.calendar.google.com",
+      "url": "https://data.rugbyfixture.io/ical/v1/six-nations.ics?uid=qsadkjhi",
+      "library_dir": "Rugby_Mens_6N"
+    },
+    {
+      "slug": "rugby-womens-6n",
+      "name": "Rugby Womens 6N",
+      "id": "vo97b4mr9uiv5lhp0ggqkqkvp6dq3an2@import.calendar.google.com",
+      "url": "https://data.rugbyfixture.io/ical/v1/six-nations-womens.ics?uid=qsadkjhi",
+      "library_dir": "Rugby_Womens_6N"
+    },
+    {
+      "slug": "rugby-womens-intl",
+      "name": "Rugby Womens Intl",
+      "id": "etoe060h4mbvuqugjmkcn340nk@group.calendar.google.com",
+      "type": "world-rugby",
+      "group": "womens-intl",
+      "library_dir": "Rugby_Womens_Intl"
+    },
+    {
+      "slug": "rugby-womens-pwr",
+      "name": "Rugby Womens PWR",
+      "type": "pwr",
+      "url": "https://www.thepwr.com/api/oval/fixtures?compId=1095&seasonId=202601",
+      "library_dir": "Rugby_Womens_PWR"
+    }
+  ],
+  "plex_sources": [
+    {
+      "slug": "gallagher-prem",
+      "name": "Gallagher PREM",
+      "type": "prem",
+      "compId": 1011,
+      "season": 202601,
+      "url": "https://rugby-union-feeds.incrowdsports.com/v1/matches?provider=rugbyviz&season=202601&compId=1011&sort=date"
+    }
+  ]
+}
