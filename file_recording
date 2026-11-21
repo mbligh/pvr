@@ -47,13 +47,22 @@ def plan(database, source, *, sports_root="/data/sports", hostname=None):
     target, nfo = canonical_paths(episode, sports_root)
     target_id = f"{hostname}:{target}"
     if target == source or target_id == source_id:
-        return {"status": "already_filed", "source": str(source),
-                "destination": str(target), "nfo_path": str(nfo),
-                "source_file_id": source_id, "destination_file_id": target_id,
-                "episode_id": episode_id, "host": hostname,
-                "season": episode["season"], "episode": episode["episode"]}
+        raise ValueError("Source is already at canonical path; inventory/NFO review required")
     if record.get("file_state") == "moved":
-        raise ValueError("Source file is already recorded as moved in Atlas")
+        dest_record = database.files.find_one({"_id": target_id})
+        if (record.get("moved_to") == target_id and
+                dest_record and dest_record.get("episode_id") == episode_id and
+                dest_record.get("path") == str(target) and
+                not os.path.lexists(source) and target.is_file() and
+                not target.is_symlink() and nfo.is_file() and
+                not nfo.is_symlink() and nfo.read_bytes() == nfo_bytes and
+                target.stat().st_size == dest_record.get("size_bytes")):
+            return {"status": "already_filed", "source": str(source),
+                    "destination": str(target), "nfo_path": str(nfo),
+                    "source_file_id": source_id, "destination_file_id": target_id,
+                    "episode_id": episode_id, "host": hostname,
+                    "season": episode["season"], "episode": episode["episode"]}
+        raise ValueError("Previous filing is incomplete; reconcile source, destination and Atlas")
     snapshot = stat_identity(source)
     if record.get("size_bytes") != snapshot[2] or (
             record.get("mtime_ns") is not None and
