@@ -81,7 +81,7 @@ class CanonicalRugbyDirectories(unittest.TestCase):
             validate_nfo(ep)
 
     def test_calendar_import_configuration_pins_case_sensitive_paths(self):
-        config = json.loads((ROOT / "calendar_legacy" / "calendars.json").read_text())
+        config = json.loads((ROOT / "schedulers" / "rugby" / "legacy" / "calendars.json").read_text())
         for entry in config["calendars"]:
             series = entry["slug"]
             if series in DIRECTORIES:
