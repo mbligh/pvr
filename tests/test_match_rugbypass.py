@@ -20,6 +20,7 @@ def fixture(series, home, away, scheduled, *, number=501, season=2026,
     show = {
         rb.MENS: ("Rugby_Mens_Intl", "Rugby Mens Intl"),
         rb.WOMENS: ("Rugby_Womens_Intl", "Rugby Womens Intl"),
+        rb.WXV: ("Rugby_Womens_WXV", "Rugby Womens WXV"),
         rb.NATIONS: ("Rugby_Nations", "Rugby Nations Championships"),
     }[series]
     root, title = show
@@ -62,12 +63,17 @@ class MatchNationalReplays(unittest.TestCase):
             "Hong Kong China v Tonga | Women’s International | Full Match Replay",
             "2026-11-21T08:13:11Z", id_="1054041")
         self.assertEqual(rb.match_release(rp, [women])["episode_id"], women["_id"])
-        wxv = fixture(rb.WOMENS, "South Africa", "Ireland",
+        wxv = fixture(rb.WXV, "South Africa", "Ireland",
                       dt.datetime(2026, 10, 31, 13, tzinfo=UTC))
+        legacy = fixture(rb.WOMENS, "South Africa", "Ireland",
+                         dt.datetime(2026, 10, 31, 13, tzinfo=UTC))
         wxv_release = release(
             "South Africa v Ireland | WXV Global Series 2026 | Full Match Replay",
             "2026-10-31T16:00:00Z", id_="1122334")
-        self.assertEqual(rb.match_release(wxv_release, [wxv])["episode_id"], wxv["_id"])
+        self.assertEqual(
+            rb.match_release(wxv_release, [legacy])["status"], "no_fixture")
+        self.assertEqual(
+            rb.match_release(wxv_release, [wxv, legacy])["episode_id"], wxv["_id"])
 
     def test_mens_explicit_label_and_country_nicknames(self):
         game = fixture(rb.MENS, "New Zealand 🇳🇿", "🇦🇺 Australia",
@@ -137,6 +143,7 @@ class MatchNationalReplays(unittest.TestCase):
         for series, title, root in [
             (rb.MENS, "Rugby Mens Intl", "Rugby_Mens_Intl"),
             (rb.WOMENS, "Rugby Womens Intl", "Rugby_Womens_Intl"),
+            (rb.WXV, "Rugby Womens WXV", "Rugby_Womens_WXV"),
             (rb.NATIONS, "Rugby Nations Championships", "Rugby_Nations")]:
             item = fixture(series, "Canada", "England",
                            dt.datetime(2026, 11, 1, tzinfo=UTC))
