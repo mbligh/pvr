@@ -70,10 +70,17 @@ and upserts those release records into Atlas `pvr.releases` by stable source
 URI, without modifying episode matching or download state. See
 [INDEXERS.md](INDEXERS.md) for examples.
 
-These indexers currently run independently for manual inspection. Future
-orchestration will match releases to canonical episodes and schedule source
-checks for recent missing/upgradeable content. No existing
-`mbligh/calendar` or daily PVR metadata cron jobs are changed.
+These indexers currently run independently for manual inspection. The
+`match_releases` CLI now supports **preview-first**, manual PWR episode
+association by canonical home/away teams and a ±2-day recording date window.
+`matchers/pwr.py` contains the nine-team canonical vocabulary and known
+aliases. It preserves existing links, rejects ambiguous/unavailable/non-match
+content, and writes `episode_id` to release documents only with `--apply`.
+See [MATCHING.md](MATCHING.md). The 2025/26 PWR historical fixtures are not
+yet in Atlas; their releases remain unmatched until fixture import expands
+historically. Future orchestration will schedule source checks for recent
+missing/upgradeable content. No existing `mbligh/calendar` or daily PVR
+metadata cron jobs are changed.
 
 ## Initial implementation and migration
 
