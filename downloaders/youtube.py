@@ -57,10 +57,11 @@ def download(uri, destination, *, yt_dlp="yt-dlp", ffprobe="ffprobe",
             raise ValueError(f"yt-dlp did not produce the expected MKV: {target}")
         if target.stat().st_size <= 0:
             raise ValueError("yt-dlp produced an empty recording")
-        media = probe(target, binary=ffprobe)
         before = target.stat()
+        media = probe(target, binary=ffprobe)
+        after = target.stat()
         if (before.st_size, before.st_mtime_ns, before.st_ino) != (
-                target.stat().st_size, target.stat().st_mtime_ns, target.stat().st_ino):
+                after.st_size, after.st_mtime_ns, after.st_ino):
             raise ValueError("Staged file changed while verifying")
         # os.link is an atomic, no-overwrite publication on the same
         # filesystem. It cannot overwrite an existing destination, even
