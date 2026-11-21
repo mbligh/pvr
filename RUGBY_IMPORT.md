@@ -25,9 +25,14 @@ The importer validates all calendars and builds the complete batch before it sta
 
 ## Run locally
 
-Install dependencies:
+On Debian, install dependencies via the system package manager (no venv):
 
-    python3 -m pip install -r requirements.txt
+    sudo apt install python3-pymongo python3-icalendar
+
+The importer reads the Atlas URI from ~/.mongodb/pvr by default. This is a
+plain-text file containing only the MongoDB connection URI, without an export
+statement. Protect it with chmod 600 ~/.mongodb/pvr. MONGODB_URI, if set, takes
+precedence (for GitHub Actions and other automation).
 
 Parse the existing snapshots without connecting to Atlas:
 
@@ -35,9 +40,14 @@ Parse the existing snapshots without connecting to Atlas:
 
 Perform the live import:
 
-    MONGODB_URI='mongodb+srv://...' python3 import_rugby
+    python3 import_rugby
 
-Use a dedicated database user with readWrite access scoped to the pvr database. MONGODB_DATABASE overrides the default database name.
+To schedule daily on slagg, add this entry with crontab -e:
+
+    17 3 * * * cd "$HOME/pvr" && /usr/bin/python3 import_rugby >> "$HOME/pvr-import.log" 2>&1
+
+Use a dedicated database user with readWrite access scoped to the pvr database.
+MONGODB_DATABASE overrides the default database name.
 
 ## GitHub Actions credentials and networking
 
