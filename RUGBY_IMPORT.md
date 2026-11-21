@@ -1,6 +1,6 @@
 # Rugby fixture importer
 
-The rugby scraping and spoiler-free processing modules from mbligh/calendar have been copied into calendar_legacy/ without changing that repository. The independent PVR importer calls their established functions and upserts canonical fixture records into MongoDB Atlas.
+The rugby scraping, spoiler filtering, numbering and NFO helpers copied from `mbligh/calendar` now live in `schedulers/rugby/legacy/`. The canonical fixture importer implementation is `schedulers/rugby/importer.py` and its stable entry point is `import_rugby`. All of them are maintained in PVR rather than imported live from `mbligh/calendar`. PVR continues to upsert canonical fixture records into MongoDB Atlas.
 
 ## Sources
 
@@ -18,7 +18,7 @@ Episode NFO paths use the case of the series display name, e.g.
 `Rugby_Womens_PWR/Season_2026/Rugby_Womens_PWR-s2026e101-....nfo`.
 The calendar slug (`rugby-womens-pwr`) remains lowercase for stable IDs.
 If a series directory differs from the display name, set `library_dir` in its
-`calendar_legacy/calendars.json` entry. This only changes PVR metadata paths;
+`schedulers/rugby/legacy/calendars.json` entry. This only changes PVR metadata paths;
 no existing video files or the original calendar repository are renamed.
 
 The PVR calendar configuration now explicitly pins `library_dir` for
