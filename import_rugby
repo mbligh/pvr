@@ -223,7 +223,13 @@ def main():
     if not args.dry_run:
         uri = os.environ.get("MONGODB_URI")
         if not uri:
-            parser.error("MONGODB_URI environment variable is required without --dry-run")
+            uri_file = pathlib.Path.home() / ".mongodb" / "pvr"
+            try:
+                uri = uri_file.read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                parser.error(f"Cannot read MongoDB URI from {uri_file}: {exc.strerror}")
+            if not uri:
+                parser.error(f"MongoDB URI file is empty: {uri_file}")
         from pymongo import MongoClient
         client = MongoClient(uri, serverSelectionTimeoutMS=15000)
         client.admin.command("ping")
