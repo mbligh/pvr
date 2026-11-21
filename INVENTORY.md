@@ -35,6 +35,9 @@ python3 inventory_files --root /data/sports/Rugby_Womens_PWR --root /data/incomi
 # Review identity matches without running ffprobe (preview only).
 python3 inventory_files --no-probe
 
+# Also list past fixtures with no identified file under these scan roots.
+python3 inventory_files --show-unseen
+
 # Once the preview is acceptable, store verified file records in Atlas.
 python3 inventory_files --apply
 ```
@@ -43,6 +46,13 @@ Use `--root /data/sports` to search other directories under that tree too.
 Only files positively identified as PWR will be associated with its episodes.
 `--verbose` includes unrelated video files in the output; otherwise only
 identified and problematic files are printed.
+
+The summary includes `episodes_with_files` and
+`past_episodes_not_found_in_roots`. The latter only counts fixtures at least
+three hours past scheduled kickoff, and **only means not found among the
+directories scanned**. Other disks, directories and unprocessed files may
+contain recordings. `--show-unseen` prints those episodes individually.
+An NFO/filename conflict or failed probe is not counted as a verified file.
 
 There are no added credentials: this uses the existing `~/.mongodb/pvr`,
 `MONGODB_URI`, and `MONGODB_DATABASE` configuration. `--host` can override
