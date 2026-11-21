@@ -240,6 +240,28 @@ class AtlasDownloaderTests(unittest.TestCase):
                 self.assertEqual(self.db.files.update_one.call_args.args[1]
                                  ["$set"]["release_uri"], uri)
 
+    def test_rugbypass_accepts_linked_numbered_international_series(self):
+        for series in ("rugby-mens-intl", "rugby-womens-intl", "rugby-nations"):
+            with self.subTest(series=series):
+                self.db.releases.find_one.return_value = dict(
+                    RELEASE, _id="rugbypass:1051364", source="rugbypass",
+                    id="1051364", episode_id=f"{series}:fixture")
+                self.db.episodes.find_one.return_value = dict(
+                    EPISODE, _id=f"{series}:fixture",
+                    series_id=series, season=2026, episode=501)
+                result = CLI.plan(self.db, "rugbypass:1051364",
+                                  self.destination, hostname="slagg")
+                self.assertEqual(result["status"], "ready")
+                self.assertEqual(result["series_id"], series)
+                with self.assertRaisesRegex(ValueError, "Only matched"):
+                    CLI.plan(self.db, "bbc:m0034hxp",
+                             self.destination, hostname="slagg")
+        # Unknown series cannot be used as a way around the PWR restriction.
+        self.db.episodes.find_one.return_value["series_id"] = "not-approved"
+        with self.assertRaisesRegex(ValueError, "Only matched"):
+            CLI.plan(self.db, "rugbypass:1051364",
+                     self.destination, hostname="slagg")
+
     def test_failed_download_creates_failed_job_but_no_file(self):
         def fail(uri, destination, **kwargs):
             raise RuntimeError("source unavailable")
