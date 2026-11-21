@@ -64,7 +64,10 @@ unaffected.
 ## Missing historical PWR fixtures
 
 The initial `import_rugby` stored 75 PWR fixtures in **Season_2026**
-(2026/27), but no PWR fixtures from **Season_2025** (2025/26). A YouTube
-recording of a 2025/26 game will correctly report `no_fixture`; the matcher
-must not assign it to a 2026/27 episode based on the same teams. Importing
-historical 2025/26 fixtures and stable numbering is a separate task.
+(2026/27), but no earlier seasons. The separate
+[historical PWR importer](PWR_HISTORY.md) can now populate **Season_2025**
+(2025/26) from the verified PWR API feed, using the same numbering and
+score-free NFO generator. Until it has been run with `--apply`, YouTube
+recordings of 2025/26 games correctly report `no_fixture`. Older matches
+from 2024/25 and other seasons remain unmatched until their fixtures have
+been imported.
