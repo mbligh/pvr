@@ -160,10 +160,10 @@ Running the trial command again with the same path will not redownload.
 This command does not manage parallel duplicate downloads by source yet;
 no-clobber publication still prevents one from overwriting another.
 
-## What comes next
+## Subsequent workflow
 
-After checking a successful single release and inspecting the resulting
-`pvr.files` and `pvr.jobs` documents, we can add the other source
-adapters (BBC iPlayer and RugbyPass), canonical filing and NFO publishing,
-and then selection/scheduling. Automatic quality preferences and upgrades
-should be implemented separately from this first download adapter.
+Quality selection, canonical filing/NFO publication, and bounded PWR
+acquisition from BBC, YouTube and RugbyPass have now been implemented.
+Use [ACQUISITION.md](ACQUISITION.md) for the combined workflow, including
+remote source refresh and matching. Published-file upgrades and removal
+of lower-ranked incoming alternatives remain explicitly manual.
