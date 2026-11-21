@@ -31,9 +31,30 @@ The default brand is PWR (`m001mnb5`); configure other brands with
 
 YouTube delegates channel/playlist enumeration to an installed `yt-dlp`.
 The default `--url` is the PWR Official **/streams** tab, not `/videos`.
+By default it retrieves full **per-video metadata without downloading media**;
+this is slower than a flat playlist but can recover dates for archived streams.
+The original livestream `release_timestamp` (or `release_date`) takes
+priority over the upload `timestamp` (or `upload_date`). The selected date
+appears in `published`, and `metadata.date_basis` states which field provided
+it; original date fields are also retained in `metadata`. Dates are evidence
+for matching fixtures, not definitive match identifiers.
+
+To quickly enumerate titles/IDs without per-video requests, use:
+
+    python3 indexers/youtube --flat --search "Lightning"
+
 Entries explicitly marked live, upcoming or still being processed are
 excluded. A flat-playlist entry with missing status is included but is
-*not asserted to be playable*.
+*not asserted to be playable*. After refreshing the PVR checkout, you can
+backfill release dates without changing other release state:
+
+    set -o pipefail
+    python3 indexers/youtube | python3 index_releases
+
+This resolves metadata for every item in the configured list (up to 100 by
+default), so it can be substantially slower and place more requests on
+YouTube. If individual videos are unavailable, some dates may remain absent;
+do not guess a fixture assignment from team names alone.
 
 RugbyPass is its own indexer, not a second wrapper. Update your existing tools
 checkout to the revision adding `--jsonl`, then use:
