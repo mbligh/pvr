@@ -197,7 +197,7 @@ def main():
             persist(db, snapshots, manifest, episodes, now)
             print("MongoDB upsert complete")
     finally:
-        if client:
+        if client is not None:
             client.close()
 
 
