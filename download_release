@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Download one Atlas-matched source URI to an explicit local destination.
+
+Preview-only by default. Currently supports YouTube; --apply downloads a
+single already-matched recording, verifies it with ffprobe, and records the
+file and job result in MongoDB Atlas. Does not file or rename library media.
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import socket
+import sys
+import uuid
+
+from downloaders.youtube import download as download_youtube
+from downloaders.youtube import youtube_id
+from matchers.pwr import SERIES_ID
+
+
+def plan(database, uri, destination, *, hostname=None, allow_existing_episode=False):
+    """Return a checked download plan; no changes to DB or filesystem."""
+    youtube_id(uri)
+    destination = pathlib.Path(destination)
+    if not destination.is_absolute() or destination.suffix.lower() != ".mkv":
+        raise ValueError("--destination must be an absolute .mkv filename")
+    hostname = hostname or socket.gethostname()
+    if not hostname or ":" in hostname or "/" in hostname:
+        raise ValueError("Invalid host identifier")
+    release = database.releases.find_one({"_id": uri})
+    if release is None:
+        raise ValueError(f"Unknown release {uri}; run the indexer and matcher first")
+    if release.get("available") is False:
+        raise ValueError(f"Release is marked unavailable: {uri}")
+    if release.get("metadata", {}).get("live_status") in (
+            "is_live", "is_upcoming", "post_live"):
+        raise ValueError("Live, upcoming or processing recordings cannot be downloaded")
+    episode_id = release.get("episode_id")
+    if not isinstance(episode_id, str):
+        raise ValueError(f"Release {uri} has no episode_id; run match_releases first")
+    episode = database.episodes.find_one({"_id": episode_id})
+    if episode is None:
+        raise ValueError(f"No canonical episode record for {episode_id}")
+    if episode.get("series_id") != SERIES_ID or not (
+            isinstance(episode.get("season"), int) and episode["season"] >= 2025):
+        raise ValueError("Only matched PWR episodes from Season_2025 onward are supported")
+    if not isinstance(episode.get("episode"), int):
+        raise ValueError("Cannot download an unnumbered PWR fixture")
+    records = list(database.files.find(
+        {"episode_id": episode_id, "host": hostname},
+        {"path": 1, "size_bytes": 1, "release_uri": 1}
+    ))
+    present = []
+    for record in records:
+        path = record.get("path")
+        if not isinstance(path, str):
+            continue
+        try:
+            actual_size = pathlib.Path(path).stat().st_size
+        except (OSError, ValueError):
+            continue
+        if pathlib.Path(path).is_file() and actual_size > 0 and (
+                not record.get("size_bytes") or actual_size == record["size_bytes"]):
+            present.append(path)
+    status = "ready"
+    if destination.is_symlink() or os.path.lexists(destination):
+        status = "destination_exists"
+    elif present and not allow_existing_episode:
+        status = "already_owned"
+    return {
+        "status": status, "source_uri": uri, "destination": str(destination),
+        "host": hostname, "episode_id": episode_id,
+        "season": episode["season"], "episode": episode["episode"],
+        "existing_files": present,
+        "source_title": release.get("title"),
+    }
+
+
+def register(database, checked, media, *, now=None):
+    """Record the verified file without replacing any existing association."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    filename = pathlib.Path(checked["destination"])
+    stat = filename.stat()
+    if not filename.is_file() or stat.st_size <= 0:
+        raise ValueError("Download disappeared before inventory registration")
+    file_id = checked["host"] + ":" + str(filename)
+    existing = database.files.find_one({"_id": file_id}, {"episode_id": 1})
+    if existing and existing.get("episode_id") not in (None, checked["episode_id"]):
+        raise ValueError("Existing file association conflicts with this episode")
+    database.files.create_index([("host", 1), ("path", 1)], unique=True)
+    database.files.create_index([("episode_id", 1)])
+    row = {
+        "host": checked["host"],
+        "path": str(filename),
+        "episode_id": checked["episode_id"],
+        "series_id": SERIES_ID,
+        "season": checked["season"],
+        "episode": checked["episode"],
+        "match_evidence": ["release_id"],
+        "release_uri": checked["source_uri"],
+        "size_bytes": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "media": media,
+        "last_seen": now,
+    }
+    database.files.update_one(
+        {"_id": file_id, "episode_id": {"$in": [None, checked["episode_id"]]}},
+        {"$set": row, "$setOnInsert": {"first_seen": now}},
+        upsert=True,
+    )
+    return file_id
+
+
+def run(database, uri, destination, *, apply=False, allow_existing_episode=False,
+        yt_dlp="yt-dlp", ffprobe="ffprobe", hostname=None,
+        downloader=download_youtube, output=sys.stdout):
+    """Plan, and optionally execute exactly one verified download."""
+    checked = plan(database, uri, destination, hostname=hostname,
+                   allow_existing_episode=allow_existing_episode)
+    if not apply:
+        print(json.dumps(dict(checked, mode="preview"), sort_keys=True), file=output)
+        return checked
+    if checked["status"] != "ready":
+        print(json.dumps(dict(checked, mode="skipped"), sort_keys=True), file=output)
+        return checked
+    started = dt.datetime.now(dt.timezone.utc)
+    job_id = uuid.uuid4().hex
+    database.jobs.insert_one({
+        "_id": job_id, "type": "download", "adapter": "youtube",
+        "source_uri": checked["source_uri"],
+        "episode_id": checked["episode_id"],
+        "destination": checked["destination"],
+        "host": checked["host"], "status": "running", "started_at": started,
+    })
+    try:
+        media = downloader(uri, checked["destination"], yt_dlp=yt_dlp,
+                           ffprobe=ffprobe)
+        file_id = register(database, checked, media)
+        finished = dt.datetime.now(dt.timezone.utc)
+        database.jobs.update_one({"_id": job_id}, {
+            "$set": {"status": "succeeded", "finished_at": finished,
+                     "file_id": file_id, "media": media}
+        })
+        summary = dict(checked, mode="apply", status="downloaded",
+                       job_id=job_id, file_id=file_id, media=media)
+        print(json.dumps(summary, sort_keys=True), file=output)
+        return summary
+    except Exception as exc:
+        # A published file remains intact even if writing the Atlas record
+        # fails: operators can recover it with inventory_files --apply.
+        try:
+            database.jobs.update_one({"_id": job_id}, {
+                "$set": {"status": "failed",
+                         "finished_at": dt.datetime.now(dt.timezone.utc),
+                         "error": str(exc)[:1000]}
+            })
+        except Exception:
+            pass
+        raise
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("uri", help="Existing matched source URI, e.g. youtube:8CFBWPSG3vc")
+    parser.add_argument("--destination", required=True, type=pathlib.Path,
+                        help="Exact absolute output .mkv path (parent directory must exist)")
+    parser.add_argument("--apply", action="store_true",
+                        help="Download and register; without this, preview only")
+    parser.add_argument("--allow-existing-episode", action="store_true",
+                        help="Explicitly permit a second recording for an already-owned episode")
+    parser.add_argument("--yt-dlp", default="yt-dlp")
+    parser.add_argument("--ffprobe", default="ffprobe")
+    parser.add_argument("--host", help="Stable host name (default local hostname)")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    mongo_uri = os.environ.get("MONGODB_URI")
+    if not mongo_uri:
+        path = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            mongo_uri = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI from {path}: {exc}")
+    if not mongo_uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(mongo_uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            result = run(client[args.database], args.uri, args.destination,
+                         apply=args.apply,
+                         allow_existing_episode=args.allow_existing_episode,
+                         yt_dlp=args.yt_dlp, ffprobe=args.ffprobe,
+                         hostname=args.host)
+    except Exception as exc:
+        print(f"PVR downloader: {exc}", file=sys.stderr)
+        return 1
+    return 0 if result["status"] not in ("destination_exists",) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
