@@ -43,7 +43,9 @@ def download(uri, destination, *, yt_dlp="yt-dlp", ffprobe="ffprobe",
         command = [
             yt_dlp, "--no-playlist", "--no-overwrites",
             "--no-mtime", "--no-progress",
-            "--format", "bv*+ba/b",
+            # Do not override -f / -S from yt-dlp.conf. In particular,
+            # yt-dlp-sabr has SABR-aware format and codec preferences; forcing
+            # our own -f can select an HTTP-403-prone format instead.
             "--merge-output-format", "mkv",
             "--remux-video", "mkv",
             "--output", str(stage / "recording.%(ext)s"),
