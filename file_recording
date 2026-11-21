@@ -19,6 +19,33 @@ from filing.publish import (
 from matchers.pwr import SERIES_ID
 
 
+def existing_published_files(database, episode_id, hostname, sports_root):
+    """Find other verified local recordings already under the library root.
+
+    Do not assume every indexed file exists: stale inventory entries and
+    original paths marked moved must not prevent normal filing.
+    """
+    root = pathlib.Path(sports_root).absolute()
+    found = []
+    for record in database.files.find({"episode_id": episode_id, "host": hostname}):
+        if record.get("file_state") == "moved":
+            continue
+        value = record.get("path")
+        if not isinstance(value, str):
+            continue
+        path = pathlib.Path(value)
+        if not path.is_absolute() or not path.is_relative_to(root) or path.is_symlink():
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if path.is_file() and size > 0 and (
+                record.get("size_bytes") is None or size == record["size_bytes"]):
+            found.append(str(path))
+    return sorted(set(found))
+
+
 def plan(database, source, *, sports_root="/data/sports", hostname=None):
     """Pure read-only validation and publication plan."""
     source = pathlib.Path(source).expanduser()
@@ -73,11 +100,16 @@ def plan(database, source, *, sports_root="/data/sports", hostname=None):
     if not pathlib.Path(sports_root).is_dir():
         raise ValueError("Sports root does not exist")
     dest_record = database.files.find_one({"_id": target_id})
+    published = existing_published_files(database, episode_id, hostname, sports_root)
     status = "ready"
     if os.path.lexists(target) or os.path.lexists(nfo):
         status = "destination_exists"
     elif dest_record is not None:
         status = "destination_record_exists"
+    elif published:
+        # Quality/source selection is not implemented. Do not promote an
+        # alternative recording over an already-published episode.
+        status = "already_published"
     return {
         "status": status, "source": str(source),
         "destination": str(target), "nfo_path": str(nfo),
@@ -86,6 +118,7 @@ def plan(database, source, *, sports_root="/data/sports", hostname=None):
         "season": episode["season"], "episode": episode["episode"],
         "source_size": snapshot[2], "source_mtime_ns": snapshot[3],
         "source_release_uri": record.get("release_uri"),
+        "existing_published_files": published,
         "_nfo_bytes": nfo_bytes, "_record": record,
     }
 
@@ -228,7 +261,7 @@ def main(argv=None):
         print(f"PVR filer: {exc}", file=sys.stderr)
         return 1
     return 0 if result["status"] not in (
-        "destination_exists", "destination_record_exists") else 1
+        "destination_exists", "destination_record_exists", "already_published") else 1
 
 
 if __name__ == "__main__":
