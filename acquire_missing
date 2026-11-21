@@ -121,6 +121,7 @@ def run(database, *, apply=False, limit=1, season=None,
                         apply=True, output=io.StringIO())
                     if result["status"] != "downloaded":
                         totals["skipped_on_apply"] += 1
+                        totals["failed"] += 1  # incomplete source comparison must exit nonzero
                         print(json.dumps(dict(row, mode="apply",
                                               status="download_skipped",
                                               source_uri=candidate["source_uri"],
