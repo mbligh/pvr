@@ -199,12 +199,32 @@ multi-source trials are required before enabling unattended operation.
 Further work includes better remote metadata estimation, quality upgrades
 of already-published files, broader RugbyPass discovery and cleanup.
 
+## Existing rugby library directory registry (2026-11-21)
+
+The PVR canonical filer now registers the full eleven existing rugby
+library names verbatim: `Rugby_Mens_6N`, `Rugby_Mens_Intl`,
+`Rugby_Mens_Lions`, `Rugby_Mens_World_Cup`, `Rugby_Nations`,
+`Rugby_Womens_6N`, `Rugby_Womens_Intl`, `Rugby_Womens_Lions`,
+`Rugby_Womens_PWR`, `Rugby_Womens_World_Cup`, and
+`Rugby_Womens_WXV`. Stable series IDs remain lowercase hyphenated
+slugs, and the canonical Atlas NFO path plus XML showtitle must match
+the mapped directory/series. Importer calendar entries with existing
+folders explicitly pin their `library_dir` values. This does not
+create new fixtures, rename existing recordings, or rewrite Atlas history.
+See [FILING.md](FILING.md).
+
+WXV now has an explicit, distinct `rugby-womens-wxv` directory
+mapping. Historical Atlas WXV fixtures were previously imported under
+`rugby-womens-intl`; we do not silently change their episode IDs,
+numbering or NFOs. RugbyPass WXV titles are held out of automatic
+filing until a dedicated WXV fixture migration is implemented.
+
 ## RugbyPass international and Nations Championship expansion (2026-11-21)
 
 The new `matchers/rugbypass.py` and preview-first `match_rugbypass`
 link RugbyPass **full-match replays** to the existing numbered
-`rugby-mens-intl`, `rugby-womens-intl` (including WXV) and
-`rugby-nations` fixtures in Atlas. Titles must explicitly identify
+`rugby-mens-intl`, `rugby-womens-intl`, `rugby-nations`, and
+eventually the dedicated `rugby-womens-wxv` fixture series in Atlas. Titles must explicitly identify
 competition/gender, home and away countries in order, and fall within a
 bounded publication time after scheduled kickoff. Explicit Nations
 Championship replay titles route to `rugby-nations`, not the duplicated
