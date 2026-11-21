@@ -140,7 +140,12 @@ needs. See [FILING.md](FILING.md).
 
 This is a single-file operator command, not an automatic selector or cron
 job. It does not choose between multiple recordings, replace existing files,
-or autonomously recover partial Atlas commits. The first live candidate is
+or autonomously recover partial Atlas commits. When an inventoried, physically
+present recording already exists for the same episode under the media library
+root, the filer reports `already_published` and refuses to promote another
+version. This conservative guard protects BBC/high-quality files while the
+quality selector and explicit replacement workflow are still absent. Other
+episodes' recordings never block a filing. The first live candidate is
 `/data/incoming/pvr-8CFBWPSG3vc.mkv` (PWR S2025E102). A source file move
 on `slagg` has not been performed as part of this code commit.
 
