@@ -8,6 +8,7 @@ import datetime as dt
 import os
 import pathlib
 import socket
+import stat
 
 from filing.publish import canonical_paths, validate_nfo
 from matchers.pwr import SERIES_ID
@@ -55,12 +56,14 @@ def local_published(records, sports_root):
         candidate = pathlib.Path(path)
         if not candidate.is_absolute() or not candidate.is_relative_to(root):
             continue
-        checked = evaluate_file(item)
-        if checked["eligible"] or checked.get("reason") in (
-                "below_720p", "under_one_hour", "unknown_fps",
-                "unknown_height", "unknown_duration"):
-            # evaluate_file checked a regular file, size and mtime before
-            # these quality outcomes, so a poor library file still counts.
+        try:
+            info = os.lstat(candidate)
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode) and info.st_size > 0:
+            # A published file with stale inventory metadata still counts.
+            # Re-inventory/repair must be explicit, never silently publish
+            # a second file because the size or mtime has changed.
             return path
     return None
 
