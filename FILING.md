@@ -104,8 +104,11 @@ selected eligible candidate is not blocked by an existing publication.
 - Source file size and modification time must still match Atlas; the filer
   refuses changed or missing recordings.
 - The destination is derived from the stored NFO relative path. Directory
-  traversal, unexpected series names or seasons, symlink directories and
-  NFO/episode mismatches are rejected.
+  traversal, unexpected series names or seasons, and NFO/episode mismatches
+  are rejected. The library root itself may be a symlink (for example,
+  `/data/sports` on slagg) and will be followed, while symlinked series
+  and season subdirectories are still rejected. Atlas file paths retain
+  the configured `/data/sports/...` spelling.
 - The first `--apply` action creates an Atlas `pvr.jobs` record with
   `type=filing` and `status=running`.
 - If the source and destination share a filesystem, the publisher creates a
