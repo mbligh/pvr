@@ -1,4 +1,4 @@
-"""Plan missing PWR recordings across BBC, YouTube and RugbyPass.
+"""Plan missing numbered rugby recordings across supported providers.
 
 All remote candidates for a due, unpublished episode are evaluated before
 publication: without media download we cannot reliably compare FPS or file
@@ -13,6 +13,7 @@ import stat
 
 from filing.publish import canonical_paths, validate_nfo
 from matchers.pwr import SERIES_ID
+from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
 from selection.quality import evaluate_file, select
 
 SOURCES = ("bbc", "youtube", "rugbypass")
@@ -94,7 +95,8 @@ def local_published(records, sports_root):
 def planning_rows(database, *, sports_root="/data/sports",
                   incoming_root="/data/incoming", season=None,
                   min_age_hours=3, retry_after_hours=6, hostname=None,
-                  max_candidates=3, sources=SOURCES, now=None):
+                  max_candidates=3, sources=SOURCES, series_id=SERIES_ID,
+                  now=None):
     """Return (rows, counts) for due PWR episodes; no writes/downloads.
 
     Rows may request 'file', 'download_then_file',
@@ -104,6 +106,10 @@ def planning_rows(database, *, sports_root="/data/sports",
     sources = tuple(dict.fromkeys(sources))
     if not sources or any(source not in SOURCES for source in sources):
         raise ValueError("At least one supported source is required")
+    if series_id not in (SERIES_ID, *INTERNATIONAL_SERIES):
+        raise ValueError("Unsupported rugby fixture series")
+    if series_id != SERIES_ID and sources != ("rugbypass",):
+        raise ValueError("International/Nations acquisition supports RugbyPass only")
     sports_root = pathlib.Path(sports_root).expanduser()
     incoming_root = pathlib.Path(incoming_root).expanduser()
     if not sports_root.is_absolute() or not incoming_root.is_absolute():
@@ -114,7 +120,7 @@ def planning_rows(database, *, sports_root="/data/sports",
         raise ValueError("Invalid age, retry delay or candidate limit")
     now = aware(now) or dt.datetime.now(dt.timezone.utc)
     cutoff = now - dt.timedelta(hours=min_age_hours)
-    query = {"series_id": SERIES_ID, "season": {"$gte": 2025}}
+    query = {"series_id": series_id, "season": {"$gte": 2025}}
     if season is not None:
         if season < 2025:
             raise ValueError("PWR season must be 2025 or later")
