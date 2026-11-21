@@ -131,6 +131,12 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(self.rows()[0]["reason"], "already_published")
         self.assertEqual(self.run_cli(apply=True)["planned"], 0)
 
+    def test_stale_published_inventory_still_prevents_duplicate_media(self):
+        stored = self.sports / "Rugby_Womens_PWR/Season_2025/alternative.mkv"
+        record = self.record(stored)
+        record["size_bytes"] += 1
+        self.assertEqual(self.rows()[0]["reason"], "already_published")
+
     def test_unindexed_canonical_file_is_not_overwritten(self):
         target = self.sports / "Rugby_Womens_PWR/Season_2025" / (STEM + ".mkv")
         target.parent.mkdir(parents=True)
