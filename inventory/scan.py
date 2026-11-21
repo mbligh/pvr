@@ -58,6 +58,8 @@ def ids_in_filename(name, linked_releases):
     """Match exact known source IDs, never a numeric guess or title search."""
     found = []
     for uri, episode_id in linked_releases.items():
+        if uri == "__episodes__":
+            continue
         source_id = uri.split(":", 1)[-1]
         if re.search(r"(?<![A-Za-z0-9])" + re.escape(source_id) +
                      r"(?![A-Za-z0-9])", name):
@@ -131,6 +133,8 @@ def identify(path, by_number, linked_releases):
         return None, None, [], None
     if found.get("series_id") != SERIES_ID or found.get("season", 0) < 2025:
         return None, None, [], "Episode is outside supported PWR seasons"
+    if folder_season is not None and found["season"] != folder_season:
+        return None, None, [], "Season directory disagrees with linked episode"
     uri = None
     if source_hits:
         # More than one release of the same match might be named in the file;
