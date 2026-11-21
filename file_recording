@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""File one inventoried PWR recording using its canonical Atlas NFO.
+
+Preview by default. --apply safely publishes the video + NFO, records the
+new location, and only then removes the original recording.
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import socket
+import sys
+import uuid
+
+from filing.publish import (
+    canonical_paths, ensure_unchanged, publish, stat_identity, validate_nfo,
+)
+from matchers.pwr import SERIES_ID
+
+
+def plan(database, source, *, sports_root="/data/sports", hostname=None):
+    """Pure read-only validation and publication plan."""
+    source = pathlib.Path(source).expanduser()
+    if not source.is_absolute() or source.suffix.lower() != ".mkv":
+        raise ValueError("Source must be an absolute .mkv file path")
+    hostname = hostname or socket.gethostname()
+    if not hostname or "/" in hostname or ":" in hostname:
+        raise ValueError("Invalid host identifier")
+    source_id = f"{hostname}:{source}"
+    record = database.files.find_one({"_id": source_id})
+    if record is None:
+        raise ValueError("Source not in Atlas inventory; run inventory_files --apply first")
+    episode_id = record.get("episode_id")
+    if not isinstance(episode_id, str):
+        raise ValueError("Source has no verified episode association")
+    episode = database.episodes.find_one({"_id": episode_id})
+    if not episode or episode.get("series_id") != SERIES_ID:
+        raise ValueError("Source is not linked to a canonical PWR episode")
+    if episode.get("season", 0) < 2025:
+        raise ValueError("PWR seasons before 2025 are excluded")
+    if (record.get("series_id") != SERIES_ID or
+            record.get("season") != episode.get("season") or
+            record.get("episode") != episode.get("episode")):
+        raise ValueError("Inventory and canonical episode metadata disagree")
+    nfo_bytes = validate_nfo(episode)
+    target, nfo = canonical_paths(episode, sports_root)
+    target_id = f"{hostname}:{target}"
+    if target == source or target_id == source_id:
+        return {"status": "already_filed", "source": str(source),
+                "destination": str(target), "nfo_path": str(nfo),
+                "source_file_id": source_id, "destination_file_id": target_id,
+                "episode_id": episode_id, "host": hostname,
+                "season": episode["season"], "episode": episode["episode"]}
+    if record.get("file_state") == "moved":
+        raise ValueError("Source file is already recorded as moved in Atlas")
+    snapshot = stat_identity(source)
+    if record.get("size_bytes") != snapshot[2] or (
+            record.get("mtime_ns") is not None and
+            record["mtime_ns"] != snapshot[3]):
+        raise ValueError("Source differs from Atlas inventory; re-inventory before filing")
+    if source.is_symlink():
+        raise ValueError("Cannot file a symlink")
+    if not pathlib.Path(sports_root).is_dir():
+        raise ValueError("Sports root does not exist")
+    dest_record = database.files.find_one({"_id": target_id})
+    status = "ready"
+    if os.path.lexists(target) or os.path.lexists(nfo):
+        status = "destination_exists"
+    elif dest_record is not None:
+        status = "destination_record_exists"
+    return {
+        "status": status, "source": str(source),
+        "destination": str(target), "nfo_path": str(nfo),
+        "source_file_id": source_id, "destination_file_id": target_id,
+        "episode_id": episode_id, "host": hostname,
+        "season": episode["season"], "episode": episode["episode"],
+        "source_size": snapshot[2], "source_mtime_ns": snapshot[3],
+        "source_release_uri": record.get("release_uri"),
+        "_nfo_bytes": nfo_bytes, "_record": record,
+    }
+
+
+def public_plan(item, *, mode="preview"):
+    return {k: v for k, v in item.items() if not k.startswith("_")} | {"mode": mode}
+
+
+def commit_inventory(database, item, media, *, when=None):
+    """Register destination then mark the historical source as moved.
+
+    This avoids deleting evidence and gives provenance to the relocated file.
+    An ambiguous database failure is never resolved by removing local media.
+    """
+    when = when or dt.datetime.now(dt.timezone.utc)
+    target = pathlib.Path(item["destination"])
+    snapshot = stat_identity(target)
+    doc = item["_record"].copy()
+    doc.pop("_id", None)
+    for field in ("file_state", "moved_to", "moved_at"):
+        doc.pop(field, None)
+    doc.update({
+        "_id": item["destination_file_id"],
+        "host": item["host"], "path": str(target),
+        "episode_id": item["episode_id"],
+        "series_id": SERIES_ID,
+        "season": item["season"], "episode": item["episode"],
+        "match_evidence": ["atlas_inventory", "canonical_nfo"],
+        "release_uri": item["source_release_uri"],
+        "size_bytes": snapshot[2], "mtime_ns": snapshot[3],
+        "media": media, "first_seen": when, "last_seen": when,
+        "previous_file_id": item["source_file_id"],
+        "nfo_path": item["nfo_path"],
+    })
+    # insert_one is intentionally no-clobber for the canonical destination.
+    # Source is retained until both Atlas operations succeed.
+    database.files.insert_one(doc)
+    changed = database.files.update_one(
+        {"_id": item["source_file_id"],
+         "episode_id": item["episode_id"],
+         "path": item["source"], "file_state": {"$ne": "moved"}},
+        {"$set": {
+            "file_state": "moved",
+            "moved_to": item["destination_file_id"],
+            "moved_at": when,
+        }},
+    )
+    if changed.matched_count != 1:
+        raise ValueError("Source inventory changed during filing; retained both local copies")
+    return doc
+
+
+def run(database, source, *, sports_root="/data/sports", apply=False,
+        hostname=None, ffprobe="ffprobe", publisher=publish,
+        stream=sys.stdout):
+    item = plan(database, source, sports_root=sports_root, hostname=hostname)
+    if not apply:
+        print(json.dumps(public_plan(item), sort_keys=True), file=stream)
+        return public_plan(item)
+    if item["status"] != "ready":
+        result = public_plan(item, mode="skipped")
+        print(json.dumps(result, sort_keys=True), file=stream)
+        return result
+
+    now = dt.datetime.now(dt.timezone.utc)
+    job_id = uuid.uuid4().hex
+    database.jobs.insert_one({
+        "_id": job_id, "type": "filing", "status": "running",
+        "episode_id": item["episode_id"], "source_file_id": item["source_file_id"],
+        "destination_file_id": item["destination_file_id"],
+        "source": item["source"], "destination": item["destination"],
+        "nfo_path": item["nfo_path"], "host": item["host"],
+        "started_at": now,
+    })
+    committed = False
+    try:
+        # Source cannot be silently substituted after plan() even if size
+        # happens to remain identical: mtime and inode are checked by publisher.
+        media, original, method = publisher(
+            item["source"], item["destination"], item["nfo_path"],
+            item["_nfo_bytes"], sports_root=sports_root, ffprobe=ffprobe)
+        file_row = commit_inventory(database, item, media)
+        committed = True
+        ensure_unchanged(item["source"], original)
+        pathlib.Path(item["source"]).unlink()
+        finished = dt.datetime.now(dt.timezone.utc)
+        database.jobs.update_one({"_id": job_id}, {"$set": {
+            "status": "succeeded", "finished_at": finished,
+            "destination_file_id": file_row["_id"], "transfer": method,
+        }})
+        outcome = public_plan(item, mode="apply")
+        outcome.update(status="filed", transfer=method, job_id=job_id)
+        print(json.dumps(outcome, sort_keys=True), file=stream)
+        return outcome
+    except Exception as exc:
+        # If Atlas writes are partial or ambiguous, retain both published
+        # destination and original source for operator recovery. Never roll
+        # back unconditionally after a database write has been attempted.
+        try:
+            database.jobs.update_one({"_id": job_id}, {"$set": {
+                "status": "failed", "error": str(exc)[:1000],
+                "finished_at": dt.datetime.now(dt.timezone.utc),
+                "requires_reconciliation": committed or
+                    pathlib.Path(item["destination"]).exists(),
+            }})
+        except Exception:
+            pass
+        raise
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=pathlib.Path,
+                        help="Absolute path to an already-inventoried MKV")
+    parser.add_argument("--sports-root", default="/data/sports",
+                        help="Media library root (default: /data/sports)")
+    parser.add_argument("--host", help="Override inventory host identifier")
+    parser.add_argument("--ffprobe", default="ffprobe")
+    parser.add_argument("--apply", action="store_true",
+                        help="Publish canonical video and NFO; preview without it")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        credentials = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            uri = credentials.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI from {credentials}: {exc}")
+    if not uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            result = run(client[args.database], args.source,
+                         sports_root=args.sports_root, hostname=args.host,
+                         ffprobe=args.ffprobe, apply=args.apply)
+    except Exception as exc:
+        print(f"PVR filer: {exc}", file=sys.stderr)
+        return 1
+    return 0 if result["status"] not in (
+        "destination_exists", "destination_record_exists") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
