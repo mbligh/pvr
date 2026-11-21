@@ -278,6 +278,39 @@ class FilingCLITests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reconcile"):
             self.run_cli()
 
+    def test_existing_library_file_for_same_episode_blocks_promotion(self):
+        # A broadcaster file may have a different filename than the
+        # canonical target; it still prevents an unselected YouTube
+        # recording from becoming the preferred media-library file.
+        preferred = self.sports / "Rugby_Womens_PWR" / "Season_2025" / "bbc-alternative.mkv"
+        preferred.parent.mkdir(parents=True)
+        preferred.write_bytes(b"better existing BBC recording")
+        self.db.files.find.return_value = [{
+            "episode_id": EP_ID, "host": "slagg", "path": str(preferred),
+            "size_bytes": preferred.stat().st_size
+        }]
+        plan = self.run_cli()
+        self.assertEqual(plan["status"], "already_published")
+        self.assertEqual(plan["existing_published_files"], [str(preferred)])
+        result = self.run_cli(apply=True)
+        self.assertEqual(result["status"], "already_published")
+        self.assertTrue(self.source.exists())
+        self.assertFalse(self.destination.exists())
+        self.db.jobs.insert_one.assert_not_called()
+
+    def test_other_episode_or_stale_library_record_does_not_block(self):
+        other = self.sports / "Rugby_Womens_PWR" / "Season_2026" / "other.mkv"
+        other.parent.mkdir(parents=True)
+        other.write_bytes(b"BBC recording of a DIFFERENT fixture")
+        self.db.files.find.return_value = []
+        self.assertEqual(self.run_cli()["status"], "ready")
+        self.db.files.find.return_value = [{
+            "episode_id": EP_ID, "host": "slagg",
+            "path": str(self.sports / "Rugby_Womens_PWR/Season_2025/gone.mkv"),
+            "size_bytes": 100000,
+        }]
+        self.assertEqual(self.run_cli()["status"], "ready")
+
     def test_destination_collision_does_not_create_job(self):
         self.destination.parent.mkdir(parents=True)
         self.destination.write_bytes(b"already present")
