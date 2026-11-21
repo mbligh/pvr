@@ -220,7 +220,11 @@ class Formula1FilingTests(unittest.TestCase):
             "mtime_ns": already.stat().st_mtime_ns,
             "release_uri": RELEASE_URI, "media": MEDIA,
         }]
-        self.assertEqual(self.run_cli()["status"], "already_published")
+        # The new Sky recording is preferred over the existing one, but
+        # upgrading a published episode is deliberately a manual operation.
+        self.assertEqual(self.run_cli()["status"], "upgrade_available")
+        self.assertEqual(self.run_cli(apply=True)["status"], "upgrade_available")
+        self.db.jobs.insert_one.assert_not_called()
         self.assertTrue(self.source.exists())
 
 
