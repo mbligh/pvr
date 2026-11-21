@@ -190,6 +190,7 @@ def planning_rows(database, *, sports_root="/data/sports",
 
         seen = {r.get("release_uri") for r in existing if r.get("release_uri")}
         remote = []
+        short_releases = []
         invalid = False
         for release in by_episode.get(eid, []):
             uri = release.get("_id")
@@ -198,9 +199,11 @@ def planning_rows(database, *, sports_root="/data/sports",
                 continue
             if (isinstance(release.get("duration"), (float, int)) and
                     release["duration"] < 3600):
+                short_releases.append(uri)
                 continue
             if (isinstance((release.get("metadata") or {}).get("duration"), (float, int)) and
                     release["metadata"]["duration"] < 3600):
+                short_releases.append(uri)
                 continue
             if uri not in seen:
                 remote.append(release)
@@ -217,14 +220,19 @@ def planning_rows(database, *, sports_root="/data/sports",
             skip("recent_failed_or_running_download",
                  sources=[r["_id"] for r in remote if r["_id"] in recent_jobs])
             continue
-        claimed = []
+        occupied = []
+        inventoried = []
         for release in remote:
             incoming = incoming_path(incoming_root, release)
-            if os.path.lexists(incoming) or any(
-                    r.get("path") == str(incoming) for r in existing):
-                claimed.append(str(incoming))
-        if claimed:
-            skip("incoming_destination_exists_or_inventoried", paths=claimed)
+            if os.path.lexists(incoming):
+                occupied.append(str(incoming))
+            elif any(r.get("path") == str(incoming) for r in existing):
+                inventoried.append(str(incoming))
+        if occupied:
+            skip("incoming_destination_exists", paths=occupied)
+            continue
+        if inventoried:
+            skip("incoming_inventory_conflict", paths=inventoried)
             continue
 
         if not remote:
@@ -232,6 +240,8 @@ def planning_rows(database, *, sports_root="/data/sports",
                 rows.append(dict(base, action="file", source=preferred,
                                  preferred_file_id=choice["preferred_file_id"],
                                  destination=str(destination)))
+            elif short_releases:
+                skip("known_short_release", source_uris=sorted(short_releases))
             else:
                 skip("no_new_supported_release")
             continue
