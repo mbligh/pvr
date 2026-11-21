@@ -133,6 +133,42 @@ class YouTubeIndexTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in releases], ["bdxiq73pR-I"])
         self.assertEqual(releases[0]["published"], "2026-11-20T19:30:00+00:00")
 
+    def test_scheduled_upcoming_livestreams_are_skipped_without_losing_replays(self):
+        replay = {"id": "bdxiq73pR-I", "title": "Loughborough vs Trailfinders",
+                  "live_status": "was_live", "release_date": "20261120"}
+        upcoming_errors = (
+            "ERROR: [youtube] WgK6oZbpfhs: This live event will begin in 36 hours.\n"
+            "ERROR: [youtube] u4rvkGzMriw: This live event will begin in 34 hours.\n"
+            "ERROR: [youtube] Mo0ULtfqqts: This live event will begin in 11 hours.\n"
+        )
+        def fake(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, json.dumps(replay) + "\n",
+                                               upcoming_errors)
+        records = youtube.discover(execute=fake)
+        self.assertEqual([r["uri"] for r in records], ["youtube:bdxiq73pR-I"])
+        self.assertEqual(records[0]["published"], "2026-11-20")
+
+    def test_upcoming_errors_only_can_produce_empty_catalogue(self):
+        error = "ERROR: [youtube] WgK6oZbpfhs: This live event will begin in 36 hours.\n"
+        def fake(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, "", error)
+        self.assertEqual(youtube.discover(execute=fake), [])
+
+    def test_mixed_upcoming_and_unexpected_failures_abort(self):
+        replay = json.dumps({"id": "bdxiq73pR-I", "title": "Match"})
+        for errors in [
+            "ERROR: [youtube] WgK6oZbpfhs: This live event will begin in 36 hours.\n"
+            "ERROR: [youtube] xxxxxxxxxxx: Video unavailable\n",
+            "ERROR: [youtube] xxxxxxxxxxx: Sign in to confirm you are not a bot\n",
+            "ERROR: playlist request failed\n",
+            "",
+        ]:
+            with self.subTest(errors=errors):
+                def fake(command, **kwargs):
+                    return subprocess.CompletedProcess(command, 1, replay + "\n", errors)
+                with self.assertRaises(RuntimeError):
+                    youtube.discover(execute=fake)
+
     def test_failures_do_not_emit_partial_data(self):
         def fake(command, **kwargs):
             return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
