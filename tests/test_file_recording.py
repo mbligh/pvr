@@ -234,6 +234,50 @@ class FilingCLITests(unittest.TestCase):
         self.assertEqual(self.db.jobs.update_one.call_args.args[1]["$set"]["status"],
                          "succeeded")
 
+    def test_repeated_successful_filing_reports_already_filed(self):
+        result = self.run_cli(apply=True)
+        self.assertEqual(result["status"], "filed")
+        original = dict(self.original, file_state="moved",
+                        moved_to="slagg:" + str(self.destination))
+        destination_record = {
+            "_id": "slagg:" + str(self.destination),
+            "episode_id": EP_ID, "path": str(self.destination),
+            "size_bytes": self.destination.stat().st_size,
+        }
+        def lookup(query, *args, **kwargs):
+            if query["_id"] == self.file_id:
+                return original
+            if query["_id"] == destination_record["_id"]:
+                return destination_record
+            return None
+        self.db.files.find_one.side_effect = lookup
+        self.db.jobs.insert_one.reset_mock()
+        repeat = self.run_cli(apply=True)
+        self.assertEqual(repeat["status"], "already_filed")
+        self.assertFalse(self.source.exists())
+        self.assertTrue(self.destination.exists())
+        self.db.jobs.insert_one.assert_not_called()
+
+    def test_already_filed_needs_exact_nfo_and_file_verification(self):
+        destination_record = {
+            "_id": "slagg:" + str(self.destination),
+            "episode_id": EP_ID, "path": str(self.destination),
+            "size_bytes": 3,
+        }
+        original = dict(self.original, file_state="moved",
+                        moved_to=destination_record["_id"])
+        self.source.unlink()
+        self.destination.parent.mkdir(parents=True)
+        self.destination.write_bytes(b"bad")
+        self.nfo.write_bytes(b"wrong")
+        def lookup(query, *args, **kwargs):
+            if query["_id"] == self.file_id:
+                return original
+            return destination_record
+        self.db.files.find_one.side_effect = lookup
+        with self.assertRaisesRegex(ValueError, "reconcile"):
+            self.run_cli()
+
     def test_destination_collision_does_not_create_job(self):
         self.destination.parent.mkdir(parents=True)
         self.destination.write_bytes(b"already present")
