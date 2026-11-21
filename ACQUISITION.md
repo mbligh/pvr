@@ -1,12 +1,12 @@
-# PVR PWR source refresh and missing-recording acquisition
+# PVR rugby source refresh and missing-recording acquisition
 
 Two independent preview-first tools work together:
 
 - `refresh_releases` discovers current **BBC iPlayer**, **YouTube PWR**
   and **RugbyPass** catalogue entries, validates their stable IDs and
-  matches them to known PWR fixtures in Atlas. Preview performs no writes;
+  matches them to known PWR and international fixtures in Atlas. Preview performs no writes;
   `--apply` imports releases and links unambiguous matches.
-- `acquire_missing` finds due PWR episodes that lack a published recording,
+- `acquire_missing` finds due numbered rugby episodes that lack a published recording,
   downloads the needed source recordings, evaluates their **actual** video
   properties, and canonically files the winner with the NFO stored in Atlas.
   It is limited to one episode per run unless `--limit` is increased.
@@ -53,9 +53,67 @@ python3 acquire_missing --season 2025 --source youtube --limit 10 --apply
 acquisition worker uses the same provider filter for optional refresh and
 for choosing source candidates.
 
+## RugbyPass: internationals and Nations Championship
+
+The same safe PWR worker now supports `--series` for three other
+**already-numbered** Atlas rugby fixture series. For these series,
+the supported source is **RugbyPass only**; BBC and YouTube remain
+PWR-specific until their international catalogue and matching rules
+are established.
+
+```sh
+cd ~/pvr
+git pull
+
+# Preview matches already found in RugbyPass's Atlas catalogue:
+python3 match_rugbypass --verbose
+
+# Link only unambiguous full-match replays to existing numbered fixtures:
+python3 match_rugbypass --apply
+
+# Inspect missing men's internationals and Nations Championship recordings:
+python3 acquire_missing --series rugby-mens-intl --limit 5
+python3 acquire_missing --series rugby-nations --limit 5
+
+# Inspect women's internationals (WXV included):
+python3 acquire_missing --series rugby-womens-intl --limit 5
+
+# Safely trial exactly one Nations Championship RugbyPass recording:
+python3 acquire_missing --series rugby-nations --limit 1 --apply
+
+# Later: refresh RugbyPass listings, match and acquire in one bounded run:
+python3 acquire_missing --series rugby-womens-intl --refresh --limit 1 --apply
+```
+
+These commands use the existing `pvr.episodes` IDs, numbered
+`Season_YYYY` directories and stored NFO XML, and apply the same
+>=720p, >=1h, prefer >=50fps, otherwise largest-file rule.
+A canonical recording is never replaced and lower-ranked incoming
+recordings are retained. The RugbyPass adapter reuses
+`~/tools/video/rugbypass` and its existing local login profile.
+
+**Nations Championship routing:** These matches also appear in the men's
+international calendar, but an explicitly labelled `Nations Championship`
+RugbyPass recording links only to `rugby-nations`; it is not acquired
+a second time into `rugby-mens-intl`. This prevents duplicate videos
+between those two libraries.
+
+**Unnumbered fixtures and ambiguity:** At the time of this change, Atlas
+has 110 numbered men's internationals, 44 numbered women's internationals
+and 12 numbered Nations Championship fixtures. Other Nations fixtures
+lack canonical episode numbers/NFOs and are excluded until metadata is
+updated. Duplicate national fixtures whose teams/dates overlap within
+the replay matching window are marked ambiguous, not guessed. See
+[MATCHING.md](MATCHING.md).
+
+For PWR, the default command without `--series` continues to use BBC,
+YouTube and RugbyPass together. Source selection for the international
+series is restricted to RugbyPass: using `--source youtube` or
+`--source bbc` with one of these series is deliberately an error.
+
 ## Complete selection policy
 
-For each scheduled, numbered PWR fixture older than three hours (configurable),
+For each scheduled, numbered supported rugby fixture older than three hours (configurable),
 the worker:
 
 1. Checks the canonical episode NFO/filename from Atlas; skips cancelled
@@ -170,8 +228,8 @@ frequent full-catalogue refreshes or unbounded historical backfills.
 
 ## Not implemented yet
 
-- Acquisition from unrelated TV series, men's rugby or Formula 1 through
-  this *PWR-specific* worker (other separate tools may handle those).
+- Acquisition from unrelated TV series, other rugby competitions or Formula 1
+  through this rugby worker (Formula 1 has its separate acquisition path).
 - Predictive source quality ranking without downloading the media.
 - Replacing a published recording with a newly discovered better version.
 - Cleaning up lower-ranked incoming recordings.
