@@ -52,7 +52,7 @@ Do not store media files in MongoDB. Keep large artwork and verbose logs on disk
 
 Initial rugby ingestion is in place: `calendar_legacy/` contains independently copied rugby parsers, fixture/ICS spoiler filtering, numbering and NFO generation from `mbligh/calendar`. `import_rugby` seeds historical accepted calendars and prior episode assignments from published snapshots, then upserts all known fixtures (including unnumbered ones) and NFO XML into the Atlas `pvr` database. See [RUGBY_IMPORT.md](RUGBY_IMPORT.md).
 
-The GitHub Actions workflow runs offline regression tests and a snapshot-bootstrap smoke test; Atlas ingestion is manual-only until a restricted `MONGODB_URI` secret and allowlisted network egress are configured. The original `mbligh/calendar` and `mbligh/tools` workflows remain unchanged. Google Calendar publishing from Atlas, F1, and release/download handling are not yet migrated.
+The GitHub Actions workflow runs offline regression tests and a snapshot-bootstrap smoke test; Atlas ingestion remains manual-only in GitHub Actions. For local runs on `slagg`, the importer reads `~/.mongodb/pvr` (plain MongoDB URI) using system Python; `MONGODB_URI` remains an optional override. GitHub-hosted Atlas imports still require a secret and allowlisted network egress. The original `mbligh/calendar` and `mbligh/tools` workflows remain unchanged. Google Calendar publishing from Atlas, F1, and release/download handling are not yet migrated.
 
 ## Initial implementation and migration
 
