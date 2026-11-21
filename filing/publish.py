@@ -13,13 +13,25 @@ import xml.etree.ElementTree as ET
 
 from inventory.scan import probe_video
 
-SERIES_PATHS = {
-    "rugby-womens-pwr": ("Rugby_Womens_PWR", "rugbywomenspwr", 2025),
+# Canonical names must agree with the user's existing /data/sports
+# directories. Entries for competitions that lack numbered fixture/NFO data
+# are registered for future imports; the filer never invents fixture data.
+# Tuple: (library directory and filename prefix, normalized NFO showtitle,
+#         earliest accepted season).
+RUGBY_SERIES_PATHS = {
+    "rugby-mens-6n": ("Rugby_Mens_6N", "rugbymens6n", 1900),
     "rugby-mens-intl": ("Rugby_Mens_Intl", "rugbymensintl", 2026),
-    "rugby-womens-intl": ("Rugby_Womens_Intl", "rugbywomensintl", 2026),
+    "rugby-mens-lions": ("Rugby_Mens_Lions", "rugbymenslions", 1900),
+    "rugby-mens-world-cup": ("Rugby_Mens_World_Cup", "rugbymensworldcup", 1900),
     "rugby-nations": ("Rugby_Nations", "rugbynationschampionships", 2026),
-    "formula-1": ("Formula_1", "formula1", 1950),
+    "rugby-womens-6n": ("Rugby_Womens_6N", "rugbywomens6n", 1900),
+    "rugby-womens-intl": ("Rugby_Womens_Intl", "rugbywomensintl", 2026),
+    "rugby-womens-lions": ("Rugby_Womens_Lions", "rugbywomenslions", 1900),
+    "rugby-womens-pwr": ("Rugby_Womens_PWR", "rugbywomenspwr", 2025),
+    "rugby-womens-world-cup": ("Rugby_Womens_World_Cup", "rugbywomensworldcup", 1900),
+    "rugby-womens-wxv": ("Rugby_Womens_WXV", "rugbywomenswxv", 1900),
 }
+SERIES_PATHS = {**RUGBY_SERIES_PATHS, "formula-1": ("Formula_1", "formula1", 1950)}
 
 
 def series_config(episode):
