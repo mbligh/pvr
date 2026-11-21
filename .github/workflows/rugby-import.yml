@@ -18,7 +18,7 @@ jobs:
         run: |
           python - <<'PY'
           import pathlib
-          for path in [pathlib.Path("import_rugby"), pathlib.Path("import_pwr_history"), pathlib.Path("index_releases"), pathlib.Path("match_releases"), pathlib.Path("inventory_files"), pathlib.Path("download_release"), pathlib.Path("file_recording"), pathlib.Path("select_recording"), pathlib.Path("f1_data"), pathlib.Path("import_f1"), pathlib.Path("import_teletz"), pathlib.Path("reddit_teletz.py"), pathlib.Path("select_f1_releases"), *pathlib.Path("downloaders").glob("*.py"), *pathlib.Path("filing").glob("*.py"), *pathlib.Path("selection").glob("*.py"), *pathlib.Path("inventory").glob("*.py"), *pathlib.Path("indexers").glob("*"), *pathlib.Path("matchers").glob("*.py"), *pathlib.Path("calendar_legacy").glob("*.py")]:
+          for path in [pathlib.Path("import_rugby"), pathlib.Path("import_pwr_history"), pathlib.Path("index_releases"), pathlib.Path("match_releases"), pathlib.Path("inventory_files"), pathlib.Path("download_release"), pathlib.Path("file_recording"), pathlib.Path("select_recording"), pathlib.Path("acquire_missing"), pathlib.Path("f1_data"), pathlib.Path("import_f1"), pathlib.Path("import_teletz"), pathlib.Path("reddit_teletz.py"), pathlib.Path("select_f1_releases"), *pathlib.Path("downloaders").glob("*.py"), *pathlib.Path("filing").glob("*.py"), *pathlib.Path("selection").glob("*.py"), *pathlib.Path("orchestration").glob("*.py"), *pathlib.Path("inventory").glob("*.py"), *pathlib.Path("indexers").glob("*"), *pathlib.Path("matchers").glob("*.py"), *pathlib.Path("calendar_legacy").glob("*.py")]:
               compile(path.read_text(), str(path), "exec")
           PY
       - name: Test rugby adapters
