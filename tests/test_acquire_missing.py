@@ -292,6 +292,35 @@ class AcquisitionTests(unittest.TestCase):
                      downloader=download, filer=file)
         self.assertEqual(called, ["refresh", "download", "file"])
 
+    def test_national_rugby_series_only_acquires_rugbypass(self):
+        for series_id, root, name in (
+                ("rugby-mens-intl", "Rugby_Mens_Intl", "Rugby Mens Intl"),
+                ("rugby-womens-intl", "Rugby_Womens_Intl", "Rugby Womens Intl"),
+                ("rugby-nations", "Rugby_Nations", "Rugby Nations Championships")):
+            with self.subTest(series=series_id):
+                episode_id = f"{series_id}:fixture-123"
+                self.episodes[:] = [dict(
+                    EP, _id=episode_id, series_id=series_id,
+                    season=2026, episode=501,
+                    nfo_path=f"{root}/Season_2026/{root}-s2026e501-France_v_South_Africa_20261113.nfo",
+                    nfo=f"<episodedetails><showtitle>{name}</showtitle><season>2026</season><episode>501</episode></episodedetails>"
+                )]
+                self.releases[:] = [dict(
+                    RELEASE, _id="rugbypass:1051364", source="rugbypass",
+                    episode_id=episode_id)]
+                rows = self.rows(series_id=series_id, sources=("rugbypass",))
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["action"], "download_then_file")
+                self.assertEqual(rows[0]["source_uri"], "rugbypass:1051364")
+                self.assertEqual(rows[0]["incoming"],
+                                 str(self.incoming / "pvr-rugbypass-1051364.mkv"))
+                summary = self.run_cli(series_id=series_id, sources=("rugbypass",))
+                self.assertEqual(summary["series"], series_id)
+                self.assertEqual(summary["planned"], 1)
+                self.db.jobs.insert_one.assert_not_called()
+                with self.assertRaisesRegex(ValueError, "RugbyPass only"):
+                    self.rows(series_id=series_id, sources=("youtube",))
+
     def test_worker_lock_refuses_overlap(self):
         with CLI.acquire_lock(self.incoming):
             with self.assertRaisesRegex(RuntimeError, "Another PVR acquisition"):
