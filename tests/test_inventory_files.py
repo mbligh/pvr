@@ -19,9 +19,11 @@ cli = importlib.machinery.SourceFileLoader(
 SERIES = "rugby-womens-pwr"
 EP = {"_id": SERIES + ":pwr-289126@mbligh.github.io",
       "series_id": SERIES, "season": 2025, "episode": 101,
+      "scheduled": dt.datetime(2025, 10, 24, 18, 30, tzinfo=dt.timezone.utc),
       "nfo_path": "Rugby_Womens_PWR/Season_2025/Rugby_Womens_PWR-s2025e101-Harlequins_v_Loughborough_Lightning_20251024.nfo"}
 EP2 = {"_id": SERIES + ":pwr-289200@mbligh.github.io",
        "series_id": SERIES, "season": 2025, "episode": 2001,
+       "scheduled": dt.datetime(2026, 6, 28, 14, tzinfo=dt.timezone.utc),
        "nfo_path": "Rugby_Womens_PWR/Season_2025/Rugby_Womens_PWR-s2025e2001-Saracens_v_Trailfinders_Women_20260628.nfo"}
 RELEASE = {"_id": "bbc:m0034hxp", "episode_id": EP["_id"]}
 FRAME = {
@@ -205,6 +207,22 @@ class InventoryCLITests(unittest.TestCase):
         self.assertTrue(ops[0]._filter["_id"].startswith("slagg:"))
         self.assertEqual(ops[0]._doc["$setOnInsert"].keys(), {"first_seen"})
         self.assertFalse(any("delete" in str(op).lower() for op in ops))
+
+    def test_unseen_report_is_scope_limited_and_does_not_write(self):
+        from unittest.mock import patch
+        with patch.object(cli, "probe_video", return_value={
+                "video": {"codec": "h264"}, "duration_seconds": 7200.0}):
+            output, summary = io.StringIO(), io.StringIO()
+            report = cli.scan(self.db, roots=[self.root], hostname="slagg",
+                              show_unseen=True, stream=output,
+                              summary_stream=summary)
+        self.assertEqual(report["episodes_with_files"], 1)
+        self.assertEqual(report["past_episodes_not_found_in_roots"], 1)
+        messages = [json.loads(line) for line in output.getvalue().splitlines()]
+        unseen = [x for x in messages if x["status"] == "not_found_in_roots"]
+        self.assertEqual(len(unseen), 1)
+        self.assertEqual(unseen[0]["episode_id"], EP2["_id"])
+        self.db.files.bulk_write.assert_not_called()
 
     def test_existing_different_episode_is_rejected(self):
         doc = {"_id": "slagg:" + str(self.valid), "episode_id": EP2["_id"]}
