@@ -285,7 +285,7 @@ class FilingCLITests(unittest.TestCase):
         # recording from becoming the preferred media-library file.
         preferred = self.sports / "Rugby_Womens_PWR" / "Season_2025" / "bbc-alternative.mkv"
         preferred.parent.mkdir(parents=True)
-        preferred.write_bytes(b"better existing BBC recording")
+        preferred.write_bytes(b"x" * (self.source.stat().st_size + 1000))
         self.db.files.find.return_value = [self.original, {
             "_id": "slagg:" + str(preferred),
             "episode_id": EP_ID, "host": "slagg", "path": str(preferred),
