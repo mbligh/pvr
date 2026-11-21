@@ -1,11 +1,9 @@
 """Offline tests for the F1 calendar source and its key discovery."""
-import importlib.machinery
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[1]
-f1 = importlib.machinery.SourceFileLoader("pvr_f1_data", str(ROOT / "f1_data")).load_module()
+from schedulers import f1_data as f1
 
 
 class F1DataTests(unittest.TestCase):
