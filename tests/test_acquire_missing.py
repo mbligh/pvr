@@ -49,7 +49,11 @@ class AcquisitionTests(unittest.TestCase):
         self.files = []
         self.jobs = []
         self.db.episodes.find.side_effect = lambda *a, **kw: list(self.episodes)
-        self.db.releases.find.side_effect = lambda *a, **kw: list(self.releases)
+        def matched_releases(query, *args, **kwargs):
+            sources = (query.get("source") or {}).get("$in")
+            return [item for item in self.releases
+                    if sources is None or item.get("source") in sources]
+        self.db.releases.find.side_effect = matched_releases
         self.db.files.find.side_effect = lambda *a, **kw: list(self.files)
         self.db.jobs.find.side_effect = lambda *a, **kw: list(self.jobs)
 
