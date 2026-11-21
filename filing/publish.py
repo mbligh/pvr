@@ -74,12 +74,14 @@ def ensure_unchanged(path, identity):
 
 
 def prepare_directory(target, root):
-    """Create only required series/season directories, never traverse symlinks."""
+    """Follow a symlinked library root; reject symlinks within the library.
+
+    /data/sports may be a symlink to another mounted filesystem. Keep its
+    original path for file identity while allowing normal filesystem access.
+    """
     root = pathlib.Path(root)
     if not root.is_dir():
         raise ValueError(f"Sports root does not exist: {root}")
-    if root.is_symlink():
-        raise ValueError(f"Sports root is a symlink: {root}")
     for directory in [target.parent.parent, target.parent]:
         if directory.is_symlink():
             raise ValueError(f"Destination directory is a symlink: {directory}")
