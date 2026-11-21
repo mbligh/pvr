@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Discover teletz F1 TransferNow links through the existing tools Reddit client.
+
+Default: release JSONL compatible with index_releases.
+--bundle: source-observation plus releases JSONL for import_teletz.
+Does not write MongoDB, email, or download anything.
+"""
+import argparse
+import json
+import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from reddit_teletz import fetch_live, process_comments
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pages", type=int, default=3,
+                        help="Number of Reddit profile pages (default 3)")
+    parser.add_argument("--method", choices=["stdlib", "curl"], default="stdlib")
+    parser.add_argument("--tools-dir", type=pathlib.Path,
+                        help="Directory containing redditlib.py (default ~/tools/reddit)")
+    parser.add_argument("--input", type=pathlib.Path,
+                        help="Offline Reddit records JSON with a comments list; "
+                             "entries must have verified parent_author=AutoModerator")
+    parser.add_argument("--bundle", action="store_true",
+                        help="One observation + its releases per line, for import_teletz")
+    args = parser.parse_args(argv)
+    if not 1 <= args.pages <= 20:
+        parser.error("--pages must be 1..20")
+    try:
+        if args.input:
+            payload = json.loads(args.input.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or not isinstance(payload.get("comments"), list):
+                raise ValueError("Input must be a Reddit JSON object with comments list")
+            comments = payload["comments"]
+            pages = None
+        else:
+            comments, pages = fetch_live(args.pages, args.method, args.tools_dir)
+        bundles = process_comments(comments)  # all parsed before any stdout
+        release_count = sum(len(bundle["releases"]) for bundle in bundles)
+        print(f"Teletz: pages={pages if pages is not None else 'input'} "
+              f"verified_f1_comments={len(bundles)} releases={release_count}",
+              file=sys.stderr)
+        for bundle in bundles:
+            if args.bundle:
+                print(json.dumps(bundle, ensure_ascii=False))
+            else:
+                for release in bundle["releases"]:
+                    print(json.dumps(release, ensure_ascii=False))
+        return 0
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        print(f"reddit_teletz: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

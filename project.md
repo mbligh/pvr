@@ -212,3 +212,19 @@ absent sessions. F1 normalizes the legacy US/Central alias to America/Chicago be
 conversion, since not all tzdata installations contain backward links.
 See F1_IMPORT.md. No Atlas changes or calendar publications
 were performed as part of this addition.
+
+
+## Reddit/teletz F1 release discovery (2026-11-21)
+
+The indexers/reddit_teletz adapter reuses the existing mbligh/tools Reddit
+client to collect verified top-level AutoModerator-thread comments and
+extract independent TransferNow releases. Its default output is JSONL
+compatible with index_releases; --bundle carries raw source observations too.
+The preview-first import_teletz consumer writes raw comment content,
+provenance and content fingerprints to pvr.source_observations while writing
+the extracted releases through the shared index_releases importer to
+pvr.releases. Exact F1 title matching links to pvr.episodes when safe; source
+links are rechecked on each scan, so edits can add new releases. A dedicated
+Sky source is preferred over MULTi Sky, then F1TV, but actual download
+selection is not yet implemented. No live Atlas writes or cron changes
+are part of this code change. See REDDIT_TELETZ.md.

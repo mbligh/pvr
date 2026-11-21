@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Import teletz Reddit comment observations and releases to Atlas, preview-first.
+
+Usage:
+    ./indexers/reddit_teletz --bundle | ./import_teletz
+    set -o pipefail
+    ./indexers/reddit_teletz --bundle | ./import_teletz --apply
+
+The shared index_releases importer owns the releases collection. This
+consumer adds source_observations and conservative, exact F1 episode matches.
+"""
+import argparse
+import datetime as dt
+import importlib.machinery
+import io
+import json
+import os
+from pathlib import Path
+import sys
+
+from reddit_teletz import SOURCE, match_episode, TRANSFER
+
+ROOT = Path(__file__).resolve().parent
+UTC = dt.timezone.utc
+
+
+def release_ingest():
+    return importlib.machinery.SourceFileLoader(
+        "pvr_release_ingest_teletz", str(ROOT / "index_releases")).load_module()
+
+
+def read_bundles(lines):
+    """Validate entire JSONL stream before returning any database operations."""
+    importer = release_ingest()
+    observations, releases, provenance = {}, {}, {}
+    for lineno, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+            if not isinstance(item, dict) or not isinstance(item.get("observation"), dict):
+                raise ValueError("Expected bundle with observation object")
+            obs = item["observation"]
+            oid = obs.get("_id")
+            if (not isinstance(oid, str) or not oid.startswith("reddit:comment:") or
+                    obs.get("source") != SOURCE or obs.get("kind") != "comment" or
+                    (obs.get("author") or "").lower() != "teletz" or
+                    (obs.get("parent_author") or "").lower() != "automoderator" or
+                    (obs.get("subreddit") or "").lower() != "motorsportsreplays" or
+                    not isinstance(obs.get("body"), str)):
+                raise ValueError("Invalid or unverified Reddit observation")
+            if oid in observations:
+                raise ValueError("Duplicate source observation " + oid)
+            listed = item.get("releases")
+            if not isinstance(listed, list):
+                raise ValueError("Expected releases array")
+            observations[oid] = obs
+            for value in listed:
+                record = importer.validate(value)
+                meta = record.get("metadata", {})
+                if (record["source"] != SOURCE or
+                        meta.get("observation_id") != oid or
+                        meta.get("url") !=
+                        "https://www.transfernow.net/dl/" + record["id"] or
+                        not TRANSFER.fullmatch(meta["url"])):
+                    raise ValueError("Invalid TransferNow release or observation link")
+                uri = record["uri"]
+                provenance.setdefault(uri, []).append(oid)
+                if uri not in releases:
+                    releases[uri] = record
+        except (ValueError, TypeError, KeyError) as exc:
+            raise ValueError(f"Line {lineno}: {exc}") from exc
+    for uri, record in releases.items():
+        record["metadata"]["observation_ids"] = sorted(set(provenance[uri]))
+    return observations, releases, provenance
+
+
+def match_plans(observations, releases, provenance, episodes):
+    """Only auto-link a source when every observation agrees on the exact episode."""
+    plans = {}
+    for uri in releases:
+        candidates = set()
+        missed = False
+        for oid in provenance[uri]:
+            episode = match_episode(observations[oid].get("thread_title"), episodes)
+            if not episode:
+                missed = True
+            else:
+                candidates.add(episode)
+        if len(candidates) == 1 and not missed:
+            plans[uri] = next(iter(candidates))
+    return plans
+
+
+def persist(database, observations, releases, plans, now):
+    """Preserve old state and original content; no deletion on a vanished link."""
+    from pymongo import UpdateOne
+
+    importer = release_ingest()
+    old = {r["_id"]: r for r in database.releases.find(
+        {"_id": {"$in": list(releases)}}, {"_id": 1, "episode_id": 1,
+                                          "metadata.observation_ids": 1})}
+    for uri, ep_id in plans.items():
+        assigned = old.get(uri, {}).get("episode_id")
+        if assigned and assigned != ep_id:
+            raise ValueError(f"Existing {uri} linked to {assigned}, not {ep_id}; "
+                             "refusing to reassign")
+    for uri, record in releases.items():
+        previous = old.get(uri, {}).get("metadata", {}).get("observation_ids", [])
+        record["metadata"]["observation_ids"] = sorted(set(
+            record["metadata"]["observation_ids"] + previous))
+    database.source_observations.create_index([("source", 1), ("thread_id", 1)])
+    db_old = {r["_id"]: r for r in database.source_observations.find(
+        {"_id": {"$in": list(observations)}},
+        {"_id": 1, "content_sha256": 1})}
+    operations = []
+    for oid, obs in observations.items():
+        changed = db_old.get(oid, {}).get("content_sha256") != obs["content_sha256"]
+        update = {**{k: v for k, v in obs.items() if k != "_id"}, "last_seen": now}
+        if changed:
+            update["content_changed_at"] = now
+        operations.append(UpdateOne({"_id": oid}, {
+            "$set": update, "$setOnInsert": {"first_seen": now}
+        }, upsert=True))
+    if operations:
+        database.source_observations.bulk_write(operations, ordered=False)
+
+    # Use the existing shared release importer; it keeps episode_id/jobs intact.
+    normalized = importer.read_records(io.StringIO(
+        "".join(json.dumps(item, ensure_ascii=False) + "\n"
+                for item in releases.values())))
+    result = importer.upsert_releases(database, normalized, now)
+    linked = 0
+    for uri, ep_id in plans.items():
+        change = database.releases.update_one(
+            {"_id": uri, "episode_id": None},
+            {"$set": {"episode_id": ep_id, "match_method": "f1_thread_exact"}})
+        linked += change.modified_count
+    return {"observations": len(observations), "releases": result,
+            "new_episode_links": linked}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path,
+                        help="Saved --bundle JSONL instead of stdin")
+    parser.add_argument("--apply", action="store_true",
+                        help="Persist to MongoDB (default validates and previews)")
+    parser.add_argument("--match", action="store_true",
+                        help="Read Atlas episode metadata in preview without writing")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    try:
+        with args.input.open(encoding="utf-8") if args.input else sys.stdin as data:
+            observations, releases, provenance = read_bundles(data)
+        plans = {}
+        mongo = None
+        if args.apply or args.match:
+            from pymongo import MongoClient
+            uri = os.environ.get("MONGODB_URI")
+            if not uri:
+                uri = (Path.home() / ".mongodb" / "pvr").read_text(
+                    encoding="utf-8").strip()
+            if not uri:
+                raise ValueError("Empty MongoDB URI")
+            with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+                client.admin.command("ping")
+                database = client[args.database]
+                episodes = list(database.episodes.find(
+                    {"series_id": "formula-1"},
+                    {"_id": 1, "season": 1, "session_code": 1, "meeting_name": 1}))
+                plans = match_plans(observations, releases, provenance, episodes)
+                if args.apply:
+                    mongo = persist(database, observations, releases, plans,
+                                    dt.datetime.now(UTC))
+        report = {
+            "preview": not args.apply,
+            "observations": len(observations),
+            "releases": len(releases),
+            "matched": len(plans) if (args.apply or args.match) else None,
+            "unmatched": len(releases) - len(plans) if (args.apply or args.match) else None,
+            "database": args.database if (args.apply or args.match) else None,
+        }
+        if mongo is not None:
+            report["mongo"] = mongo
+        print(json.dumps(report, indent=2))
+        return 0
+    except (ValueError, OSError, RuntimeError, TypeError) as exc:
+        print(f"import_teletz: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
