@@ -12,8 +12,9 @@ import unicodedata
 
 MENS = "rugby-mens-intl"
 WOMENS = "rugby-womens-intl"
+WXV = "rugby-womens-wxv"
 NATIONS = "rugby-nations"
-SERIES = (MENS, WOMENS, NATIONS)
+SERIES = (MENS, WOMENS, NATIONS, WXV)
 METHOD = "rugbypass-national-teams-date-v1"
 
 # Explicit aliases, not substring matching, so Australia A and England A
@@ -35,8 +36,9 @@ MENS_LABEL = re.compile(
     r"\bpacific nations cup\b|\brugby(?:'|’)s greatest rivalry\b|"
     r"\bmen(?:'|’)s test\b", re.IGNORECASE)
 WOMENS_LABEL = re.compile(
-    r"\bwomen(?:'|’)s\s+international\b|\bwxv\b|"
-    r"\bwomen(?:'|’)s rugby\b", re.IGNORECASE)
+    r"\bwomen(?:'|’)s\s+international\b|\bwomen(?:'|’)s rugby\b",
+    re.IGNORECASE)
+WXV_LABEL = re.compile(r"\bwxv\b", re.IGNORECASE)
 NATIONS_LABEL = re.compile(r"\bnations championship\b", re.IGNORECASE)
 
 
@@ -69,6 +71,11 @@ def identify_replay(title):
     label = " | ".join(categories)
     if NATIONS_LABEL.search(label):
         series = NATIONS
+    elif WXV_LABEL.search(label):
+        # WXV has its own existing media-library directory. Do not silently
+        # file it under Rugby_Womens_Intl while separate canonical fixture
+        # metadata has not yet been imported.
+        series = WXV
     elif WOMENS_LABEL.search(label):
         series = WOMENS
     elif MENS_LABEL.search(label):
