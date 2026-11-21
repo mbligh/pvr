@@ -151,7 +151,8 @@ class F1AcquisitionTests(unittest.TestCase):
         return worker.run(self.db, **params)
 
     def test_preview_only_reads_and_orders_sky_before_4k_multi(self):
-        row, count = self.plans()
+        planned, count = self.plans()
+        row, = planned
         self.assertEqual(count["due"], 1)
         self.assertEqual(row["action"], "download_then_file")
         self.assertEqual(row["candidates"][0]["source_uri"], RELEASES[0]["_id"])
@@ -294,7 +295,9 @@ class F1AcquisitionTests(unittest.TestCase):
         older = dict(EPISODE, _id="f1:11417", episode=217,
                      scheduled_end=NOW - dt.timedelta(hours=8),
                      nfo_path=EPISODE["nfo_path"].replace(
-                         "s2026e216", "s2026e217"))
+                         "s2026e216", "s2026e217"),
+                     nfo=EPISODE["nfo"].replace(
+                         "<episode>216</episode>", "<episode>217</episode>"))
         self.db.episodes.rows.append(older)
         alternate = dict(RELEASES[0],
                          _id="reddit-teletz:20261121race123CC",
@@ -320,7 +323,9 @@ class F1AcquisitionTests(unittest.TestCase):
         older = dict(EPISODE, _id="f1:11417", episode=217,
                      scheduled_end=NOW - dt.timedelta(hours=8),
                      nfo_path=EPISODE["nfo_path"].replace(
-                         "s2026e216", "s2026e217"))
+                         "s2026e216", "s2026e217"),
+                     nfo=EPISODE["nfo"].replace(
+                         "<episode>216</episode>", "<episode>217</episode>"))
         self.db.episodes.rows.append(older)
         second = dict(RELEASES[0], _id="reddit-teletz:20261121race123CC",
                       uri="reddit-teletz:20261121race123CC",
