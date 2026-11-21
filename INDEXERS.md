@@ -145,3 +145,14 @@ covers currently featured/accessible sections and iPlayer only returns
 currently listed episodes. The worker `acquire_missing --refresh` can
 invoke this exact procedure before scheduling its bounded downloads.
 See [ACQUISITION.md](ACQUISITION.md).
+
+## International RugbyPass matching
+
+After `refresh_releases --apply` imports the RugbyPass JSONL catalogue,
+it also invokes `match_rugbypass` for numbered men's internationals,
+women's internationals (including WXV) and Nations Championship fixtures.
+The original PWR match remains separate. All associations are conservative
+and preserve existing links; the importer's RugbyPass source listing remains
+limited to accessible/featured full-match sections. For detailed matching
+rules and preview commands see [MATCHING.md](MATCHING.md).
+
