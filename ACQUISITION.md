@@ -55,8 +55,9 @@ for choosing source candidates.
 
 ## RugbyPass: internationals and Nations Championship
 
-The same safe PWR worker now supports `--series` for three other
-**already-numbered** Atlas rugby fixture series. For these series,
+The same safe PWR worker now supports `--series` for the three other
+**already-numbered** Atlas rugby fixture series, plus the separately
+registered `rugby-womens-wxv` series. For these non-PWR series,
 the supported source is **RugbyPass only**; BBC and YouTube remain
 PWR-specific until their international catalogue and matching rules
 are established.
@@ -75,8 +76,11 @@ python3 match_rugbypass --apply
 python3 acquire_missing --series rugby-mens-intl --limit 5
 python3 acquire_missing --series rugby-nations --limit 5
 
-# Inspect women's internationals (WXV included):
+# Inspect women's internationals:
 python3 acquire_missing --series rugby-womens-intl --limit 5
+
+# WXV has a distinct directory but its fixture migration is pending:
+python3 acquire_missing --series rugby-womens-wxv --limit 5
 
 # Safely trial exactly one Nations Championship RugbyPass recording:
 python3 acquire_missing --series rugby-nations --limit 1 --apply
@@ -97,6 +101,13 @@ international calendar, but an explicitly labelled `Nations Championship`
 RugbyPass recording links only to `rugby-nations`; it is not acquired
 a second time into `rugby-mens-intl`. This prevents duplicate videos
 between those two libraries.
+
+**WXV directory separation:** `Rugby_Womens_WXV` is registered
+independently from `Rugby_Womens_Intl`. Existing Atlas WXV fixtures are
+still part of the women's-international series, and will not be
+silently relabelled. The RugbyPass matcher deliberately leaves WXV
+releases unlinked to those older fixtures until a dedicated fixture
+import/migration preserves their season/episode identities and NFO paths.
 
 **Unnumbered fixtures and ambiguity:** At the time of this change, Atlas
 has 110 numbered men's internationals, 44 numbered women's internationals
