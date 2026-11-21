@@ -15,6 +15,9 @@ from inventory.scan import probe_video
 
 SERIES_PATHS = {
     "rugby-womens-pwr": ("Rugby_Womens_PWR", "rugbywomenspwr", 2025),
+    "rugby-mens-intl": ("Rugby_Mens_Intl", "rugbymensintl", 2026),
+    "rugby-womens-intl": ("Rugby_Womens_Intl", "rugbywomensintl", 2026),
+    "rugby-nations": ("Rugby_Nations", "rugbynationschampionships", 2026),
     "formula-1": ("Formula_1", "formula1", 1950),
 }
 
