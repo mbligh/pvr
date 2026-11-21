@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""YouTube channel streams indexer using the local yt-dlp executable."""
+"""YouTube channel streams indexer using the local yt-dlp executable.
+
+Default mode fetches individual video metadata (without downloading media) so
+archived livestreams have their original release or publication dates. Use
+--flat for fast catalogue browsing when dates are not needed.
+"""
 import argparse
+import datetime as dt
 import json
 import re
 import subprocess
@@ -8,6 +14,30 @@ import sys
 
 DEFAULT_URL = "https://www.youtube.com/@ThePWROfficial/streams"
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+COMPACT_DATE = re.compile(r"^\d{8}$")
+
+
+def date_from_metadata(video):
+    """Return (ISO date/time, source field) from yt-dlp's most relevant date.
+
+    The start of a past livestream usually corresponds better to the fixture
+    date than the subsequent processing/upload time. Preserve the source so
+    matching can account for different meanings and timezones.
+    """
+    for field in ("release_timestamp", "release_date", "timestamp", "upload_date"):
+        value = video.get(field)
+        if field.endswith("timestamp"):
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                try:
+                    return dt.datetime.fromtimestamp(value, dt.timezone.utc).isoformat(), field
+                except (OverflowError, OSError, ValueError):
+                    continue
+        elif isinstance(value, str) and COMPACT_DATE.fullmatch(value):
+            try:
+                return dt.datetime.strptime(value, "%Y%m%d").date().isoformat(), field
+            except ValueError:
+                continue
+    return None, None
 
 
 def convert_video(video):
@@ -29,8 +59,8 @@ def convert_video(video):
         "title": title.strip(),
         "type": "video",
     }
-    # The flat listing sometimes omits live_status. Do not falsely claim
-    # that an unknown-status entry is a completed replay.
+    # A flat listing can omit live_status. Do not falsely claim that an
+    # unknown-status entry is a completed replay.
     if status in ("was_live", "not_live"):
         record["available"] = True
     metadata = {}
@@ -39,27 +69,32 @@ def convert_video(video):
             metadata[field] = video[field]
     if isinstance(video.get("duration"), (int, float)):
         record["duration"] = video["duration"]
-    stamp = video.get("release_timestamp") or video.get("timestamp")
-    if isinstance(stamp, (int, float)):
-        import datetime as dt
-        record["published"] = dt.datetime.fromtimestamp(
-            stamp, dt.timezone.utc).isoformat()
-    elif isinstance(video.get("upload_date"), str) and re.fullmatch(
-            r"\d{8}", video["upload_date"]):
-        record["published"] = (video["upload_date"][:4] + "-"
-                               + video["upload_date"][4:6] + "-"
-                               + video["upload_date"][6:])
+    for field in ("release_timestamp", "timestamp", "release_date", "upload_date"):
+        value = video.get(field)
+        if (isinstance(value, str) or
+                (isinstance(value, (int, float)) and not isinstance(value, bool))):
+            metadata[field] = value
+    date, basis = date_from_metadata(video)
+    if date:
+        record["published"] = date
+        metadata["date_basis"] = basis
     if metadata:
         record["metadata"] = metadata
     return record
 
 
 def discover(url=DEFAULT_URL, *, search=None, limit=100, binary="yt-dlp",
-             execute=subprocess.run):
+             flat=False, execute=subprocess.run):
     if not url.startswith("https://www.youtube.com/"):
         raise ValueError("Only HTTPS YouTube channel and playlist URLs are supported")
-    command = [binary, "--flat-playlist", "--dump-json", "--ignore-errors",
-               "--playlist-end", str(limit), "--no-warnings", url]
+    # yt-dlp --dump-json outputs one JSON object per video. Without --flat-playlist
+    # it resolves the complete metadata for each entry; --skip-download prevents
+    # any media transfer. Live streams and unavailable entries are filtered below.
+    command = [binary, "--dump-json", "--skip-download", "--ignore-errors",
+               "--playlist-end", str(limit), "--no-warnings"]
+    if flat:
+        command.append("--flat-playlist")
+    command.append(url)
     result = execute(command, capture_output=True, text=True, check=False)
     if result.returncode:
         raise RuntimeError(f"yt-dlp exited {result.returncode}: {result.stderr.strip()[:500]}")
@@ -86,18 +121,23 @@ def main(argv=None):
     parser.add_argument("--limit", type=int, default=100,
                         help="Maximum listed videos (default 100)")
     parser.add_argument("--yt-dlp", default="yt-dlp", help="yt-dlp executable")
+    parser.add_argument("--flat", action="store_true",
+                        help="Fast listing without fetching each video's dates")
     args = parser.parse_args(argv)
     if not 1 <= args.limit <= 5000:
         parser.error("--limit must be 1-5000")
     try:
         releases = discover(args.url, search=args.search, limit=args.limit,
-                            binary=args.yt_dlp)
+                            binary=args.yt_dlp, flat=args.flat)
     except (ValueError, OSError, RuntimeError) as exc:
         print(f"YouTube indexer: {exc}", file=sys.stderr)
         return 1
     for record in releases:
         print(json.dumps(record, ensure_ascii=False))
-    print(f"YouTube: {len(releases)} releases", file=sys.stderr)
+    missing = sum("published" not in record for record in releases)
+    print(f"YouTube: {len(releases)} releases, {len(releases) - missing} dated"
+          + (f", {missing} without dates" if missing else ""),
+          file=sys.stderr)
     return 0
 
 
