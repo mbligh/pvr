@@ -159,7 +159,9 @@ def build(config, source_dir, now):
                 year = season_year(kickoff)
             grouped[(year, round_no)].append((kickoff.astimezone(dt.timezone.utc), str(event.get("UID", "")), teams, event))
         for (year, round_no), matches in sorted(grouped.items()):
-            show = {"rugby-nations": "Rugby_Nations"}.get(entry["slug"], slug(entry["slug"]))
+            # The published library uses display-name case, not the lowercase calendar slug.
+            # Allow an explicit per-series directory override where needed.
+            show = entry.get("library_dir", slug(entry["name"]))
             # Keep show identifiers stable and filesystem-safe.
             show_dir = f"{show}/"
             output[show_dir + "tvshow.nfo"] = xml_bytes("tvshow", [
