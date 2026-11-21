@@ -138,16 +138,22 @@ the new destination and marking the source record moved in Atlas. The
 and `moved_to`. `jobs` records success/failure and possible reconciliation
 needs. See [FILING.md](FILING.md).
 
-This is a single-file operator command, not an automatic selector or cron
-job. It does not choose between multiple recordings, replace existing files,
-or autonomously recover partial Atlas commits. When an inventoried, physically
-present recording already exists for the same episode under the media library
-root, the filer reports `already_published` and refuses to promote another
-version. This conservative guard protects BBC/high-quality files while the
-quality selector and explicit replacement workflow are still absent. Other
-episodes' recordings never block a filing. The first live candidate is
-`/data/incoming/pvr-8CFBWPSG3vc.mkv` (PWR S2025E102). A source file move
-on `slagg` has not been performed as part of this code commit.
+The standalone read-only `select_recording` CLI and
+`selection/quality.py` now rank local, physically verified `pvr.files`
+records for a single episode: (1) reject files below 720p, (2) reject files
+shorter than one hour, (3) among >=50fps recordings choose the largest file
+in bytes, otherwise (4) choose the largest qualifying <50fps file. Exactly
+720p, 3600 seconds and 50fps pass. Missing/unknown media attributes, stale
+filesystem entries and moved records are not eligible. File-ID tie-breaks
+are deterministic. This preference is based on measured *local* files, not
+unknown quality of catalogued remote releases. See [FILING.md](FILING.md).
+
+`file_recording` now checks the selection: it refuses an `ineligible`
+or `not_preferred` source. It never automatically replaces media already
+published under the sports directory, reporting `upgrade_available` if
+the newly acquired recording is better, or `already_published` otherwise.
+An explicit replacement/upgrade mechanism remains to be implemented.
+There is still no automatic download selection or batch scheduling.
 
 ## Initial implementation and migration
 
