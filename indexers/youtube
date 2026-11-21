@@ -15,6 +15,20 @@ import sys
 DEFAULT_URL = "https://www.youtube.com/@ThePWROfficial/streams"
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 COMPACT_DATE = re.compile(r"^\d{8}$")
+# A future scheduled livestream can raise an extraction error even with
+# --ignore-errors. Treat only this precise YouTube error as an expected skip.
+UPCOMING_ERROR = re.compile(
+    r"^ERROR: \[youtube\] [A-Za-z0-9_-]{11}: This live event will begin in .+$"
+)
+
+
+def expected_upcoming_failures(stderr):
+    """Count known upcoming-stream errors; reject all other extraction errors."""
+    errors = [line.strip() for line in stderr.splitlines()
+              if line.strip().startswith("ERROR:")]
+    if not errors or not all(UPCOMING_ERROR.fullmatch(error) for error in errors):
+        return None
+    return len(errors)
 
 
 def date_from_metadata(video):
@@ -97,7 +111,10 @@ def discover(url=DEFAULT_URL, *, search=None, limit=100, binary="yt-dlp",
     command.append(url)
     result = execute(command, capture_output=True, text=True, check=False)
     if result.returncode:
-        raise RuntimeError(f"yt-dlp exited {result.returncode}: {result.stderr.strip()[:500]}")
+        skipped = expected_upcoming_failures(result.stderr)
+        if skipped is None:
+            raise RuntimeError(f"yt-dlp exited {result.returncode}: {result.stderr.strip()[:500]}")
+        print(f"YouTube: skipped {skipped} upcoming livestream(s)", file=sys.stderr)
     found = {}
     term = search.casefold() if search else ""
     for line in result.stdout.splitlines():
