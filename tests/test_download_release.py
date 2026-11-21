@@ -45,6 +45,12 @@ class YoutubeAdapterTests(unittest.TestCase):
         self.assertIn("--no-playlist", command)
         self.assertIn("--remux-video", command)
         self.assertIn("--merge-output-format", command)
+        # Crucial: leave -f and -S to the system's yt-dlp-sabr config.
+        self.assertNotIn("--format", command)
+        self.assertNotIn("-f", command)
+        self.assertNotIn("--format-sort", command)
+        self.assertNotIn("-S", command)
+        self.assertNotIn("--no-config", command)
         self.assertEqual(command[-1],
                          "https://www.youtube.com/watch?v=8CFBWPSG3vc")
         out = command[command.index("--output") + 1]
