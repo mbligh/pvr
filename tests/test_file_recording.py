@@ -225,6 +225,40 @@ class FilingCLITests(unittest.TestCase):
                                  sports_root=sports_root,
                                  probe=lambda path, binary: MEDIA)
 
+    def test_international_and_nations_series_use_canonical_quality_filing(self):
+        cases = [
+            ("rugby-mens-intl", "Rugby_Mens_Intl", "Rugby Mens Intl"),
+            ("rugby-womens-intl", "Rugby_Womens_Intl", "Rugby Womens Intl"),
+            ("rugby-nations", "Rugby_Nations", "Rugby Nations Championships"),
+        ]
+        for series_id, dirname, showtitle in cases:
+            with self.subTest(series=series_id):
+                ep_id = f"{series_id}:fixture-1"
+                stem = f"{dirname}-s2026e501-France_v_South_Africa_20261113"
+                self.db.episodes.find_one.return_value = {
+                    "_id": ep_id, "series_id": series_id,
+                    "season": 2026, "episode": 501,
+                    "nfo_path": f"{dirname}/Season_2026/{stem}.nfo",
+                    "nfo": (f"<episodedetails><showtitle>{showtitle}</showtitle>"
+                            "<season>2026</season><episode>501</episode>"
+                            "</episodedetails>"),
+                }
+                self.original.update(series_id=series_id, episode_id=ep_id,
+                                     season=2026, episode=501,
+                                     release_uri="rugbypass:1051364")
+                self.db.files.find.return_value = [dict(self.original)]
+                preview = self.run_cli()
+                self.assertEqual(preview["status"], "ready")
+                self.assertEqual(preview["series_id"], series_id)
+                self.assertTrue(preview["destination"].endswith(stem + ".mkv"))
+        # Actually publish one of the new series to exercise Atlas mutation.
+        completed = self.run_cli(apply=True)
+        self.assertEqual(completed["status"], "filed")
+        self.assertEqual(completed["series_id"], "rugby-nations")
+        self.assertEqual(self.db.files.insert_one.call_args.args[0]["series_id"],
+                         "rugby-nations")
+        self.assertFalse(self.source.exists())
+
     def test_preview_does_not_create_directories_or_write_atlas(self):
         result = self.run_cli()
         self.assertEqual(result["status"], "ready")
