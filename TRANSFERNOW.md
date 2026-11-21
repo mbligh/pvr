@@ -134,6 +134,7 @@ Inspect abandoned staging directories with:
 No automatic cleanup/expiry policy exists yet; do not delete a staging
 directory while its download process is running.
 
-Automatic release fallback, availability recording in MongoDB, bulk selection
-and scheduled downloads are not yet implemented. This command downloads
-exactly the source URI specified and never silently chooses another one.
+The standalone download_release command still downloads only the specific
+URI requested. The preview-first acquire_f1 orchestrator can check and
+fall back to alternative releases, then download and file them; see
+F1_AUTOMATION.md. Cron activation remains a manual opt-in.

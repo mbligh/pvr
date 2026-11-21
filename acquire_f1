@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""Preview-first, bounded F1 acquisition from matched teletz releases.
+
+Default: read-only plan for recent finished F1 sessions.
+--apply: check options in Sky-first order; fall back only when positively
+unavailable/unsupported, download the selected URI and canonically file it.
+Transient failures stop; incomplete transfers retain resume data.
+"""
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import sys
+
+from orchestration.acquire import host_name
+from orchestration.f1_acquire import rows
+from orchestration.f1_checks import cached_status, check_release
+
+ROOT = Path(__file__).resolve().parent
+
+
+def load_script(label, filename):
+    loader = importlib.machinery.SourceFileLoader(label, str(ROOT / filename))
+    spec = importlib.util.spec_from_loader(label, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+download_release = load_script("pvr_f1_download", "download_release")
+file_recording = load_script("pvr_f1_file", "file_recording")
+
+
+@contextlib.contextmanager
+def acquire_lock(incoming_root):
+    """Use the same host-wide lock as PWR's acquire_missing."""
+    lock_path = Path(incoming_root) / ".pvr-acquire.lock"
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(lock_path, flags, 0o600)
+    try:
+        with os.fdopen(fd, "r+") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RuntimeError("Another PVR acquisition worker is running") from exc
+            yield
+    finally:
+        pass
+
+
+def recent_failed_jobs(database, hostname, now, hours):
+    if not hours:
+        return set()
+    jobs = database.jobs.find({
+        "type": "download", "host": hostname,
+        "status": {"$in": ["running", "failed"]},
+        "started_at": {"$gte": now - dt.timedelta(hours=hours)},
+    })
+    return {j["source_uri"] for j in jobs if isinstance(j.get("source_uri"), str)}
+
+
+def run(database, *, apply=False, year=2026, round_no=None, episode_number=None,
+        limit=1, max_checks=8, sports_root="/data/sports", incoming_root="/data/incoming",
+        hostname=None, min_age_hours=2, recent_hours=120, backfill=False,
+        retry_after_hours=6, unavailable_recheck_hours=24,
+        ffprobe="ffprobe", ffmpeg="ffmpeg", show_skipped=False, now=None,
+        inspector=None, downloader=download_release.run,
+        filer=file_recording.run, stream=sys.stdout, summary_stream=sys.stderr):
+    if not 1 <= limit <= 25:
+        raise ValueError("--limit must be 1..25")
+    if (min_age_hours < 0 or recent_hours <= 0 or retry_after_hours < 0 or
+            unavailable_recheck_hours < 0 or not 1 <= max_checks <= 100):
+        raise ValueError("Invalid age/retry/check window")
+    hostname = host_name(hostname)
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=dt.timezone.utc)
+
+    def emit(item):
+        print(json.dumps(item, sort_keys=True, default=str), file=stream)
+
+    def execute():
+        plans, counts = rows(
+            database, year=year, round_no=round_no,
+            episode_number=episode_number, sports_root=sports_root,
+            incoming_root=incoming_root, hostname=hostname,
+            min_age_hours=min_age_hours, recent_hours=recent_hours,
+            backfill=backfill, now=now)
+        actionable = [r for r in plans if r["action"] != "skip"]
+        failed_downloads = recent_failed_jobs(
+            database, hostname, now, retry_after_hours) if apply else set()
+        release_ids = [c["source_uri"] for r in actionable
+                       for c in r.get("candidates", [])]
+        checked = list(database.releases.find(
+            {"_id": {"$in": release_ids}, "source": "reddit-teletz"}
+        )) if apply and release_ids else []
+        by_uri = {r["_id"]: r for r in checked}
+        counters = {"planned": 0, "downloaded": 0, "filed": 0,
+                    "checked": 0, "fallbacks": 0, "unavailable": 0,
+                    "deferred": 0, "failed": 0}
+        for plan in plans:
+            if plan["action"] == "skip":
+                if show_skipped:
+                    emit(dict(plan, mode="apply" if apply else "preview"))
+                continue
+            if not apply:
+                if counters["planned"] >= limit:
+                    continue
+                counters["planned"] += 1
+                emit(dict(plan, mode="preview"))
+                continue
+            # Limit actual acquisitions, not unavailable-only checks.
+            if counters["filed"] >= limit:
+                break
+            if plan["action"] == "download_then_file" and counters["checked"] >= max_checks:
+                break
+            counters["planned"] += 1
+            if plan["action"] == "file":
+                try:
+                    result = filer(
+                        database, plan["source"], sports_root=sports_root,
+                        hostname=hostname, ffprobe=ffprobe, apply=True,
+                        stream=io.StringIO())
+                    if result["status"] != "filed":
+                        raise RuntimeError("Filing refused: " + result["status"])
+                    counters["filed"] += 1
+                    emit(dict(plan, mode="apply", status="filed",
+                              download_completed=False))
+                except Exception as exc:
+                    counters["failed"] += 1
+                    emit(dict(plan, mode="apply", status="failed",
+                              error=str(exc)[:500]))
+                    break
+                continue
+
+            status = None
+            for idx, candidate in enumerate(plan["candidates"]):
+                uri = candidate["source_uri"]
+                document = by_uri.get(uri)
+                if document is None or document.get("episode_id") != plan["episode_id"]:
+                    status = "failed"
+                    counters["failed"] += 1
+                    emit(dict(plan, mode="apply", status="failed",
+                              source_uri=uri, error="Release changed during planning"))
+                    break
+                cache = cached_status(
+                    document, now,
+                    unavailable_recheck_hours=unavailable_recheck_hours,
+                    retry_after_hours=retry_after_hours)
+                if cache in ("unavailable", "unsupported"):
+                    counters["fallbacks"] += 1
+                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                          "status": cache, "cached": True, "action": "fallback"})
+                    continue
+                # For ambiguous failures or interrupted downloads, never
+                # switch to a lower-ranked source; wait, then resume instead.
+                if cache == "transient" or uri in failed_downloads:
+                    status = "deferred"
+                    counters["deferred"] += 1
+                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                          "status": "deferred", "reason": "retry_cooldown"})
+                    break
+                if counters["checked"] >= max_checks:
+                    status = "deferred"
+                    counters["deferred"] += 1
+                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                          "status": "deferred", "reason": "check_budget_exhausted"})
+                    break
+                try:
+                    kwargs = {"inspector": inspector} if inspector else {}
+                    checked_status, detail = check_release(
+                        database, plan["episode_id"], candidate, now=now, **kwargs)
+                    counters["checked"] += 1
+                    document["availability_check"] = detail
+                    if checked_status in ("unavailable", "unsupported"):
+                        counters["fallbacks"] += 1
+                        emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                              "status": checked_status, "action": "fallback",
+                              "error": detail.get("error")})
+                        continue
+                    if checked_status == "transient":
+                        status = "deferred"
+                        counters["deferred"] += 1
+                        emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                              "status": "deferred", "reason": "availability_uncertain",
+                              "error": detail.get("error")})
+                        break
+                    downloaded = downloader(
+                        database, uri, candidate["incoming"], apply=True,
+                        hostname=hostname, ffprobe=ffprobe, ffmpeg=ffmpeg,
+                        output=io.StringIO())
+                    if downloaded["status"] != "downloaded":
+                        raise RuntimeError("Download refused: " + downloaded["status"])
+                    counters["downloaded"] += 1
+                    filed = filer(
+                        database, candidate["incoming"], apply=True,
+                        sports_root=sports_root, hostname=hostname, ffprobe=ffprobe,
+                        stream=io.StringIO())
+                    if filed["status"] != "filed":
+                        raise RuntimeError("Filing refused: " + filed["status"])
+                    counters["filed"] += 1
+                    status = "filed"
+                    emit({"episode_id": plan["episode_id"], "season": plan["season"],
+                          "episode": plan["episode"], "source_uri": uri,
+                          "status": "filed", "destination": plan["destination"],
+                          "alternatives_skipped": idx,
+                          "download_completed": True})
+                    break
+                except Exception as exc:
+                    status = "failed"
+                    counters["failed"] += 1
+                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                          "status": "failed", "error": str(exc)[:500]})
+                    break
+            if status is None:
+                counters["unavailable"] += 1
+                emit({"episode_id": plan["episode_id"], "status": "no_available_release"})
+            if counters["failed"]:
+                # Stop on error: jobs/files or partial downloads may need
+                # operator reconciliation; don't run another download.
+                break
+        report = {
+            "mode": "apply" if apply else "preview", "series": "formula-1",
+            "year": year, "host": hostname, "limit": limit, "max_checks": max_checks,
+            "episodes": counts["episodes"], "due": counts["due"],
+            "actionable": len(actionable), **counters,
+        }
+        print(json.dumps(report, sort_keys=True), file=summary_stream)
+        return report
+
+    if apply:
+        with acquire_lock(incoming_root):
+            return execute()
+    return execute()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", type=int, default=dt.datetime.now(dt.timezone.utc).year)
+    parser.add_argument("--round", type=int, dest="round_no")
+    parser.add_argument("--episode", type=int, dest="episode_number")
+    parser.add_argument("--limit", type=int, default=1,
+                        help="Maximum due F1 episodes per run (default 1)")
+    parser.add_argument("--max-checks", type=int, default=8,
+                        help="Maximum live availability checks per run (default 8)")
+    parser.add_argument("--recent-hours", type=float, default=120,
+                        help="Only sessions ending in last N hours (default 120)")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Ignore recent-window limit; manually work older episodes")
+    parser.add_argument("--min-age-hours", type=float, default=2,
+                        help="Wait after official session end (default 2h)")
+    parser.add_argument("--retry-after-hours", type=float, default=6)
+    parser.add_argument("--unavailable-recheck-hours", type=float, default=24)
+    parser.add_argument("--sports-root", default="/data/sports")
+    parser.add_argument("--incoming-root", default="/data/incoming")
+    parser.add_argument("--host")
+    parser.add_argument("--ffprobe", default="ffprobe")
+    parser.add_argument("--ffmpeg", default="ffmpeg")
+    parser.add_argument("--show-skipped", action="store_true")
+    parser.add_argument("--apply", action="store_true",
+                        help="Check sources, download and file; default read-only")
+    parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    if not 1 <= args.limit <= 25 or args.year < 1950:
+        parser.error("Invalid limit or season")
+    uri = os.getenv("MONGODB_URI")
+    if not uri:
+        try:
+            uri = (Path.home() / ".mongodb" / "pvr").read_text().strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI: {exc}")
+    if not uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            result = run(
+                client[args.database], apply=args.apply, year=args.year,
+                round_no=args.round_no, episode_number=args.episode_number,
+                limit=args.limit, max_checks=args.max_checks,
+                sports_root=args.sports_root,
+                incoming_root=args.incoming_root, hostname=args.host,
+                min_age_hours=args.min_age_hours, recent_hours=args.recent_hours,
+                backfill=args.backfill, retry_after_hours=args.retry_after_hours,
+                unavailable_recheck_hours=args.unavailable_recheck_hours,
+                ffprobe=args.ffprobe, ffmpeg=args.ffmpeg,
+                show_skipped=args.show_skipped)
+        return 1 if result["failed"] else 0
+    except Exception as exc:
+        print("F1 acquisition: " + str(exc), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

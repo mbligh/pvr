@@ -328,3 +328,18 @@ atomic no-clobber publication. A per-stage file lock rejects overlapping
 downloads. Cache entries are not automatically expired or garbage
 collected. This change does not enable unattended schedules, fallback
 selection, or downloads without --apply. See TRANSFERNOW.md.
+
+
+## Formula 1 acquisition and scheduling (2026-11-21)
+
+The preview-first acquire_f1 worker handles recent missing F1 episodes
+using Atlas releases, Sky-first ranking, verified TransferNow availability,
+download_release and file_recording. Confirmed gone/unsupported sources
+allow fallback; transient checks and interrupted downloads do not. A
+separate availability_check field persists status in MongoDB independently
+from imported indexer metadata. The runner bounds downloads and checks,
+uses a recent-session window, respects local inventory/recovery states,
+and shares the lock with PWR. The run_f1 one-shot wrapper refreshes Reddit
+and imports verified observations before attempting acquisition, aborting
+if discovery/import fails. No crontab is installed automatically. See
+F1_AUTOMATION.md.

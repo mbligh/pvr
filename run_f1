@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Optional cron entry point for F1 discovery, indexing and acquisition.
+
+Default: preview currently indexed episodes (no Reddit or Atlas writes).
+--apply: refresh teletz, import verified observations, and acquire at most
+--limit recent F1 episodes. Abort if discovery/indexing fails. This is a
+one-shot command; no schedules are installed by PVR.
+"""
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent
+
+
+@contextlib.contextmanager
+def lock_run(root):
+    lock = Path(root) / ".pvr-f1-run.lock"
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd, "r+") as file:
+            try:
+                fcntl.flock(file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RuntimeError("Another F1 discovery/acquisition run is active") from exc
+            yield
+    finally:
+        pass
+
+
+def command(script, *args):
+    return [sys.executable, str(ROOT / script), *[str(a) for a in args]]
+
+
+def run(*, apply=False, pages=3, year=2026, limit=1,
+        max_checks=8, recent_hours=120, incoming_root="/data/incoming",
+        skip_discovery=False, execute=subprocess.run, output=sys.stdout):
+    args = ["--year", str(year), "--limit", str(limit),
+            "--max-checks", str(max_checks), "--recent-hours", str(recent_hours),
+            "--incoming-root", str(incoming_root)]
+    if not apply:
+        result = execute(command("acquire_f1", *args),
+                         capture_output=True, text=True, check=False)
+        if result.stdout:
+            print(result.stdout, end="", file=output)
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
+
+    with lock_run(incoming_root):
+        if not skip_discovery:
+            discovery = execute(
+                command("indexers/reddit_teletz", "--pages", str(pages),
+                        "--bundle"), capture_output=True, text=True, check=False)
+            if discovery.stderr:
+                print(discovery.stderr, end="", file=sys.stderr)
+            if discovery.returncode:
+                raise RuntimeError("Reddit discovery failed; refusing acquisition")
+            if not discovery.stdout.strip():
+                raise RuntimeError("Reddit discovery returned no verified comments; refusing acquisition")
+            imported = execute(
+                command("import_teletz", "--apply"), input=discovery.stdout,
+                capture_output=True, text=True, check=False)
+            if imported.stderr:
+                print(imported.stderr, end="", file=sys.stderr)
+            if imported.returncode:
+                raise RuntimeError("Reddit importer failed; refusing acquisition")
+            print(imported.stdout.strip(), file=sys.stderr)
+        result = execute(command("acquire_f1", *args, "--apply"),
+                         capture_output=True, text=True, check=False)
+        if result.stdout:
+            print(result.stdout, end="", file=output)
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--pages", type=int, default=3,
+                        help="Reddit user profile pages to revisit (default 3)")
+    parser.add_argument("--year", type=int,
+                        default=dt.datetime.now(dt.timezone.utc).year)
+    parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--max-checks", type=int, default=8)
+    parser.add_argument("--recent-hours", type=float, default=120)
+    parser.add_argument("--incoming-root", default="/data/incoming")
+    parser.add_argument("--skip-discovery", action="store_true",
+                        help="Use releases already indexed; no Reddit fetch")
+    args = parser.parse_args(argv)
+    if (not 1 <= args.pages <= 20 or not 1 <= args.limit <= 25 or
+            not 1 <= args.max_checks <= 100 or args.recent_hours <= 0):
+        parser.error("Invalid pages/limit/recent-hours")
+    if not Path(args.incoming_root).is_dir():
+        parser.error("Incoming directory does not exist")
+    try:
+        return run(apply=args.apply, pages=args.pages, year=args.year,
+                   limit=args.limit, max_checks=args.max_checks,
+                   recent_hours=args.recent_hours,
+                   incoming_root=args.incoming_root,
+                   skip_discovery=args.skip_discovery)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"F1 run: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
