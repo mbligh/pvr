@@ -61,7 +61,9 @@ and `indexers/youtube` (yt-dlp /streams listing, default PWR) emit a common
 JSONL release format. YouTube uses per-video, metadata-only extraction by
 default to recover archived livestream dates, preferring original release/broadcast
 timestamps to upload dates and recording the date's source in metadata; a
-`--flat` option provides fast listing without date enrichment. The existing `mbligh/tools/video/rugbypass` now also
+`--flat` option provides fast listing without date enrichment. The indexer
+ignores only yt-dlp's explicit scheduled-upcoming-livestream failures while
+retaining successfully extracted records; unexpected errors abort ingestion. The existing `mbligh/tools/video/rugbypass` now also
 provides `--list-videos --jsonl` / `--list-games --jsonl`, retaining its
 existing human-readable and download functions. `index_releases` validates
 and upserts those release records into Atlas `pvr.releases` by stable source
