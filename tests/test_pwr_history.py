@@ -1,6 +1,5 @@
 """Offline tests for historical PWR fixtures, postseason numbering and safety."""
 import datetime as dt
-import importlib.machinery
 import io
 import json
 import unittest
@@ -10,10 +9,7 @@ from zoneinfo import ZoneInfo
 
 from icalendar import Calendar, Event
 
-ROOT = Path(__file__).resolve().parents[1]
-MODULE = importlib.machinery.SourceFileLoader(
-    "pvr_pwr_history", str(ROOT / "import_pwr_history")
-).load_module()
+from schedulers.rugby import pwr_history as MODULE
 UK = ZoneInfo("Europe/London")
 UTC = dt.timezone.utc
 
