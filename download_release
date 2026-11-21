@@ -22,6 +22,7 @@ from downloaders.rugbypass import download as download_rugbypass, rugbypass_id
 from downloaders.transfernow_pvr import (download as download_transfernow,
                                         share_from_release, source_id as transfernow_id)
 from matchers.pwr import SERIES_ID
+from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
 
 
 def plan(database, uri, destination, *, hostname=None, allow_existing_episode=False):
@@ -36,7 +37,7 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         adapter = "bbc"
     elif uri.startswith("rugbypass:"):
         rugbypass_id(uri)
-        expected_series = SERIES_ID
+        expected_series = (SERIES_ID, *INTERNATIONAL_SERIES)
         adapter = "rugbypass"
     elif uri.startswith("reddit-teletz:"):
         transfernow_id(uri)
@@ -68,9 +69,11 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
     episode = database.episodes.find_one({"_id": episode_id})
     if episode is None:
         raise ValueError(f"No canonical episode record for {episode_id}")
-    if episode.get("series_id") != expected_series or not (
+    allowed_series = (expected_series if isinstance(expected_series, tuple)
+                      else (expected_series,))
+    if episode.get("series_id") not in allowed_series or not (
             isinstance(episode.get("season"), int) and episode["season"] >= 2025):
-        raise ValueError(f"Only matched {expected_series} episodes from Season_2025 onward are supported")
+        raise ValueError(f"Only matched {allowed_series} episodes from Season_2025 onward are supported")
     if not isinstance(episode.get("episode"), int):
         raise ValueError("Cannot download an unnumbered episode")
     records = list(database.files.find(
