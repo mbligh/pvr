@@ -160,6 +160,23 @@ class PublisherTests(unittest.TestCase):
             publisher.ensure_unchanged(self.source, saved)
         self.assertTrue(self.source.exists())
 
+    def test_symlinked_sports_root_is_followed(self):
+        # /data/sports is legitimately a symlink on slagg. Its visible
+        # path should be preserved while the publisher writes to its target.
+        root_link = pathlib.Path(self.tmp.name) / "sports-link"
+        root_link.symlink_to(self.sports, target_is_directory=True)
+        video, nfo = publisher.canonical_paths(EPISODE, root_link)
+        media, snapshot, method = publisher.publish(
+            self.source, video, nfo, NFO.encode(),
+            sports_root=root_link, probe=self.probe)
+        self.assertEqual(media, MEDIA)
+        self.assertEqual(method, "hardlink")
+        self.assertEqual(video.read_bytes(), self.source.read_bytes())
+        self.assertEqual(nfo.read_bytes(), NFO.encode())
+        self.assertTrue(self.source.exists())
+        publisher.ensure_unchanged(self.source, snapshot)
+        self.assertEqual(video.resolve(), self.video.resolve())
+
     def test_destination_directory_symlink_rejected(self):
         self.video.parent.parent.mkdir()
         real = self.sports / "outside"
