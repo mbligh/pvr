@@ -1,13 +1,15 @@
-# Canonical filing of existing PWR recordings
+# Canonical filing of inventoried rugby and Formula 1 recordings
 
-`file_recording` publishes one **already-inventoried** PWR recording into
+`file_recording` publishes one **already-inventoried** supported recording into
 the series directory with the canonical season/episode filename and the exact
 score-free NFO XML already stored in `pvr.episodes`. It is **preview-only**
 unless `--apply` is supplied.
 
-Initially supported: Rugby Womens PWR, season 2025 onward. This command is
-separate from `download_release` and is not yet part of automatic scheduling
-or quality selection.
+Supported series: Rugby Womens PWR (season 2025 onward), Rugby Mens Intl,
+Rugby Womens Intl, Rugby Nations Championships (2026 onward), and Formula 1.
+This command is separate from `download_release`; the quality-selector
+and preview-first `acquire_missing` worker reuse it. Existing canonical
+NFO validation and no-overwrite checks apply to all supported series.
 
 ## Trial on slagg
 
