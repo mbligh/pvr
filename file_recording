@@ -17,6 +17,7 @@ from filing.publish import (
     canonical_paths, ensure_unchanged, publish, stat_identity, validate_nfo,
 )
 from matchers.pwr import SERIES_ID
+from selection.quality import select_episode
 
 
 def existing_published_files(database, episode_id, hostname, sports_root):
@@ -101,15 +102,23 @@ def plan(database, source, *, sports_root="/data/sports", hostname=None):
         raise ValueError("Sports root does not exist")
     dest_record = database.files.find_one({"_id": target_id})
     published = existing_published_files(database, episode_id, hostname, sports_root)
+    choice = select_episode(database, episode_id, hostname)
+    winner = choice["preferred_file_id"]
+    source_quality = next((c for c in choice["candidates"]
+                           if c["file_id"] == source_id), None)
     status = "ready"
     if os.path.lexists(target) or os.path.lexists(nfo):
         status = "destination_exists"
     elif dest_record is not None:
         status = "destination_record_exists"
+    elif source_quality is None or not source_quality["eligible"]:
+        status = "ineligible"
     elif published:
-        # Quality/source selection is not implemented. Do not promote an
-        # alternative recording over an already-published episode.
-        status = "already_published"
+        # A better incoming file is an upgrade candidate, never an automatic
+        # overwrite of an already-published recording.
+        status = "upgrade_available" if winner == source_id else "already_published"
+    elif winner != source_id:
+        status = "not_preferred"
     return {
         "status": status, "source": str(source),
         "destination": str(target), "nfo_path": str(nfo),
@@ -119,6 +128,9 @@ def plan(database, source, *, sports_root="/data/sports", hostname=None):
         "source_size": snapshot[2], "source_mtime_ns": snapshot[3],
         "source_release_uri": record.get("release_uri"),
         "existing_published_files": published,
+        "preferred_file_id": winner,
+        "preferred_path": choice["preferred_path"],
+        "selection": source_quality or {"eligible": False, "reason": "not_indexed"},
         "_nfo_bytes": nfo_bytes, "_record": record,
     }
 
@@ -261,7 +273,8 @@ def main(argv=None):
         print(f"PVR filer: {exc}", file=sys.stderr)
         return 1
     return 0 if result["status"] not in (
-        "destination_exists", "destination_record_exists", "already_published") else 1
+        "destination_exists", "destination_record_exists",
+        "already_published", "ineligible", "not_preferred", "upgrade_available") else 1
 
 
 if __name__ == "__main__":
