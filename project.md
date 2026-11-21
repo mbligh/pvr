@@ -124,6 +124,26 @@ publication, or quality upgrade policy is implemented yet. The initial
 single-match trial uses an existing 2025/26 YouTube replay linked to S2025E102;
 no download has been performed on slagg by these GitHub changes.
 
+## Canonical file publisher (PWR)
+
+`file_recording` is a preview-first filer for verified PWR recordings already
+registered in `pvr.files`. It uses the episode's persisted `nfo_path` and
+`nfo` XML to derive exact series/season media and NFO paths without
+recomputing fixture numbering. It verifies source identity, avoids any
+existing canonical path or Atlas inventory collision, checks MKV media with
+ffprobe, publishes media/NFO with atomic no-clobber hard links (or a staged
+copy across filesystems), and only removes the source **after** recording
+the new destination and marking the source record moved in Atlas. The
+`files` collection retains original provenance through `previous_file_id`
+and `moved_to`. `jobs` records success/failure and possible reconciliation
+needs. See [FILING.md](FILING.md).
+
+This is a single-file operator command, not an automatic selector or cron
+job. It does not choose between multiple recordings, replace existing files,
+or autonomously recover partial Atlas commits. The first live candidate is
+`/data/incoming/pvr-8CFBWPSG3vc.mkv` (PWR S2025E102). A source file move
+on `slagg` has not been performed as part of this code commit.
+
 ## Initial implementation and migration
 
 1. Define/version the canonical episode, release, and adapter JSON schemas; implement MongoDB collections/indexes and a small CLI.
