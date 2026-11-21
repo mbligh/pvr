@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Acquire missing PWR recordings from already-matched YouTube releases.
+
+Preview by default. --apply downloads and canonically files at most --limit
+episodes; no source discovery, upgrades or cleanup are performed.
+"""
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+import pathlib
+import sys
+
+from orchestration.acquire import host_name, planning_rows
+
+
+def _load_cli(name, filename):
+    source = pathlib.Path(__file__).resolve().parent / filename
+    loader = importlib.machinery.SourceFileLoader(name, str(source))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+download_release = _load_cli("pvr_acquire_downloader", "download_release")
+file_recording = _load_cli("pvr_acquire_filer", "file_recording")
+
+
+@contextlib.contextmanager
+def acquire_lock(incoming_root):
+    """Prevent overlapping local acquisition workers, including cron runs."""
+    lock_path = pathlib.Path(incoming_root) / ".pvr-acquire.lock"
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(lock_path, flags, 0o600)
+    try:
+        with os.fdopen(fd, "r+") as lockfile:
+            try:
+                fcntl.flock(lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RuntimeError("Another PVR acquisition worker is running") from exc
+            yield
+    finally:
+        pass
+
+
+def run(database, *, apply=False, limit=1, season=None,
+        sports_root="/data/sports", incoming_root="/data/incoming",
+        hostname=None, min_age_hours=3, retry_after_hours=6,
+        yt_dlp="yt-dlp", ffprobe="ffprobe", show_skipped=False,
+        downloader=download_release.run, filer=file_recording.run,
+        stream=sys.stdout, summary_stream=sys.stderr,
+        now=None):
+    if not 1 <= limit <= 100:
+        raise ValueError("--limit must be between 1 and 100")
+    if min_age_hours < 0 or retry_after_hours < 0:
+        raise ValueError("Negative age/retry delay")
+    hostname = host_name(hostname)
+
+    def execute():
+        rows, info = planning_rows(
+            database, sports_root=sports_root, incoming_root=incoming_root,
+            season=season, hostname=hostname, min_age_hours=min_age_hours,
+            retry_after_hours=retry_after_hours, now=now)
+        actionable = [r for r in rows if r["action"] != "skip"]
+        count = 0
+        totals = {"filed": 0, "downloaded": 0, "failed": 0, "skipped_on_apply": 0}
+        for row in rows:
+            if row["action"] == "skip":
+                if show_skipped:
+                    print(json.dumps(dict(row, mode="preview"), sort_keys=True), file=stream)
+                continue
+            if count >= limit:
+                continue
+            count += 1
+            if not apply:
+                print(json.dumps(dict(row, mode="preview"), sort_keys=True), file=stream)
+                continue
+            try:
+                source = row.get("source")
+                if row["action"] == "download_then_file":
+                    # Reuse the existing download command's Atlas validation,
+                    # exact output path, ffprobe verification and job history.
+                    out = downloader(
+                        database, row["source_uri"], row["incoming"],
+                        hostname=hostname, yt_dlp=yt_dlp, ffprobe=ffprobe,
+                        apply=True, output=io.StringIO())
+                    if out["status"] != "downloaded":
+                        totals["skipped_on_apply"] += 1
+                        print(json.dumps(dict(row, mode="apply", status="download_skipped",
+                                              detail=out["status"]), sort_keys=True),
+                              file=stream)
+                        continue
+                    source = row["incoming"]
+                    totals["downloaded"] += 1
+                result = filer(database, source, sports_root=sports_root,
+                               hostname=hostname, ffprobe=ffprobe, apply=True,
+                               stream=io.StringIO())
+                if result["status"] == "filed":
+                    totals["filed"] += 1
+                else:
+                    totals["skipped_on_apply"] += 1
+                print(json.dumps(dict(row, mode="apply",
+                                      status=result["status"],
+                                      download_completed=row["action"] == "download_then_file"),
+                                 sort_keys=True), file=stream)
+            except Exception as exc:
+                totals["failed"] += 1
+                print(json.dumps(dict(row, mode="apply", status="failed",
+                                      error=str(exc)[:1000]), sort_keys=True),
+                      file=stream)
+                # Fail closed on the first error. The source is deliberately
+                # retained and the next run may need manual reconciliation.
+                break
+        report = {
+            "mode": "apply" if apply else "preview", "series": "rugby-womens-pwr",
+            "host": hostname, "season": season, "limit": limit,
+            "fixtures": info["fixtures"], "due": info["due"],
+            "actionable": len(actionable), "planned": count,
+            "skipped": len(rows) - len(actionable),
+            **totals,
+        }
+        print(json.dumps(report, sort_keys=True), file=summary_stream)
+        return report
+
+    if apply:
+        with acquire_lock(incoming_root):
+            return execute()
+    return execute()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--season", type=int,
+                        help="PWR season to backfill (e.g. 2025); default latest fixtures first")
+    parser.add_argument("--limit", type=int, default=1,
+                        help="Maximum episodes to handle per invocation (default 1)")
+    parser.add_argument("--sports-root", default="/data/sports")
+    parser.add_argument("--incoming-root", default="/data/incoming")
+    parser.add_argument("--host", help="Local inventory host (default hostname)")
+    parser.add_argument("--min-age-hours", type=float, default=3,
+                        help="Wait this long after kickoff (default 3)")
+    parser.add_argument("--retry-after-hours", type=float, default=6,
+                        help="Delay retry of failed/running downloads (default 6; 0 disables)")
+    parser.add_argument("--show-skipped", action="store_true")
+    parser.add_argument("--yt-dlp", default="yt-dlp")
+    parser.add_argument("--ffprobe", default="ffprobe")
+    parser.add_argument("--apply", action="store_true",
+                        help="Download and file up to --limit episodes; default preview")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    if not 1 <= args.limit <= 100 or (args.season is not None and args.season < 2025):
+        parser.error("Provide --limit 1..100 and --season >=2025")
+    mongo_uri = os.environ.get("MONGODB_URI")
+    if not mongo_uri:
+        path = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            mongo_uri = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI from {path}: {exc}")
+    if not mongo_uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(mongo_uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            report = run(client[args.database], apply=args.apply, season=args.season,
+                         limit=args.limit, sports_root=args.sports_root,
+                         incoming_root=args.incoming_root, hostname=args.host,
+                         min_age_hours=args.min_age_hours,
+                         retry_after_hours=args.retry_after_hours,
+                         yt_dlp=args.yt_dlp, ffprobe=args.ffprobe,
+                         show_skipped=args.show_skipped)
+    except Exception as exc:
+        print(f"PVR acquisition: {exc}", file=sys.stderr)
+        return 1
+    return 1 if report["failed"] else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
