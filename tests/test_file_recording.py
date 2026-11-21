@@ -192,6 +192,7 @@ class FilingCLITests(unittest.TestCase):
             return None
         self.db.files.find_one.side_effect = lookup
         self.db.episodes.find_one.return_value = dict(EPISODE)
+        self.db.files.find.return_value = [self.original]
         self.db.files.update_one.return_value.matched_count = 1
         self.db.jobs.update_one.return_value.modified_count = 1
 
@@ -285,9 +286,12 @@ class FilingCLITests(unittest.TestCase):
         preferred = self.sports / "Rugby_Womens_PWR" / "Season_2025" / "bbc-alternative.mkv"
         preferred.parent.mkdir(parents=True)
         preferred.write_bytes(b"better existing BBC recording")
-        self.db.files.find.return_value = [{
+        self.db.files.find.return_value = [self.original, {
+            "_id": "slagg:" + str(preferred),
             "episode_id": EP_ID, "host": "slagg", "path": str(preferred),
-            "size_bytes": preferred.stat().st_size
+            "size_bytes": preferred.stat().st_size,
+            "mtime_ns": preferred.stat().st_mtime_ns,
+            "media": MEDIA,
         }]
         plan = self.run_cli()
         self.assertEqual(plan["status"], "already_published")
@@ -302,14 +306,57 @@ class FilingCLITests(unittest.TestCase):
         other = self.sports / "Rugby_Womens_PWR" / "Season_2026" / "other.mkv"
         other.parent.mkdir(parents=True)
         other.write_bytes(b"BBC recording of a DIFFERENT fixture")
-        self.db.files.find.return_value = []
+        self.db.files.find.return_value = [self.original]
         self.assertEqual(self.run_cli()["status"], "ready")
-        self.db.files.find.return_value = [{
+        self.db.files.find.return_value = [self.original, {
+            "_id": "slagg:missing",
             "episode_id": EP_ID, "host": "slagg",
             "path": str(self.sports / "Rugby_Womens_PWR/Season_2025/gone.mkv"),
             "size_bytes": 100000,
         }]
         self.assertEqual(self.run_cli()["status"], "ready")
+
+    def test_ineligible_short_or_low_resolution_file_is_not_filed(self):
+        for changes in ({"duration_seconds": 3599}, {"video": {
+                "codec": "h264", "fps": 60, "width": 1280, "height": 719}}):
+            with self.subTest(changes=changes):
+                self.original["media"] = dict(MEDIA, **changes)
+                self.assertEqual(self.run_cli()["status"], "ineligible")
+                self.assertEqual(self.run_cli(apply=True)["status"], "ineligible")
+                self.assertTrue(self.source.exists())
+                self.db.jobs.insert_one.assert_not_called()
+        self.original["media"] = MEDIA
+
+    def test_nonpreferred_candidate_is_not_promoted(self):
+        larger = self.source.parent / "alternate.mkv"
+        larger.write_bytes(b"a" * (self.source.stat().st_size + 100))
+        preferred_record = dict(self.original, _id="slagg:" + str(larger),
+                                path=str(larger), size_bytes=larger.stat().st_size,
+                                mtime_ns=larger.stat().st_mtime_ns)
+        self.db.files.find.return_value = [self.original, preferred_record]
+        plan = self.run_cli()
+        self.assertEqual(plan["status"], "not_preferred")
+        self.assertEqual(plan["preferred_file_id"], preferred_record["_id"])
+        self.assertEqual(self.run_cli(apply=True)["status"], "not_preferred")
+        self.db.jobs.insert_one.assert_not_called()
+        self.assertTrue(self.source.exists())
+
+    def test_better_candidate_cannot_replace_a_published_recording(self):
+        published = self.sports / "Rugby_Womens_PWR" / "Season_2025" / "old.mkv"
+        published.parent.mkdir(parents=True)
+        published.write_bytes(b"a" * 500)
+        lower = dict(self.original, _id="slagg:" + str(published),
+                     path=str(published), size_bytes=published.stat().st_size,
+                     mtime_ns=published.stat().st_mtime_ns,
+                     media=dict(MEDIA, video={"width": 1920, "height": 1080,
+                                               "fps": 25}))
+        self.db.files.find.return_value = [self.original, lower]
+        result = self.run_cli()
+        self.assertEqual(result["status"], "upgrade_available")
+        self.assertEqual(result["preferred_file_id"], self.file_id)
+        self.assertEqual(self.run_cli(apply=True)["status"], "upgrade_available")
+        self.assertFalse(self.destination.exists())
+        self.db.jobs.insert_one.assert_not_called()
 
     def test_destination_collision_does_not_create_job(self):
         self.destination.parent.mkdir(parents=True)
