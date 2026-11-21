@@ -1,122 +1,179 @@
-# PVR missing-recording acquisition (first batch worker)
+# PVR PWR source refresh and missing-recording acquisition
 
-`acquire_missing` is a bounded, preview-first, **one-shot** worker for PWR
-recordings already catalogued in Atlas. It connects the existing episode
-import, release matcher, local file selector, YouTube downloader and
-canonical filer. The worker does not re-index any provider, guess missing
-fixtures, download BBC/RugbyPass recordings, replace a published file or
-clean up unselected media.
+Two independent preview-first tools work together:
 
-## Usage on slagg
+- `refresh_releases` discovers current **BBC iPlayer**, **YouTube PWR**
+  and **RugbyPass** catalogue entries, validates their stable IDs and
+  matches them to known PWR fixtures in Atlas. Preview performs no writes;
+  `--apply` imports releases and links unambiguous matches.
+- `acquire_missing` finds due PWR episodes that lack a published recording,
+  downloads the needed source recordings, evaluates their **actual** video
+  properties, and canonically files the winner with the NFO stored in Atlas.
+  It is limited to one episode per run unless `--limit` is increased.
+
+## Getting started on slagg
 
 ```sh
 cd ~/pvr
 git pull
 
-# Read-only plan: recent missing fixtures first, one action by default.
-python3 acquire_missing
+# Inspect provider catalogue sizes without modifying Atlas:
+python3 refresh_releases
 
-# Preview the old 2025/26 season, oldest first. No changes.
-python3 acquire_missing --season 2025 --limit 5
+# Refresh the Atlas source catalogue and link unambiguous matches:
+python3 refresh_releases --apply
 
-# Explicit single-episode test: downloads, verifies, chooses and files.
-python3 acquire_missing --season 2025 --limit 1 --apply
+# Preview acquisition (may show several source downloads for one episode):
+python3 acquire_missing --limit 3
 
-# Only after verifying the first complete run, process up to five episodes.
-python3 acquire_missing --season 2025 --limit 5 --apply
+# Run a bounded single-episode trial across available sources:
+python3 acquire_missing --limit 1 --apply
 ```
 
-Each actionable preview emits a JSONL row with `action=file` for an eligible
-existing incoming MKV, or `action=download_then_file` for a known linked
-YouTube release. The summary goes to stderr. Use `--show-skipped` to see
-why a due episode was excluded, including existing publications, unavailable
-recordings, recent failures, multiple unknown-quality remote releases,
-missing valid NFO metadata or destination collisions.
+To combine discovery, matching and acquisition in one invocation:
 
-Default `--limit 1` means **at most one episode**, not one source request
-or one hour. The season filter is optional: without it, the worker considers
-the newest past matches first. With `--season 2025`, it walks that season
-in chronological order. No cron configuration is installed by this change.
+```sh
+python3 acquire_missing --refresh --limit 1 --apply
+```
 
-## Eligibility and selection
+Without `--apply`, `--refresh` queries providers but **does not import newly
+discovered releases into Atlas**. The subsequent acquisition preview can
+therefore include only releases already linked in the database. For a fully
+accurate plan including newly discovered sources, run
+`refresh_releases --apply` first, then preview `acquire_missing`.
 
-For each due, numbered PWR fixture with valid canonical NFO, the worker:
+Continue the historical **YouTube-only** backfill without involving new
+providers:
 
-1. Waits at least `--min-age-hours 3` after the fixture's scheduled
-   kickoff and excludes cancelled fixtures.
-2. Skips episodes with any existing canonical video/NFO destination or
-   an already-published inventory file under the sports library. Even a
-   library file with stale inventory metadata blocks unattended replacement.
-3. Checks all locally inventoried files on the current host. Files need
-   unchanged size/mtime and ffprobe metadata; reject below **720p** or
-   under **one hour**. Choose the largest eligible file at **>=50fps**,
-   otherwise the largest eligible file below 50fps.
-4. If an eligible local recording is found, files that preferred MKV
-   through `file_recording`; it does not download another release.
-5. Otherwise, considers **only already-matched and finished YouTube
-   releases** in `pvr.releases`. It declines ambiguous multiple
-   unmatched-for-quality releases rather than guessing the best remote
-   video; currently, Atlas has one matched YouTube release for each of
-   65 PWR episodes.
-6. Excludes a release with known duration below 3,600 seconds, already
-   inventoried source URI, a claimed destination, or a recent failure.
-   Remote resolution/FPS/file size are not reliably known before download.
-7. Downloads a unique candidate into `/data/incoming/pvr-<id>.mkv`
-   with `download_release`, verifies the result, and invokes
-   `file_recording`, which rechecks Atlas quality ranking before
-   publishing. A downloaded but ineligible or non-preferred file is
-   **left intact in incoming**, with a visible skipped filing status.
+```sh
+python3 acquire_missing --season 2025 --source youtube --limit 10 --apply
+```
 
-New media and sidecars are published with the existing no-clobber behavior;
-source deletion only occurs after successful filing. There is no
-automatic media replacement or cleanup. The existing `pvr.jobs` and
-`pvr.files` records retain detailed download/filing provenance.
+`--source` is repeatable, e.g. `--source bbc --source youtube`. The
+acquisition worker uses the same provider filter for optional refresh and
+for choosing source candidates.
 
-## Retries and safety
+## Complete selection policy
 
-- An exclusive lock file `/data/incoming/.pvr-acquire.lock` prevents
-  overlapping `--apply` runs on the same incoming filesystem.
-- Recent failed/running download jobs suppress another attempt for
-  `--retry-after-hours 6` by default; use `--retry-after-hours 0`
-  for an explicit immediate retry after diagnosing the problem.
-- Any exception during downloading or filing halts the current batch.
-  The summary indicates `failed > 0` and the CLI exits nonzero.
-  The potentially completed incoming file or publication is preserved
-  for reconciliation; no automated rollback or redownload is attempted.
-- `--limit` can be 1..100; use a small limit initially. Preview is
-  safe to run without any lock because it never changes filesystem/Atlas.
-- Source URI/episode identity checks, ffprobe verification, exact NFO
-  publication, and no-overwrite behavior are inherited from the existing
-  standalone tools. A failed download can be examined in `pvr.jobs`.
+For each scheduled, numbered PWR fixture older than three hours (configurable),
+the worker:
 
-The worker needs a local `~/.mongodb/pvr` or `MONGODB_URI`, local
-`yt-dlp`, `ffmpeg` and `ffprobe`, and pre-existing
-`/data/incoming` and `/data/sports` directories. Symlinked
-`/data/sports` is supported.
+1. Checks the canonical episode NFO/filename from Atlas; skips cancelled
+   matches or inconsistent metadata.
+2. If there is an existing canonical MKV/NFO, an actual published file
+   registered under `/data/sports`, or a previous move that needs
+   reconciliation, **does not acquire another version**.
+3. Evaluates existing local incoming MKVs using `pvr.files` and actual
+   filesystem information. Rejects files smaller than 720p, shorter than
+   one hour, with unknown FPS, or whose inventory is stale.
+4. Finds the **remaining** finished, matched BBC/YouTube/RugbyPass releases.
+   A source URI already inventoried is not downloaded again, even if the
+   recording is below minimum quality; untracked source files are not
+   overwritten. Known short (<3600s) remote releases are excluded.
+5. If more than one provider is available, **downloads all missing
+   candidates within `--max-candidates` (default 3)**. Only after those
+   downloads does it measure actual duration, FPS, resolution and bytes.
+   It cannot reliably rank catalogue-only video quality before download.
+6. Applies the established quality rule: >=720p, duration >=3600s;
+   largest file among recordings at >=50fps, otherwise largest lower-FPS
+   recording. 60fps does not automatically beat 50fps; there is no BBC
+   preference except when BBC wins on measured quality.
+7. Uses `file_recording` to publish only that selected source, with
+   atomic no-clobber MKV and exact canonical NFO.
+8. Leaves all unselected recordings in `/data/incoming`; there is no
+   automatic deletion or upgrade of already-published files.
+
+For a single missing release, the familiar preview action is
+`download_then_file`. For multiple releases it is
+`download_candidates_then_file` with an ordered `downloads` array.
+`action=file` means an eligible local recording can be published without
+downloading anything. The ordering BBC, YouTube, RugbyPass is only a stable
+transfer order, **not** a quality preference.
+
+`--max-candidates` counts the best existing local recording plus all new
+remote candidates and is limited to 1..5. If the limit is exceeded the
+episode is skipped as `too_many_source_candidates` instead of choosing
+arbitrarily or silently ignoring a provider. `--limit` counts episodes,
+not individual video downloads: one episode may require up to three
+large transfers at the default candidate limit.
+
+## Source adapters
+
+- **BBC**: `downloaders/bbc.py` calls `get_iplayer --pid` with an isolated
+  per-download profile and an explicit temporary output directory. It asks
+  for `fhd,hd` quality and avoids the host's existing `get_iplayer`
+  command hooks, PVR history and media filing. The resulting MP4 is remuxed
+  to MKV by FFmpeg, then checked by ffprobe. BBC availability can change,
+  and downloads may be subject to region and programme restrictions.
+- **YouTube**: existing `yt-dlp-sabr` configuration is respected; the
+  adapter stages and probes a completed MKV.
+- **RugbyPass**: the existing `~/tools/video/rugbypass` tool performs
+  authenticated single-VOD downloads to an explicit temporary MP4 with
+  `--no-fixture-nfo`; the adapter remuxes and probes it. The existing
+  private RugbyPass auth profile must be functional. The source indexer
+  reads accessible full-match replays from featured sections; it is not
+  a complete historical catalogue.
+
+Both new adapters use one temporary folder next to the requested incoming
+MKV. Verified publication uses an atomic no-overwrite hard link. The canonical
+library move may involve a verified cross-filesystem copy. They never write
+an NFO themselves: the authoritative NFO comes from MongoDB at filing time.
+
+Direct single-source trials (always preview first):
+
+```sh
+python3 download_release bbc:m0034hxp --destination /data/incoming/pvr-bbc-m0034hxp.mkv
+python3 download_release bbc:m0034hxp --destination /data/incoming/pvr-bbc-m0034hxp.mkv --apply
+```
+
+Note: the BBC example is a **previously matched episode that is already
+published** on slagg. The default download command will report
+`already_owned` and skip it; this is expected. The explicit
+`--allow-existing-episode` option would permit an alternative recording
+without replacing the published copy.
+
+## Safety and recovery
+
+- **Preview first**; `--apply` is required for Atlas updates and media.
+- The `/data/incoming/.pvr-acquire.lock` host-local flock prevents
+  overlapping worker invocations.
+- A recent failed or running download prevents immediate provider retries
+  for six hours by default (`--retry-after-hours`). Explicitly set the
+  value to 0 only after diagnosing a failure.
+- If any candidate fails or is unexpectedly skipped during an episode's
+  multi-source acquisition, the batch **stops without filing a winner**,
+  leaving complete downloaded candidates intact for reconciliation and
+  later retry. The CLI reports a failure and returns nonzero.
+- Media failing quality checks is retained for investigation, not
+  published or deleted. Missing FFprobe information is not guessed.
+- Stale/duplicate records, untracked destination files, and partial
+  previous moves are hard stops; existing published media is never
+  overwritten.
+- `pvr.jobs` tracks each provider download and canonical filing, and
+  `pvr.files` tracks all local candidates/provenance.
 
 ## Scheduling
 
-The worker is a **one-shot command** suitable for cron on slagg after a
-successful manual trial. For example, to process at most two missing
-fixtures daily:
+The command is a **one-shot** cron-compatible worker; no cron job is
+installed by the repository. Once manual trials are successful and all
+three providers work on slagg, a conservative unattended invocation is:
 
 ```cron
-30 5 * * * cd /home/mbligh/pvr && /usr/bin/python3 acquire_missing --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
+30 5 * * * cd /home/mbligh/pvr && /usr/bin/python3 acquire_missing --refresh --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
 ```
 
-This is an example only; the repository does not install or change crontabs.
-It uses the local configured timezone of the host. Run more conservative
-manually-scoped season backfills before enabling unattended scheduling.
+The sample is not installed or enabled. A refresh fetches the BBC brand,
+up to 100 YouTube stream entries and up to five RugbyPass catalogue pages
+per section by default. Override with `--youtube-limit`,
+`--bbc-pages`, `--rugbypass-pages` and `--rugbypass`. Avoid very
+frequent full-catalogue refreshes or unbounded historical backfills.
 
-## Deliberately not implemented yet
+## Not implemented yet
 
-- Fetching/refreshing external provider listings or automatic matcher runs.
-- BBC iPlayer and RugbyPass download adapters.
-- Quality prediction/selection across multiple unknown remote releases.
-- Explicit upgrade/replacement of an existing published recording.
-- Removal of unused alternatives.
-- Cross-machine distributed acquisition locking.
-- Automatic recovery of partial Atlas writes or stale source inventory.
-
-Review these restrictions before raising batch limits or putting the worker
-into cron.
+- Acquisition from unrelated TV series, men's rugby or Formula 1 through
+  this *PWR-specific* worker (other separate tools may handle those).
+- Predictive source quality ranking without downloading the media.
+- Replacing a published recording with a newly discovered better version.
+- Cleaning up lower-ranked incoming recordings.
+- Distributed host locking or automatic repair of partial Atlas writes.
+- Full historical RugbyPass discovery beyond its featured catalogue.
