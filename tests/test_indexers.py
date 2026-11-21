@@ -60,7 +60,9 @@ class YouTubeIndexTests(unittest.TestCase):
         pending = {"id": "aaaaaaaaaaa", "title": "Upcoming match",
                    "live_status": "is_upcoming"}
         def fake(command, **kwargs):
-            self.assertIn("--flat-playlist", command)
+            self.assertNotIn("--flat-playlist", command)
+            self.assertIn("--skip-download", command)
+            self.assertIn("--dump-json", command)
             self.assertIn("--playlist-end", command)
             return subprocess.CompletedProcess(command, 0,
                 stdout=json.dumps(replay) + "\n" + json.dumps(pending) + "\n",
@@ -72,6 +74,64 @@ class YouTubeIndexTests(unittest.TestCase):
         self.assertTrue(releases[0]["available"])
         self.assertNotIn("available", youtube.convert_video({
             "id": "bdxiq73pR-I", "title": "Unclassified"}))
+
+
+    def test_original_livestream_date_preferred_over_upload(self):
+        import datetime as dt
+        original = dt.datetime(2026, 11, 20, 19, 30, tzinfo=dt.timezone.utc)
+        video = {"id": "bdxiq73pR-I", "title": "Loughborough vs Trailfinders",
+                 "live_status": "was_live",
+                 "release_timestamp": int(original.timestamp()),
+                 "timestamp": int(original.timestamp()) + 86400,
+                 "upload_date": "20261121"}
+        release = youtube.convert_video(video)
+        self.assertEqual(release["published"], "2026-11-20T19:30:00+00:00")
+        self.assertEqual(release["metadata"]["date_basis"], "release_timestamp")
+        self.assertEqual(release["metadata"]["upload_date"], "20261121")
+        self.assertEqual(release["metadata"]["timestamp"], video["timestamp"])
+
+    def test_release_and_upload_date_fallback(self):
+        template = {"id": "bdxiq73pR-I", "title": "An old PWR match"}
+        for field, value, expected in [
+            ("release_date", "20251120", "2025-11-20"),
+            ("timestamp", 1763668800, "2025-11-20T20:00:00+00:00"),
+            ("upload_date", "20251121", "2025-11-21"),
+        ]:
+            with self.subTest(field=field):
+                item = youtube.convert_video(dict(template, **{field: value}))
+                self.assertEqual(item["published"], expected)
+                self.assertEqual(item["metadata"]["date_basis"], field)
+        self.assertNotIn("published", youtube.convert_video(
+            dict(template, upload_date="not a date")))
+        self.assertNotIn("published", youtube.convert_video(dict(
+            template, upload_date="20259999", timestamp=-1)))
+
+    def test_fast_listing_explicit_and_does_not_invent_dates(self):
+        video = {"id": "bdxiq73pR-I", "title": "A PWR match",
+                 "live_status": "was_live"}
+        def fake(command, **kwargs):
+            self.assertIn("--flat-playlist", command)
+            self.assertIn("--skip-download", command)
+            return subprocess.CompletedProcess(command, 0, json.dumps(video), "")
+        records = youtube.discover(flat=True, execute=fake)
+        self.assertEqual(len(records), 1)
+        self.assertNotIn("published", records[0])
+
+    def test_complete_metadata_discovery_filters_finished_videos(self):
+        import datetime as dt
+        original = dt.datetime(2026, 11, 20, 19, 30, tzinfo=dt.timezone.utc)
+        done = {"id": "bdxiq73pR-I", "title": "Loughborough vs Trailfinders",
+                "release_timestamp": int(original.timestamp()),
+                "live_status": "was_live"}
+        ongoing = {"id": "aaaaaaaaaaa", "title": "Other match",
+                   "live_status": "post_live"}
+        def fake(command, **kwargs):
+            self.assertNotIn("--flat-playlist", command)
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps(done) + "\n" + json.dumps(ongoing), "")
+        releases = youtube.discover(execute=fake)
+        self.assertEqual([r["id"] for r in releases], ["bdxiq73pR-I"])
+        self.assertEqual(releases[0]["published"], "2026-11-20T19:30:00+00:00")
 
     def test_failures_do_not_emit_partial_data(self):
         def fake(command, **kwargs):
