@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Explain quality preference among local inventoried files for one episode.
+
+Read-only. Uses verified Atlas media attributes and physical files on this
+host. No publishing, downloads, deletions, or database changes.
+"""
+import argparse
+import json
+import os
+import pathlib
+import socket
+import sys
+
+from selection.quality import select_episode
+
+
+def run(database, episode_id, *, hostname=None, stream=sys.stdout):
+    hostname = hostname or socket.gethostname()
+    if not hostname or "/" in hostname or ":" in hostname:
+        raise ValueError("Invalid host identifier")
+    episode = database.episodes.find_one({"_id": episode_id},
+                                         {"_id": 1, "series_id": 1,
+                                          "season": 1, "episode": 1})
+    if episode is None:
+        raise ValueError("Unknown canonical episode " + episode_id)
+    output = select_episode(database, episode_id, hostname)
+    output.update({
+        "episode_id": episode_id,
+        "season": episode.get("season"),
+        "episode": episode.get("episode"),
+        "series_id": episode.get("series_id"),
+        "host": hostname,
+        "mode": "preview",
+    })
+    print(json.dumps(output, sort_keys=True), file=stream)
+    return output
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("episode_id", help="Canonical episode _id in Atlas")
+    parser.add_argument("--host", help="Host of inventoried files (default local hostname)")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        credentials = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            uri = credentials.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI from {credentials}: {exc}")
+    if not uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            run(client[args.database], args.episode_id, hostname=args.host)
+    except Exception as exc:
+        print(f"PVR selector: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
