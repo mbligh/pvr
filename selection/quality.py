@@ -12,7 +12,7 @@ MIN_DURATION_SECONDS = 3600
 PREFERRED_FPS = 50.0
 
 
-def evaluate_file(record):
+def evaluate_file(record, *, min_duration_seconds=MIN_DURATION_SECONDS):
     """Classify one Atlas file against local presence and quality thresholds.
 
     An unchanged, regular local file and usable ffprobe metadata are required.
@@ -54,8 +54,11 @@ def evaluate_file(record):
         result["reason"] = "below_720p" if isinstance(height, (float, int)) else "unknown_height"
         return result
     if (not isinstance(duration, (float, int)) or isinstance(duration, bool) or
-            duration < MIN_DURATION_SECONDS):
-        result["reason"] = "under_one_hour" if isinstance(duration, (float, int)) else "unknown_duration"
+            duration < min_duration_seconds):
+        result["reason"] = (
+            "under_one_hour" if min_duration_seconds == MIN_DURATION_SECONDS
+            else "under_minimum_duration"
+        ) if isinstance(duration, (float, int)) else "unknown_duration"
         return result
     if not isinstance(fps, (float, int)) or isinstance(fps, bool) or not 0 < fps < 1000:
         result["reason"] = "unknown_fps"

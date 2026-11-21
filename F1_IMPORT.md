@@ -62,3 +62,48 @@ file and job associations are not intentionally touched.
 
 Preview and JSONL need only Python 3 standard library; applying requires
 python3-pymongo. No F1 import is scheduled automatically.
+
+
+## Filing acquired F1 media into the library
+
+A successful PVR-managed TransferNow download records the exact incoming
+file, matched F1 episode, technical attributes, and release provenance
+in pvr.files. The existing file_recording command supports F1 as well as
+PWR, using the canonical NFO path *from the Atlas episode*, not filenames
+in the downloaded video or its Reddit title.
+
+For the verified Las Vegas qualifying recording on slagg, run this first:
+
+    cd ~/pvr
+    git pull
+    ./file_recording /data/incoming/pvr-20261121rg0NQzAH.mkv
+
+Review the proposed destination, quality evaluation, release URI and status.
+If status is ready, explicitly publish the library video and NFO:
+
+    ./file_recording /data/incoming/pvr-20261121rg0NQzAH.mkv --apply
+
+This creates the canonical video under /data/sports/Formula_1/Season_2026/
+with an identical-stem .nfo sidecar containing the exact XML from Atlas.
+It uses a no-clobber hard link on one filesystem, or a staged, verified
+cross-device copy. The original incoming recording is removed only after
+the destination and NFO are published, verified and both MongoDB inventory
+updates succeed. File history retains previous_file_id, release_uri,
+and moved_to. The operation also records a filing job in pvr.jobs.
+
+A second run reports already_filed after verifying the final file and
+NFO. A pre-existing destination, stale incoming file, alternate published
+recording, mismatched NFO identity or unverified/ineligible recording blocks
+automatic publication. Failure after partial Atlas changes retains both
+copies and requires explicit reconciliation; never unconditionally delete
+the incoming file in that case.
+
+For F1, the local-file selector requires >=720p, known frame rate and at
+least half the scheduled official session duration (minimum 15 minutes),
+which also permits shorter sprint sessions. When multiple files are in
+inventory, dedicated Sky is preferred over MULTi with Sky, F1TV and other
+commentary. Preference is advisory; no file is automatically replaced.
+The existing PWR threshold/policy is unchanged.
+
+No calendar publishing, recording downloads, or automatic filing schedules
+are triggered by this capability.

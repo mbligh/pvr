@@ -291,3 +291,22 @@ and scheduling remain separate future work. The PVR adapter currently
 discards incomplete temporary staging between attempts, unlike the
 standalone ./transfernow CLI which supports persistent .part resumption.
 See TRANSFERNOW.md.
+
+
+## Formula 1 canonical filing (2026-11-21)
+
+The existing preview-first file_recording command now also files verified
+Formula 1 recordings (formula-1 series) using the Atlas episode nfo_path
+and stored NFO XML. The canonical root is Formula_1/Season_YYYY.
+filing/publish.py selects the permitted directory and NFO showtitle from
+the verified episode series; path traversal, symlinked subdirectories, and
+collisions are rejected for either PWR or Formula 1. All existing safe
+publication, cross-filesystem copy, verification, job history, destination
+inventory, source provenance and idempotent retry checks are reused. An
+F1-specific read-only selection policy requires >=720p, valid frame rate,
+and at least half the official session duration (minimum 15 minutes),
+rather than PWR's fixed one-hour floor. When multiple local recordings
+exist, known dedicated Sky commentary is preferred over MULTi Sky, then
+F1TV, then other/unknown; within a tier prefer >=50 fps, resolution,
+and size. No media is moved on GitHub; ./file_recording --apply must run
+on the host with the real file and Atlas connection. See F1_IMPORT.md.

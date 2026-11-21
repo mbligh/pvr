@@ -13,22 +13,34 @@ import xml.etree.ElementTree as ET
 
 from inventory.scan import probe_video
 
-SHOW = "Rugby_Womens_PWR"
+SERIES_PATHS = {
+    "rugby-womens-pwr": ("Rugby_Womens_PWR", "rugbywomenspwr", 2025),
+    "formula-1": ("Formula_1", "formula1", 1950),
+}
+
+
+def series_config(episode):
+    config = SERIES_PATHS.get(episode.get("series_id"))
+    if config is None:
+        raise ValueError("Unsupported canonical filing series")
+    return config
 
 
 def canonical_paths(episode, sports_root):
     """Use the authoritative NFO path, never source title or guessed names."""
+    show, _, earliest = series_config(episode)
     season = episode.get("season")
     number = episode.get("episode")
-    if not isinstance(season, int) or not isinstance(number, int) or season < 2025 or number < 1:
-        raise ValueError("Episode must have a PWR season >=2025 and positive episode number")
+    if (type(season) is not int or type(number) is not int or
+            season < earliest or number < 1):
+        raise ValueError("Invalid canonical season/episode number")
     relative = episode.get("nfo_path")
     if not isinstance(relative, str) or not relative:
         raise ValueError("Episode is missing its canonical nfo_path")
     path = pathlib.PurePosixPath(relative)
-    expected_prefix = f"{SHOW}-s{season}e{number:03d}-"
+    expected_prefix = f"{show}-s{season}e{number:03d}-"
     if (path.is_absolute() or ".." in path.parts or len(path.parts) != 3 or
-            path.parts[0] != SHOW or path.parts[1] != f"Season_{season}" or
+            path.parts[0] != show or path.parts[1] != f"Season_{season}" or
             not path.name.startswith(expected_prefix) or path.suffix != ".nfo"):
         raise ValueError(f"Unsafe or inconsistent canonical nfo_path: {relative}")
     root = pathlib.Path(sports_root).expanduser()
@@ -39,6 +51,7 @@ def canonical_paths(episode, sports_root):
 
 
 def validate_nfo(episode):
+    _, show_identity, _ = series_config(episode)
     value = episode.get("nfo")
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Canonical episode is missing NFO XML")
@@ -52,7 +65,7 @@ def validate_nfo(episode):
     except (ET.ParseError, ValueError) as exc:
         raise ValueError(f"Invalid canonical episode NFO: {exc}") from exc
     if (season, number) != (episode["season"], episode["episode"]) or (
-            re.sub(r"[^a-z0-9]", "", show.casefold()) != "rugbywomenspwr"):
+            re.sub(r"[^a-z0-9]", "", show.casefold()) != show_identity):
         raise ValueError("Canonical NFO episode identity does not match Atlas")
     return value.encode("utf-8")
 

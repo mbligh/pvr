@@ -145,3 +145,12 @@ to inspect link availability without downloading or changing Atlas.
 Atlas-matched source and --apply explicitly downloads that one recording.
 It validates the media and adds a job and file record. It never substitutes
 a fallback release automatically. See TRANSFERNOW.md for details.
+
+
+## Filing verified F1 recordings
+
+The same preview-first ./file_recording command used for rugby now files
+Atlas-inventoried Formula 1 recordings to
+/data/sports/Formula_1/Season_YYYY/ with the canonical .nfo.
+It preserves the exact TransferNow release provenance and writes a filing
+job. See F1_IMPORT.md for the verified Las Vegas example and --apply usage.
