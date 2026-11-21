@@ -76,7 +76,8 @@ been imported.
 
 The separate `match_rugbypass` command matches already indexed RugbyPass
 **full-match replays** against the numbered canonical fixtures in Atlas for
-`rugby-mens-intl`, `rugby-womens-intl`, and `rugby-nations`.
+`rugby-mens-intl`, `rugby-womens-intl`, `rugby-nations`, and
+`rugby-womens-wxv` (the WXV series currently needs a metadata import).
 PWR matching is unchanged.
 
 ```sh
@@ -102,7 +103,12 @@ Rules for automatic matches:
   RugbyPass label `Nations Championship` maps **only** to
   `rugby-nations`, even though the same matches are present in the
   men's-international calendar (usually with `NC:` prefixes).
-  `Women's International` and `WXV` map to `rugby-womens-intl`.
+  `Women's International` maps to `rugby-womens-intl`, while `WXV`
+  maps to `rugby-womens-wxv`, matching the separate
+  `Rugby_Womens_WXV` directory. Existing WXV fixtures in Atlas still
+  belong to `rugby-womens-intl`; the matcher now leaves those replays
+  unmatched rather than publishing them under the wrong directory.
+  Their dedicated numbered fixture/NFO records must be imported separately.
   Explicit men's-international, Nations Cup, Pacific Nations Cup and
   Rugby's Greatest Rivalry labels map to `rugby-mens-intl`.
   Unlabelled content is ignored; a missing gender label is not assumed
