@@ -21,6 +21,20 @@ If a series directory differs from the display name, set `library_dir` in its
 `calendar_legacy/calendars.json` entry. This only changes PVR metadata paths;
 no existing video files or the original calendar repository are renamed.
 
+The PVR calendar configuration now explicitly pins `library_dir` for
+every currently imported rugby series that has one of the existing folders.
+The canonical filer registers the full eleven-directory list in
+[FILING.md](FILING.md). A directory mapping does not create fixtures.
+
+**WXV requires a separate fixture migration.** Existing WXV entries
+currently use the `rugby-womens-intl` series ID, showtitle and
+`Rugby_Womens_Intl` NFO paths; they are not automatically moved into
+`Rugby_Womens_WXV` merely because that physical directory exists.
+The RugbyPass matcher targets the distinct `rugby-womens-wxv` series
+for newly encountered WXV replay titles, so it will not automatically
+file them into the international directory before a dedicated fixture
+import exists.
+
 ## Data and historical safety
 
 On the first run, import_rugby downloads the published spoiler-free ICS snapshots and rugby metadata manifest from mbligh/calendar. Future runs use the saved Atlas state, not fresh historical data. The merger preserves fixtures after their accepted kickoff and only accepts explicit cancellation signals. Previously assigned episode numbers are retained.
