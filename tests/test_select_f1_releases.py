@@ -105,7 +105,7 @@ class F1ReleaseSelectorTests(unittest.TestCase):
     def test_preference_order_fallback(self):
         ranked = rank_releases([release("lowdutch1", "dutch", 1080),
                                 release("f1stereo1", "f1tv", 1080),
-                                release("multi-no1", "multi", 2160, sky=False)],
+                                release("multino11", "multi", 2160, sky=False)],
                                today=TODAY)
         self.assertEqual(ranked[0]["uri"], "reddit-teletz:f1stereo1")
 
@@ -116,7 +116,7 @@ class F1ReleaseSelectorTests(unittest.TestCase):
         self.assertIsNone(next((r for r in ranked if r["selected"]), None))
 
     def test_freshness_is_warning_not_claim_of_expiration(self):
-        entry = make_candidate(release("older-link1", "sky", 1080,
+        entry = make_candidate(release("olderlink1", "sky", 1080,
                                        published="2026-10-11"), TODAY)
         self.assertTrue(entry["selectable"])
         self.assertIn("not checked", entry["warning"])
@@ -167,7 +167,6 @@ class F1ReleaseSelectorTests(unittest.TestCase):
         self.assertIn("S2026E217", rendered)
         self.assertIn("[SELECT] Dedicated Sky commentary", rendered)
         self.assertIn("multi4kaaa", rendered)
-        self.assertIn("unverified", "This is a ranking preview; links are unverified")
         self.assertIn("have NOT been verified", rendered)
 
 
