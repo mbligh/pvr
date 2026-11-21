@@ -7,7 +7,7 @@ import unittest
 
 from filing.publish import canonical_paths, validate_nfo
 from matchers import rugbypass as rb
-from tests.test_match_releases import FakeDB
+from test_match_releases import FakeDB
 
 UTC = dt.timezone.utc
 ROOT = pathlib.Path(__file__).resolve().parents[1]
