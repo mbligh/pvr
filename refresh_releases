@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Refresh BBC, YouTube and RugbyPass catalogues and link PWR fixtures.
+
+Without --apply: query providers and preview counts, no Atlas writes.
+With --apply: validate all source responses before upserting and matching.
+This command NEVER downloads or changes any media files.
+"""
+import argparse
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent
+SOURCES = ("bbc", "youtube", "rugbypass")
+
+
+def load_file(name, path):
+    loader = importlib.machinery.SourceFileLoader(name, str(ROOT / path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def scan_rugbypass(*, script="~/tools/video/rugbypass", pages=5,
+                   execute=subprocess.run):
+    cmd = [str(pathlib.Path(script).expanduser()),
+           "--list-games", "--jsonl", "--pages", str(pages)]
+    result = execute(cmd, capture_output=True, text=True, check=False)
+    if result.returncode:
+        # The source tool can log authenticated URLs; avoid propagating them.
+        raise RuntimeError(f"RugbyPass catalogue failed with exit {result.returncode}; "
+                           "check the local RugbyPass auth status")
+    records = []
+    for line in result.stdout.splitlines():
+        if line.strip():
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise ValueError("RugbyPass catalogue produced non-JSON output") from exc
+    return records
+
+
+def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
+                     rugbypass_pages=5, rugbypass="~/tools/video/rugbypass",
+                     yt_dlp="yt-dlp", bbc_discover=None, yt_discover=None,
+                     rp_discover=scan_rugbypass):
+    if not 1 <= youtube_limit <= 5000 or not 1 <= bbc_pages <= 20 or not 1 <= rugbypass_pages <= 50:
+        raise ValueError("Provider paging limits are out of range")
+    bbc = load_file("pvr_refresh_bbc", "indexers/bbc")
+    yt = load_file("pvr_refresh_youtube", "indexers/youtube")
+    output = {}
+    for source in sources:
+        if source == "bbc":
+            output[source] = (bbc_discover or bbc.discover)(
+                bbc.DEFAULT_BRAND, max_pages=bbc_pages)
+        elif source == "youtube":
+            output[source] = (yt_discover or yt.discover)(
+                yt.DEFAULT_URL, limit=youtube_limit, binary=yt_dlp)
+        elif source == "rugbypass":
+            output[source] = rp_discover(script=rugbypass, pages=rugbypass_pages)
+        else:
+            raise ValueError(f"Unknown source: {source}")
+    return output
+
+
+def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
+        bbc_pages=10, rugbypass_pages=5,
+        rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
+        discover=discover_sources, output=sys.stdout):
+    sources = tuple(dict.fromkeys(sources))
+    if not sources or any(source not in SOURCES for source in sources):
+        raise ValueError("Specify at least one source from bbc,youtube,rugbypass")
+    results = discover(sources, youtube_limit=youtube_limit, bbc_pages=bbc_pages,
+                       rugbypass_pages=rugbypass_pages,
+                       rugbypass=rugbypass, yt_dlp=yt_dlp)
+    indexer = load_file("pvr_refresh_index_releases", "index_releases")
+    matcher = load_file("pvr_refresh_match_releases", "match_releases")
+    validated = {}
+    counts = {}
+    for source in sources:
+        records = results[source]
+        if not isinstance(records, list):
+            raise ValueError(f"{source} indexer did not return a list")
+        serialized = io.StringIO("".join(json.dumps(x) + "\n" for x in records))
+        parsed = indexer.read_records(serialized)
+        if any(row.get("source") != source for row in parsed.values()):
+            raise ValueError(f"Catalogue contains a mismatched source: {source}")
+        validated[source] = parsed
+        counts[source] = len(parsed)
+    if apply:
+        for source in sources:
+            indexer.upsert_releases(database, validated[source])
+        matched = matcher.run(database, apply=True,
+                              stream=io.StringIO(), summary_stream=io.StringIO())
+    else:
+        matched = None
+    outcome = {"mode": "apply" if apply else "preview",
+               "sources": list(sources), "releases": counts,
+               "total_releases": sum(counts.values()),
+               "matching": matched,
+               "note": "Preview does not link newly discovered releases" if not apply else None}
+    print(json.dumps(outcome, sort_keys=True), file=output)
+    return outcome
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", action="append", choices=SOURCES,
+                        help="Provider to refresh (repeatable; default all three)")
+    parser.add_argument("--youtube-limit", type=int, default=100)
+    parser.add_argument("--bbc-pages", type=int, default=10)
+    parser.add_argument("--rugbypass-pages", type=int, default=5)
+    parser.add_argument("--rugbypass", default="~/tools/video/rugbypass")
+    parser.add_argument("--yt-dlp", default="yt-dlp")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        try:
+            uri = (pathlib.Path.home() / ".mongodb" / "pvr").read_text().strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI: {exc}")
+    if not uri:
+        parser.error("Empty MongoDB URI")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            run(client[args.database], sources=args.source or SOURCES,
+                youtube_limit=args.youtube_limit, bbc_pages=args.bbc_pages,
+                rugbypass_pages=args.rugbypass_pages, rugbypass=args.rugbypass,
+                yt_dlp=args.yt_dlp, apply=args.apply)
+    except Exception as exc:
+        print(f"PVR source refresh: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
