@@ -1,4 +1,4 @@
-"""Conservative RugbyPass replay matching for numbered international fixtures.
+"""Conservative RugbyPass replay matching for international/Nations/WXV fixtures.
 
 A release is linked only when its *competition label* identifies one series,
 the home/away national sides match exactly after documented aliases, and its
