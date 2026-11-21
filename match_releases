@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Match indexed PWR recordings to canonical episodes in MongoDB.
+
+Dry-run by default. Use --apply to link unambiguous releases. Never overwrite
+an existing episode_id; matching is independent of media downloading.
+"""
+import argparse
+import collections
+import datetime as dt
+import json
+import os
+import pathlib
+import sys
+
+from matchers.pwr import SERIES_ID, match_release
+
+SOURCES = ("bbc", "youtube", "rugbypass")
+METHOD = "pwr-teams-date-v1"
+
+
+def evaluate(release, episodes, tolerance_days=2):
+    result = match_release(release, episodes, tolerance_days=tolerance_days)
+    result["uri"] = release["_id"]
+    result["source"] = release.get("source")
+    result["title"] = release.get("title")
+    existing = release.get("episode_id")
+    if existing:
+        if result.get("episode_id") == existing:
+            result["status"] = "already_linked"
+        else:
+            result["status"] = "existing_link"
+            result["existing_episode_id"] = existing
+    return result
+
+
+def run(database, *, apply=False, source=None, tolerance_days=2, verbose=False,
+        stream=sys.stdout, summary_stream=sys.stderr):
+    episodes = list(database.episodes.find(
+        {"series_id": SERIES_ID},
+        {"_id": 1, "series_id": 1, "season": 1, "episode": 1,
+         "home": 1, "away": 1, "scheduled": 1, "scheduled_date": 1}
+    ))
+    if not episodes:
+        raise ValueError("No PWR episodes in Atlas; import fixtures first")
+    query = {"source": source if source else {"$in": list(SOURCES)}}
+    counts = collections.Counter()
+    now = dt.datetime.now(dt.timezone.utc)
+    for release in database.releases.find(query):
+        result = evaluate(release, episodes, tolerance_days=tolerance_days)
+        status = result["status"]
+        if status == "candidate" and apply:
+            match_metadata = {
+                "method": METHOD,
+                "recording_date": result["recording_date"],
+                "scheduled_date": result["scheduled_date"],
+                "delta_days": result["delta_days"],
+                "teams": result["teams"],
+                "date_basis": release.get("metadata", {}).get("date_basis"),
+            }
+            # An existing manual/automatic link wins. Avoid races with other
+            # writers: _id and a missing/null episode_id must both match.
+            write = database.releases.update_one(
+                {"_id": release["_id"], "episode_id": None},
+                {"$set": {
+                    "episode_id": result["episode_id"],
+                    "match_method": METHOD,
+                    "match_details": match_metadata,
+                    "matched_at": now,
+                }},
+            )
+            status = "linked" if write.modified_count == 1 else "write_conflict"
+            result["status"] = status
+        counts[status] += 1
+        if status in ("candidate", "linked", "ambiguous", "existing_link",
+                      "write_conflict") or verbose:
+            print(json.dumps(result, ensure_ascii=False, default=str), file=stream)
+    report = {"mode": "apply" if apply else "preview",
+              "series": SERIES_ID, "fixtures": len(episodes),
+              "processed": sum(counts.values()), **dict(sorted(counts.items()))}
+    print(json.dumps(report, sort_keys=True), file=summary_stream)
+    return report
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true",
+                        help="Write unambiguous links to Atlas; otherwise preview")
+    parser.add_argument("--source", choices=SOURCES,
+                        help="Process a single recording source")
+    parser.add_argument("--tolerance-days", type=int, default=2,
+                        help="Maximum absolute difference between recording and fixture dates (default 2)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show all releases, including unmatched and already linked")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    if not 0 <= args.tolerance_days <= 7:
+        parser.error("--tolerance-days must be between 0 and 7")
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        path = pathlib.Path.home() / ".mongodb" / "pvr"
+        try:
+            uri = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            parser.error(f"Cannot read MongoDB URI from {path}: {exc}")
+    if not uri:
+        parser.error("MongoDB URI is empty")
+    from pymongo import MongoClient
+    try:
+        with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            run(client[args.database], apply=args.apply, source=args.source,
+                tolerance_days=args.tolerance_days, verbose=args.verbose)
+    except (ValueError, OSError) as exc:
+        print(f"PVR matcher: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
