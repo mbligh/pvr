@@ -706,3 +706,7 @@ No database writes or media changes. Default listener is localhost;
 LAN access is opt-in and unauthenticated. A user cron @reboot example
 is provided, but neither deployment nor crontab is modified automatically.
 See DASHBOARD.md.
+
+## Gallagher PREM team selections
+
+Official PREM selected-player team sheets are stored in a separate `prem_lineups` collection by `import_prem_lineups`, keyed by canonical episode ID and linked to `external_ids.prem`. See [PREM_LINEUPS.md](PREM_LINEUPS.md). Match scores and events never enter the score-free episode scheduler or lineup records.
