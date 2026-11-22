@@ -12,13 +12,20 @@ from icalendar import Calendar
 WXV = "rugby-womens-wxv"
 WOMENS = "rugby-womens-intl"
 WXV_DESC = re.compile(r"^\s*WXV(?:\s+20\d{2})?(?:\s|$)", re.IGNORECASE)
+# When splitting historical snapshots, explicitly exclude the separate
+# Challenger competition even if a source previously labelled it under WXV.
+WXV_CHALLENGER_DESC = re.compile(
+    r"^\s*WXV\s+Global\s+Series\s+Challenger\b", re.IGNORECASE
+)
 WORLD_RUGBY_UID = re.compile(r"^world-rugby-[A-Za-z0-9-]+@mbligh\.github\.io$")
 
 
 def is_wxv_event(event):
     if event.name != "VEVENT":
         return False
-    return bool(WXV_DESC.match(str(event.get("DESCRIPTION", ""))))
+    description = str(event.get("DESCRIPTION", ""))
+    return (bool(WXV_DESC.match(description)) and
+            not bool(WXV_CHALLENGER_DESC.match(description)))
 
 
 def empty_like(calendar):
