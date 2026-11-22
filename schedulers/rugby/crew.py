@@ -7,6 +7,7 @@ No scores are collected or written. No episode upserts are performed.
 """
 import argparse
 import datetime as dt
+from email.utils import parsedate_to_datetime
 import html
 import json
 import re
@@ -29,6 +30,8 @@ WORLD_URL = "https://www.world.rugby/beta/en/match/"
 ICDB_SITEMAP = "https://rugby.icdb.tv/sitemap.xml"
 ICDB_MATCH_PREFIX = "https://rugby.icdb.tv/match/"
 PWR_API = "https://www.thepwr.com/api/oval/fixtures?compId=1095&seasonId="
+WORLD_THROTTLE_ID = "rugby_crew_world_rugby"
+WORLD_MIN_COOLDOWN_SECONDS = 3600
 UUID = re.compile(r"world-rugby-([0-9a-f]{8}-[0-9a-f-]{27})@", re.I)
 PWR_ID = re.compile(r"pwr-(\d+)@", re.I)
 TAG = re.compile(r"<[^>]+>")
@@ -230,12 +233,52 @@ def merge_broadcasts(previous, new):
     return sorted(found.values(), key=lambda x: x["channel"].casefold())
 
 
+def utc_timestamp(value):
+    """Accept naive-UTC datetimes returned by PyMongo."""
+    if not isinstance(value, dt.datetime):
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def retry_after_seconds(header, now):
+    """Retry-After can be a duration in seconds or an HTTP date."""
+    if not header:
+        return 0
+    value = str(header).strip()
+    if value.isdecimal():
+        return int(value)
+    try:
+        stamp = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError, IndexError):
+        return 0
+    stamp = utc_timestamp(stamp)
+    return max(0, int((stamp - now).total_seconds())) if stamp else 0
+
+
+def world_cooldown(db, now):
+    """A rate-limit response blocks subsequent invocations, not just this run."""
+    state = db.metadata_state.find_one({"_id": WORLD_THROTTLE_ID}) or {}
+    until = utc_timestamp(state.get("retry_not_before"))
+    return until if until is not None and until > now else None
+
+
+def record_world_cooldown(db, *, now, until, status):
+    db.metadata_state.update_one(
+        {"_id": WORLD_THROTTLE_ID},
+        {"$max": {"retry_not_before": until},
+         "$set": {"last_rate_limited_at": now, "last_http_status": status}},
+        upsert=True,
+    )
+
+
 def emit(data):
     print(json.dumps(data, ensure_ascii=False, sort_keys=True, default=str), flush=True)
 
 
 def run(db, *, start, end, series=None, sources=None, apply=False,
-        limit=0, max_icdb=60, fetch=get_bytes, delay=0.1):
+        limit=0, max_icdb=60, max_world=24, world_delay=10.0,
+        empty_recheck_days=7, refresh_officials=False,
+        fetch=get_bytes, delay=0.1, now_fn=None):
     sources = set(sources or ("world-rugby", "pwr", "icdb"))
     query = {"scheduled": {"$gte": dt.datetime.combine(start, dt.time.min, tzinfo=UTC),
                            "$lt": dt.datetime.combine(end + dt.timedelta(days=1),
@@ -250,8 +293,9 @@ def run(db, *, start, end, series=None, sources=None, apply=False,
     by_id = {ep["_id"]: ep for ep in episodes}
     changes = defaultdict(dict)
     counters = defaultdict(int)
+    now = utc_timestamp(now_fn()) if now_fn else dt.datetime.now(UTC)
 
-    def retrieve(url):
+    def retrieve(url, *, stop_on_throttle=False):
         counters["requests"] += 1
         try:
             data = fetch(url)
@@ -262,25 +306,80 @@ def run(db, *, start, end, series=None, sources=None, apply=False,
             emit({"type": "source_error", "url": url,
                   "error": type(exc).__name__, "message": str(exc)[:160]})
             counters["failed_requests"] += 1
+            if stop_on_throttle and isinstance(exc, HTTPError) and exc.code in (403, 429, 503):
+                raise
             return None
 
     if "world-rugby" in sources:
-        for ep in episodes:
-            if ep.get("series_id") not in WORLD_SERIES:
-                continue
-            matched = UUID.search(ep["_id"])
-            if not matched:
-                continue
-            url = WORLD_URL + quote(matched.group(1))
-            content = retrieve(url)
-            if content is None:
-                continue
-            officials = parse_world_officials(content.decode("utf-8", errors="replace"))
-            if officials:
-                officials.update({"source": "world_rugby", "url": url})
-                if ep.get("match_officials") != officials:
-                    changes[ep["_id"]]["match_officials"] = officials
-                counters["world_rugby_matches"] += 1
+        candidates = [ep for ep in episodes if
+                      ep.get("series_id") in WORLD_SERIES and UUID.search(ep["_id"])]
+        blocked_until = world_cooldown(db, now) if candidates else None
+        if blocked_until:
+            emit({"type": "source_cooldown", "source": "world-rugby",
+                  "retry_not_before": blocked_until.isoformat(),
+                  "reason": "previous_rate_limit"})
+            counters["world_rugby_cooldown"] += 1
+        else:
+            last_request_at = None
+            requests = 0
+            for ep in candidates:
+                prior = ep.get("match_officials") or {}
+                if (not refresh_officials and prior.get("source") == "world_rugby"
+                        and prior.get("referee")):
+                    counters["world_rugby_existing_skipped"] += 1
+                    continue
+                checked = utc_timestamp(ep.get("crew_world_rugby_checked_at"))
+                if (not refresh_officials and checked is not None
+                        and now < checked + dt.timedelta(days=empty_recheck_days)):
+                    counters["world_rugby_recently_checked"] += 1
+                    continue
+                if requests >= max_world:
+                    counters["world_rugby_limit_reached"] += 1
+                    break
+                if last_request_at is not None and world_delay:
+                    pause = world_delay - (time.monotonic() - last_request_at)
+                    if pause > 0:
+                        time.sleep(pause)
+                last_request_at = time.monotonic()
+                requests += 1
+                counters["world_rugby_requests"] += 1
+                url = WORLD_URL + quote(UUID.search(ep["_id"]).group(1))
+                try:
+                    content = retrieve(url, stop_on_throttle=True)
+                except HTTPError as exc:
+                    # Never keep hammering the host after it rejects a request.
+                    # Back off for at least an hour even when no header is sent.
+                    error_at = utc_timestamp(now_fn()) if now_fn else dt.datetime.now(UTC)
+                    seconds = max(WORLD_MIN_COOLDOWN_SECONDS,
+                                  retry_after_seconds(
+                                      exc.headers.get("Retry-After") if exc.headers else None,
+                                      error_at))
+                    retry_at = error_at + dt.timedelta(seconds=min(seconds, 365 * 86400))
+                    if apply:
+                        record_world_cooldown(db, now=error_at,
+                                              until=retry_at, status=exc.code)
+                    emit({"type": "source_cooldown", "source": "world-rugby",
+                          "reason": "http_rate_limit", "http_status": exc.code,
+                          "retry_not_before": retry_at.isoformat(),
+                          "persisted": bool(apply)})
+                    counters["world_rugby_cooldown"] += 1
+                    break
+                if content is None:
+                    continue
+                officials = parse_world_officials(content.decode("utf-8", errors="replace"))
+                if officials:
+                    officials.update({"source": "world_rugby", "url": url})
+                    if ep.get("match_officials") != officials:
+                        changes[ep["_id"]]["match_officials"] = officials
+                    counters["world_rugby_matches"] += 1
+                else:
+                    counters["world_rugby_empty"] += 1
+                    # Cache negative results to avoid repeatedly exhausting
+                    # the per-run budget on old matches with no appointments.
+                    if apply:
+                        db.episodes.update_one(
+                            {"_id": ep["_id"], "series_id": ep["series_id"]},
+                            {"$set": {"crew_world_rugby_checked_at": now}})
 
     if "pwr" in sources:
         years = sorted({pwr_season_id(ep) for ep in episodes
@@ -391,18 +490,32 @@ def main(argv=None):
                         help="Max episodes (0 = unlimited)")
     parser.add_argument("--max-icdb", type=int, default=60,
                         help="Max ICDb match pages per run")
+    parser.add_argument("--max-world", type=int, default=24,
+                        help="Max World Rugby pages per run (default 24)")
+    parser.add_argument("--world-delay", type=float, default=10.0,
+                        help="Minimum seconds between World Rugby requests (default 10)")
+    parser.add_argument("--empty-recheck-days", type=int, default=7,
+                        help="Days before rechecking a match with no officials (default 7)")
+    parser.add_argument("--refresh-officials", action="store_true",
+                        help="Refetch already enriched or recently empty match pages")
     parser.add_argument("--database", default="pvr", help="MongoDB database")
     args = parser.parse_args(argv)
     today = dt.datetime.now(UTC).date()
     start = args.start or today - dt.timedelta(days=args.days)
     end = args.end or today + dt.timedelta(days=args.ahead)
-    if start > end or args.days < 0 or args.ahead < 0 or args.limit < 0 or args.max_icdb < 0:
+    if (start > end or args.days < 0 or args.ahead < 0 or args.limit < 0
+            or args.max_icdb < 0 or args.max_world < 1
+            or not 0 <= args.world_delay <= 600
+            or args.empty_recheck_days < 0):
         parser.error("Invalid date range or limits")
     with database_connection(args.database) as client:
         client.admin.command("ping")
         run(client[args.database], start=start, end=end,
             series=args.series, sources=args.source, apply=args.apply,
-            limit=args.limit, max_icdb=args.max_icdb)
+            limit=args.limit, max_icdb=args.max_icdb,
+            max_world=args.max_world, world_delay=args.world_delay,
+            empty_recheck_days=args.empty_recheck_days,
+            refresh_officials=args.refresh_officials)
     return 0
 
 

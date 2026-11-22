@@ -19,3 +19,5 @@
 Detailed behavior and commands are documented in `DASHBOARD.md`, `RUGBY_IMPORT.md`, `INDEXERS.md`, `ACQUISITION.md`, `MATCHING.md`, and `F1_AUTOMATION.md`.
 
 - `import_rugby_crew` enriches existing rugby episodes from World Rugby, PWR and ICDb, with provenance and broadcast-specific commentary. See `RUGBY_CREW.md`.
+
+World Rugby enrichment is rate-limited (sequential, 10 seconds, max 24 pages/run) and persists a 429/403/503 cooldown in Atlas when applying; see `RUGBY_CREW.md`.

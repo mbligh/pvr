@@ -35,6 +35,32 @@ are allowlisted; HTTP errors are logged as JSONL and do not stop other
 sources. Some ICDb requests may be rate-limited or challenged by Cloudflare.
 Do not run aggressively against the providers.
 
+## World Rugby throttling
+
+World Rugby requests are **sequential**, with a minimum 10-second gap
+between request starts (change with \`--world-delay\`) and a maximum of 24
+pages per invocation (change with \`--max-world\`). Existing World Rugby
+official assignments are skipped; use \`--refresh-officials\` to force
+rechecking them.
+
+On HTTP 429, 403, or 503, this importer **stops contacting World Rugby**
+for the remainder of that run, while continuing PWR/ICDb. It honors
+\`Retry-After\` where supplied and otherwise backs off at least one hour.
+\`--apply\` saves the retry deadline in Atlas \`metadata_state\` under
+\`rugby_crew_world_rugby\` so cron invocations cannot immediately repeat
+the denied requests. Preview mode never writes this cooldown.
+
+When a World Rugby page has no officials, \`--apply\` records
+\`crew_world_rugby_checked_at\` on the existing episode. The same empty
+page is not requested for seven days by default
+(\`--empty-recheck-days\`), allowing historical backfills to progress.
+No invented official names or placeholder crew entries are stored.
+
+For a slower backfill:
+
+    ./import_rugby_crew --apply --world-delay 15 --max-world 12
+
+
 Examples:
 
     ./import_rugby_crew --apply --days 60 --ahead 14

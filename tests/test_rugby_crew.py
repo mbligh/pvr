@@ -3,6 +3,8 @@ import datetime as dt
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 from schedulers.rugby import crew
 
@@ -31,9 +33,29 @@ class Collection:
         return type("Result", (), {"matched_count": int(row is not None)})()
 
 
+class State:
+    def __init__(self):
+        self.record = None
+        self.writes = []
+
+    def find_one(self, filter):
+        return self.record
+
+    def update_one(self, filter, update, upsert=False):
+        self.writes.append((filter, update))
+        if self.record is None:
+            self.record = {"_id": filter["_id"]}
+        for key, value in update.get("$set", {}).items():
+            self.record[key] = value
+        for key, value in update.get("$max", {}).items():
+            if key not in self.record or self.record[key] < value:
+                self.record[key] = value
+
+
 class Database:
     def __init__(self, records):
         self.episodes = Collection(records)
+        self.metadata_state = State()
 
 
 class CrewTests(unittest.TestCase):
@@ -111,6 +133,115 @@ class CrewTests(unittest.TestCase):
             crew.run(db, start=dt.date(2026, 11, 20), end=dt.date(2026, 11, 20),
                      sources=("pwr",), fetch=fetch, apply=True, delay=0)
         self.assertEqual(len(db.episodes.writes), 1)
+
+    def test_retry_after_parsing(self):
+        now = dt.datetime(2026, 11, 22, 21, 0, tzinfo=UTC)
+        self.assertEqual(crew.retry_after_seconds("7200", now), 7200)
+        self.assertEqual(crew.retry_after_seconds(
+            "Sun, 22 Nov 2026 23:00:00 GMT", now), 7200)
+        self.assertEqual(crew.retry_after_seconds("not a time", now), 0)
+        self.assertEqual(crew.retry_after_seconds(None, now), 0)
+
+    def test_world_rugby_throttle_stops_and_carries_over_to_next_run(self):
+        now = dt.datetime.now(UTC)
+        ep1 = self.world_episode("2120baa6-8f19-40bc-98a3-db97e3ef9b45", now)
+        ep2 = self.world_episode("3deba7fe-2095-4691-9555-fb22da23306b", now)
+        pwr = {"_id": "Rugby_Womens_PWR:pwr-295034@mbligh.github.io",
+               "series_id": "Rugby_Womens_PWR", "season": 2026,
+               "scheduled": now, "title": "A vs B"}
+        db = Database([ep1, ep2, pwr])
+        seen = []
+
+        def fetch(url):
+            seen.append(url)
+            if "world.rugby" in url:
+                raise HTTPError(url, 429, "Too Many Requests",
+                                {"Retry-After": "7200"}, None)
+            return json_bytes({"data": [{"id": 295034, "officials": [
+                {"role": "referee", "name": "Nikki O'Donnell"}]}]})
+
+        day = now.date()
+        with redirect_stdout(io.StringIO()):
+            stats = crew.run(db, start=day, end=day,
+                             sources=("world-rugby", "pwr"), apply=True,
+                             fetch=fetch, delay=0, world_delay=0)
+        self.assertEqual(stats["world_rugby_requests"], 1)
+        self.assertEqual(stats["world_rugby_cooldown"], 1)
+        self.assertEqual(len([u for u in seen if "world.rugby" in u]), 1)
+        self.assertEqual(pwr["match_officials"]["referee"], "Nikki O'Donnell")
+        self.assertGreaterEqual(
+            (db.metadata_state.record["retry_not_before"] - now).total_seconds(),
+            7100)
+        with redirect_stdout(io.StringIO()):
+            stats = crew.run(db, start=day, end=day, sources=("world-rugby",),
+                             apply=True, fetch=fetch, delay=0, world_delay=0)
+        self.assertEqual(stats["world_rugby_cooldown"], 1)
+        self.assertEqual(len([u for u in seen if "world.rugby" in u]), 1)
+
+    def test_world_rugby_preview_does_not_persist_throttle(self):
+        now = dt.datetime.now(UTC)
+        db = Database([self.world_episode(
+            "2120baa6-8f19-40bc-98a3-db97e3ef9b45", now)])
+        seen = []
+
+        def fetch(url):
+            seen.append(url)
+            raise HTTPError(url, 429, "Too Many Requests", {}, None)
+
+        with redirect_stdout(io.StringIO()):
+            crew.run(db, start=now.date(), end=now.date(),
+                     sources=("world-rugby",), apply=False,
+                     fetch=fetch, delay=0, world_delay=0)
+        self.assertEqual(len(seen), 1)
+        self.assertIsNone(db.metadata_state.record)
+        self.assertFalse(db.episodes.writes)
+
+    def test_world_rugby_pacing_budget_and_skip_existing_or_empty(self):
+        now = dt.datetime.now(UTC)
+        ids = ("2120baa6-8f19-40bc-98a3-db97e3ef9b45",
+               "3deba7fe-2095-4691-9555-fb22da23306b",
+               "1e74b48e-25fe-4ebe-beea-abb6cea010a0")
+        midday = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        episodes = [self.world_episode(uid, midday + dt.timedelta(seconds=i))
+                    for i, uid in enumerate(ids)]
+        db = Database(episodes)
+        pages = []
+
+        def fetch(url):
+            pages.append(url)
+            if url.endswith(ids[1]):
+                return b"<html>Nothing published yet</html>"
+            return (b"<div>Match Officials</div>"
+                    b'<div class="mc-info-table__list-title">Referee</div>'
+                    b'<div class="mc-info-table__sub-list-item">Jess Ling</div>')
+
+        with patch.object(crew.time, "monotonic", return_value=0), \
+             patch.object(crew.time, "sleep") as sleeping:
+            with redirect_stdout(io.StringIO()):
+                counters = crew.run(db, start=now.date(), end=now.date(),
+                                    sources=("world-rugby",), apply=True,
+                                    fetch=fetch, delay=0, max_world=2,
+                                    world_delay=10)
+        self.assertEqual(len(pages), 2)
+        sleeping.assert_called_once_with(10)
+        self.assertEqual(counters["world_rugby_limit_reached"], 1)
+        self.assertEqual(episodes[0]["match_officials"]["referee"], "Jess Ling")
+        self.assertIn("crew_world_rugby_checked_at", episodes[1])
+        with redirect_stdout(io.StringIO()):
+            counters = crew.run(db, start=now.date(), end=now.date(),
+                                sources=("world-rugby",), apply=True,
+                                fetch=fetch, delay=0, max_world=2,
+                                world_delay=0)
+        self.assertEqual(len(pages), 3)
+        self.assertEqual(counters["world_rugby_existing_skipped"], 1)
+        self.assertEqual(counters["world_rugby_recently_checked"], 1)
+        self.assertEqual(episodes[2]["match_officials"]["referee"], "Jess Ling")
+
+    @staticmethod
+    def world_episode(uid, when):
+        return {"_id": f"Rugby_Womens_WXV:world-rugby-{uid}@mbligh.github.io",
+                "series_id": "Rugby_Womens_WXV", "season": 2026,
+                "scheduled": when, "title": "South Africa vs Ireland"}
 
     def test_do_not_create_for_superseded_record(self):
         db = Database([{"_id": "Rugby_Womens_PWR:pwr-1@mbligh.github.io",
