@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import MagicMock
-from types import SimpleNamespace
 
 from downloaders import rugby24
 from matchers.prem import match_release
@@ -63,41 +62,72 @@ class IndexerTests(unittest.TestCase):
         self.assertIsNone(indexer.embed_url('<iframe src="https://evil.tld/videoembed/123456"></iframe>'))
 
 
-    def test_browser_fetch_uses_session_and_reports_url_on_403(self):
-        class Session:
-            def __init__(self, status=200):
-                self.status = status
-                self.calls = []
+    def test_curl_transport_cookie_jar_and_http_403_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cookie_jar = pathlib.Path(temporary) / "cookies.txt"
+            seen = []
 
-            def get(self, url, **kwargs):
-                self.calls.append((url, kwargs))
-                return SimpleNamespace(
-                    status_code=self.status, url=url,
-                    content=b"<html>article</html>",
-                    headers={"server": "cloudflare", "cf-mitigated": "challenge"}
+            def execute(command, **kwargs):
+                seen.append((command, kwargs))
+                self.assertEqual(kwargs, {"capture_output": True,
+                                          "text": True, "check": False})
+                self.assertIn("--compressed", command)
+                self.assertEqual(command[command.index("--cookie") + 1],
+                                 str(cookie_jar))
+                self.assertEqual(command[command.index("--cookie-jar") + 1],
+                                 str(cookie_jar))
+                self.assertIn("Chrome/143", command[command.index("--user-agent") + 1])
+                pathlib.Path(command[command.index("--output") + 1]).write_text(
+                    "<html>article</html>"
+                )
+                pathlib.Path(command[command.index("--dump-header") + 1]).write_text(
+                    "HTTP/2 403\\r\\nserver: cloudflare\\r\\n"
+                    "cf-mitigated: challenge\\r\\n"
+                )
+                return subprocess.CompletedProcess(
+                    command, 0, "403\\n" + command[-1] + "\\n", ""
                 )
 
-        session = Session()
-        page = indexer.fetch_html(indexer.DEFAULT_URL, session=session)
-        self.assertIn("<html>", page)
-        self.assertEqual(session.calls[0][1]["timeout"], 30)
-        with self.assertRaisesRegex(ValueError, "non-Rugby24"):
-            indexer.fetch_html("https://evil.example/", session=session)
-        session.status = 403
-        with self.assertRaisesRegex(RuntimeError,
-                                   "HTTP 403 at /premiership-rugby"):
-            indexer.fetch_html(indexer.DEFAULT_URL, session=session)
-        self.assertEqual(len(session.calls), 2)
+            with self.assertRaisesRegex(ValueError, "non-Rugby24"):
+                indexer.fetch_html("https://evil.example/", cookie_jar=cookie_jar,
+                                   execute=execute)
+            with self.assertRaisesRegex(RuntimeError,
+                "HTTP 403 at /premiership-rugby \\(server=cloudflare, cf-mitigated=challenge"):
+                indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
+                                   execute=execute)
+            self.assertEqual(len(seen), 1)
 
-    def test_browser_redirect_to_foreign_host_is_rejected(self):
-        class Session:
-            def get(self, url, **kwargs):
-                return SimpleNamespace(
-                    status_code=200, url="https://other.example/",
-                    content=b"fake", headers={}
+            def ok(command, **kwargs):
+                pathlib.Path(command[command.index("--output") + 1]).write_text(
+                    "<html>article</html>"
                 )
-        with self.assertRaisesRegex(RuntimeError, "redirected"):
-            indexer.fetch_html(indexer.DEFAULT_URL, session=Session())
+                return subprocess.CompletedProcess(
+                    command, 0, "200\\n" + command[-1] + "\\n", ""
+                )
+            self.assertIn(
+                "<html>", indexer.fetch_html(indexer.DEFAULT_URL,
+                                              cookie_jar=cookie_jar, execute=ok)
+            )
+
+    def test_curl_redirect_to_foreign_host_and_curl_failures(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cookie_jar = pathlib.Path(temporary) / "cookies.txt"
+
+            def redirect(command, **kwargs):
+                return subprocess.CompletedProcess(
+                    command, 0, "200\\nhttps://other.example/\\n", ""
+                )
+            with self.assertRaisesRegex(RuntimeError, "redirected"):
+                indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
+                                   execute=redirect)
+
+            def failed(command, **kwargs):
+                return subprocess.CompletedProcess(
+                    command, 60, "", "SSL certificate problem"
+                )
+            with self.assertRaisesRegex(RuntimeError, "SSL certificate"):
+                indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
+                                   execute=failed)
 
     def test_fixture_matching_requires_league_teams_and_date(self):
         release = {"source": "rugby24", "title": TITLE, "published": "2026-10-31",

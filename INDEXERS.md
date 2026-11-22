@@ -179,13 +179,12 @@ with the same per-source polling, retry, locking and provenance rules as PWR.
 
 ### Rugby24 request client and HTTP 403 diagnostics
 
-Rugby24 uses a shared `curl_cffi.requests.Session(impersonate="chrome")`
-for the category listing and article pages. The former plain `urllib`
-client received HTTP 403 from the host. Session reuse provides consistent
-headers, TLS negotiation and cookies, with 0.5 seconds between page loads.
-It requires `curl_cffi` in the system Python environment (declared in
-`requirements.txt`); check with `python3 -c 'import curl_cffi'`.
-Indexing fails closed on HTTP errors and reports the URL path, status and
-safe server/challenge headers. An HTTP 403 even with this client may mean
-network/IP restrictions or site policy; do not assume it is always solvable
-by changing the User-Agent.
+Rugby24 uses the system `curl` executable with a browser User-Agent,
+as confirmed to return HTTP 200 on slagg. It reuses a temporary cookie
+jar across category and article requests and delays 0.5 seconds between
+requests. No `curl_cffi` Python dependency or privileged pip install is
+required. The previous `urllib` request with the PVR User-Agent returned
+HTTP 403; the exact reason for that difference is not established.
+The indexer still rejects non-Rugby24 URLs/redirects, failed HTTP requests,
+oversized pages and missing playable embeds. HTTP errors report safe
+server/challenge headers and the affected request path.

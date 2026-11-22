@@ -744,7 +744,8 @@ through `run_rugby`; Atlas remains authoritative for links and jobs.
 
 ### Rugby24 transport diagnostics
 
-The first slagg invocation got HTTP 403 from urllib; use a cookie-preserving
-curl_cffi Chrome-profile session instead, avoid burst requests, and include
-status, path and safe HTTP headers in errors. Keep entire discovery atomic
+The first slagg invocation got HTTP 403 from urllib, while system curl with a
+browser User-Agent got HTTP 200. Use the installed curl executable with a
+shared temporary cookie jar and no curl_cffi Python dependency. Avoid burst
+requests, and include status, path and safe HTTP headers in errors. Keep entire discovery atomic
 with respect to Atlas writes, so rejected pages cannot cause partial imports.
