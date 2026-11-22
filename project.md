@@ -214,7 +214,12 @@ create new fixtures, rename existing recordings, or rewrite Atlas history.
 See [FILING.md](FILING.md).
 
 WXV has a distinct `rugby-womens-wxv` directory and a dedicated
-World Rugby fixture source. The migration is implemented in the
+World Rugby fixture source. The scheduler accepts both historic `WXV`
+and current `WXV Global Series` provider labels, while excluding
+`WXV Global Series Challenger`. New accepted fixture descriptions are
+normalized to the canonical `WXV` name. All existing series IDs,
+calendar identities, directory names and numbering rules remain unchanged.
+The migration is implemented in the
 scheduler: `import_rugby` creates new WXV episode IDs, independent
 tournament-week numbering and canonical NFOs, preserving original
 calendar UIDs. Old WXV entries in `rugby-womens-intl` become
