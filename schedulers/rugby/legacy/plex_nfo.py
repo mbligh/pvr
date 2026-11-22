@@ -154,7 +154,7 @@ def build(config, source_dir, now):
                     if not 1 <= round_no <= 99:
                         raise ValueError("WXV round out of supported range")
                 elif entry["slug"] == "rugby-nations":
-                    assigned = old_assignments.get(f"{entry['slug']}:{event.get('UID', '')")
+                    assigned = old_assignments.get(f"{entry['slug']}:{event.get('UID', '')}")
                     replay_round, _ = resolve_round(kickoff, teams[0], teams[1], observations)
                     round_no = (assigned["round"] if assigned and
                                 assigned.get("episode") is not None and
