@@ -49,7 +49,11 @@ source data. For now the calendar GitHub Actions publication workflow remains
 unchanged. The current PVR importer can still read published initial
 historical snapshots only when no Atlas state exists.
 
-**WXV:** the scheduler now partitions previously accepted, spoiler-free
+**WXV:** the World Rugby API's `WXV Global Series` label maps to the existing
+`WXV` competition (including in new fixture descriptions and NFO plots).
+The separate Challenger competition is excluded, while historic WXV fixtures
+are still recognized; no series, folder or calendar renaming is required.
+The scheduler now partitions previously accepted, spoiler-free
 World Rugby women's fixtures into a distinct `rugby-womens-wxv` feed,
 with independent WXV week-based episode numbering. On its first live
 `import_rugby` run, Atlas receives canonical WXV episodes and NFOs;
