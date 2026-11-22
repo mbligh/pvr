@@ -13,7 +13,9 @@ COMPETITIONS = {
     "nations": ("MRU", {"Nations Championship"}),
     "mens-intl": ("MRU", {"Men's Internationals"}),
     "womens-intl": ("WRU", {"Women's Internationals"}),
-    "wxv": ("WRU", {"WXV"}),
+    # Only the top-tier series: never include WXV Global Series Challenger.
+    # Both the original WXV and the rebranded WXV Global Series are called WXV.
+    "wxv": ("WRU", {"WXV", "WXV Global Series"}),
 }
 YEAR_SUFFIX = re.compile(r"\s+20\d{2}$")
 
@@ -71,7 +73,12 @@ def convert_match(match):
     venue = (match.get("venue") or {}).get("name")
     if venue:
         event.add("location", venue)
-    event.add("description", match["competition"])
+    # The API's newer branding is a source label, not our series name.
+    # Keep the existing WXV display identity, paths and calendar titles stable.
+    competition = match["competition"]
+    description = ("WXV" if competition_base(competition) in COMPETITIONS["wxv"][1]
+                   else competition)
+    event.add("description", description)
     return event
 
 
