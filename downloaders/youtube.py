@@ -30,6 +30,13 @@ def download(uri, destination, *, yt_dlp="yt-dlp", ffprobe="ffprobe",
     verified file atomically and fails with EEXIST on a collision.
     """
     video_id = youtube_id(uri)
+    return download_url(f"https://www.youtube.com/watch?v={video_id}", destination,
+                        yt_dlp=yt_dlp, ffprobe=ffprobe, execute=execute, probe=probe)
+
+
+def download_url(url, destination, *, yt_dlp="yt-dlp", ffprobe="ffprobe",
+                 referer=None, execute=subprocess.run, probe=probe_video):
+    """Stage and atomically publish yt-dlp media from a validated provider URL."""
     destination = pathlib.Path(destination)
     if not destination.is_absolute() or destination.suffix.lower() != ".mkv":
         raise ValueError("Destination must be an absolute .mkv filename")
@@ -49,8 +56,10 @@ def download(uri, destination, *, yt_dlp="yt-dlp", ffprobe="ffprobe",
             "--merge-output-format", "mkv",
             "--remux-video", "mkv",
             "--output", str(stage / "recording.%(ext)s"),
-            f"https://www.youtube.com/watch?v={video_id}",
+            url,
         ]
+        if referer:
+            command[-1:-1] = ["--referer", referer]
         result = execute(command, capture_output=True, text=True, check=False)
         if result.returncode:
             raise RuntimeError("yt-dlp failed (exit " + str(result.returncode) +

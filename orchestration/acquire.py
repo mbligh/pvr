@@ -12,7 +12,7 @@ import socket
 import stat
 
 from filing.publish import canonical_paths, validate_nfo
-from orchestration.source_registry import RUGBY_SOURCES
+from orchestration.source_registry import RUGBY_SOURCES, RUGBY_SERIES, sources_for
 from matchers.pwr import SERIES_ID
 from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
 from selection.quality import evaluate_file, select
@@ -24,6 +24,7 @@ ID_PATTERNS = {
     "bbc": re.compile(r"^[a-z][a-z0-9]{7}$"),
     "youtube": re.compile(r"^[A-Za-z0-9_-]{11}$"),
     "rugbypass": re.compile(r"^[0-9]{1,16}$"),
+    "rugby24": re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$"),
 }
 
 
@@ -56,7 +57,8 @@ def validate_release(release):
     if not isinstance(uri, str) or source not in ID_PATTERNS:
         return None
     prefix, colon, source_id = uri.partition(":")
-    if colon != ":" or prefix != source or not ID_PATTERNS[source].fullmatch(source_id):
+    if (colon != ":" or prefix != source or len(source_id) > 128
+            or not ID_PATTERNS[source].fullmatch(source_id)):
         return None
     return source_id
 
@@ -97,7 +99,7 @@ def planning_rows(database, *, sports_root="/data/sports",
                   incoming_root="/data/incoming", season=None,
                   round_no=None, episode_number=None,
                   min_age_hours=3, retry_after_hours=6, hostname=None,
-                  max_candidates=3, sources=SOURCES, series_id=SERIES_ID,
+                  max_candidates=3, sources=None, series_id=SERIES_ID,
                   now=None):
     """Return (rows, counts) for due rugby episodes; no writes/downloads.
 
@@ -105,13 +107,11 @@ def planning_rows(database, *, sports_root="/data/sports",
     'download_candidates_then_file', or 'skip'.
     """
     hostname = host_name(hostname)
-    sources = tuple(dict.fromkeys(sources))
-    if not sources or any(source not in SOURCES for source in sources):
-        raise ValueError("At least one supported source is required")
-    if series_id not in (SERIES_ID, *INTERNATIONAL_SERIES):
+    if series_id not in RUGBY_SERIES:
         raise ValueError("Unsupported rugby fixture series")
-    if series_id != SERIES_ID and sources != ("rugbypass",):
-        raise ValueError("International/Nations acquisition supports RugbyPass only")
+    sources = tuple(dict.fromkeys(sources if sources is not None else sources_for(series_id)))
+    if not sources or any(source not in sources_for(series_id) for source in sources):
+        raise ValueError("Source not supported for selected rugby series")
     sports_root = pathlib.Path(sports_root).expanduser()
     incoming_root = pathlib.Path(incoming_root).expanduser()
     if not sports_root.is_absolute() or not incoming_root.is_absolute():

@@ -731,3 +731,13 @@ rejects any that have linked releases, jobs or files. A one-time
 per-event backup (episode record, VEVENT and prior manifest entry)
 is retained in the pvr_cleanup_backups Atlas collection.
 No downloaded media is moved or deleted. See RUGBY_IMPORT.md.
+
+## Rugby24 men's PREM acquisition (2026-11-22)
+
+Add `rugby24` to the existing provider registry for `Rugby_Mens_Prem`.
+The indexer visits category pages and validates OK.ru iframe embeds before
+publishing JSONL source records. A strict, league-only title/team/date matcher
+links unambiguous replays to imported official fixtures; cup articles are
+retained as unmatched records. Download via the existing staged, probed,
+no-clobber yt-dlp/MKV path. Refresh, polling and bounded acquisition run
+through `run_rugby`; Atlas remains authoritative for links and jobs.

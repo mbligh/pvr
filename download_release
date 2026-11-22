@@ -19,6 +19,8 @@ from downloaders.youtube import download as download_youtube
 from downloaders.youtube import youtube_id
 from downloaders.bbc import download as download_bbc, bbc_id
 from downloaders.rugbypass import download as download_rugbypass, rugbypass_id
+from downloaders.rugby24 import (download as download_rugby24,
+                                 rugby24_id, embed_from_release)
 from downloaders.transfernow_pvr import (download as download_transfernow,
                                         share_from_release, source_id as transfernow_id)
 from matchers.pwr import SERIES_ID
@@ -40,6 +42,10 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         rugbypass_id(uri)
         expected_series = (SERIES_ID, *INTERNATIONAL_SERIES)
         adapter = "rugbypass"
+    elif uri.startswith("rugby24:"):
+        rugby24_id(uri)
+        expected_series = "Rugby_Mens_Prem"
+        adapter = "rugby24"
     elif uri.startswith("reddit-teletz:"):
         transfernow_id(uri)
         expected_series = "Formula_1"
@@ -59,6 +65,8 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         raise ValueError("Release source and URI disagree")
     if adapter == "transfernow":
         share_from_release(uri, (release.get("metadata") or {}).get("url"))
+    if adapter == "rugby24":
+        embed_from_release(uri, release)
     if release.get("available") is False:
         raise ValueError(f"Release is marked unavailable: {uri}")
     if release.get("metadata", {}).get("live_status") in (
@@ -105,8 +113,12 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         "existing_files": present,
         "source_title": release.get("title"),
         "adapter": adapter, "series_id": episode["series_id"],
-        "source_url": (release.get("metadata") or {}).get("url")
-            if adapter == "transfernow" else None,
+        "source_url": ((release.get("metadata") or {}).get("url")
+                       if adapter == "transfernow" else
+                       (release.get("metadata") or {}).get("embed_url")
+                       if adapter == "rugby24" else None),
+        "source_page": ((release.get("metadata") or {}).get("page_url")
+                        if adapter == "rugby24" else None),
     }
 
 
@@ -150,7 +162,8 @@ def _run_unlocked(database, uri, destination, *, apply=False, allow_existing_epi
         rugbypass="~/tools/video/rugbypass", ffprobe="ffprobe", ffmpeg="ffmpeg",
         hostname=None, downloader=download_youtube,
         bbc_downloader=download_bbc, rugbypass_downloader=download_rugbypass,
-        transfernow_downloader=download_transfernow, output=sys.stdout):
+        transfernow_downloader=download_transfernow,
+        rugby24_downloader=download_rugby24, output=sys.stdout):
     """Plan, and optionally execute exactly one verified download."""
     checked = plan(database, uri, destination, hostname=hostname,
                    allow_existing_episode=allow_existing_episode)
@@ -174,6 +187,10 @@ def _run_unlocked(database, uri, destination, *, apply=False, allow_existing_epi
             media = transfernow_downloader(
                 uri, checked["source_url"], checked["destination"],
                 ffprobe=ffprobe, ffmpeg=ffmpeg)
+        elif checked["adapter"] == "rugby24":
+            media = rugby24_downloader(
+                uri, checked["source_url"], checked["destination"],
+                yt_dlp=yt_dlp, ffprobe=ffprobe, referer=checked["source_page"])
         elif checked["adapter"] == "bbc":
             media = bbc_downloader(
                 uri, checked["destination"], get_iplayer=get_iplayer,
@@ -214,7 +231,8 @@ def run(database, uri, destination, *, apply=False, allow_existing_episode=False
         rugbypass="~/tools/video/rugbypass", ffprobe="ffprobe", ffmpeg="ffmpeg",
         hostname=None, downloader=download_youtube,
         bbc_downloader=download_bbc, rugbypass_downloader=download_rugbypass,
-        transfernow_downloader=download_transfernow, output=sys.stdout):
+        transfernow_downloader=download_transfernow,
+        rugby24_downloader=download_rugby24, output=sys.stdout):
     """Serialize physical downloads per provider, independently of indexing.
 
     Protect the revalidation/planning step inside the lock as well as the
@@ -226,7 +244,8 @@ def run(database, uri, destination, *, apply=False, allow_existing_episode=False
         ffprobe=ffprobe, ffmpeg=ffmpeg, hostname=hostname,
         downloader=downloader, bbc_downloader=bbc_downloader,
         rugbypass_downloader=rugbypass_downloader,
-        transfernow_downloader=transfernow_downloader, output=output,
+        transfernow_downloader=transfernow_downloader,
+        rugby24_downloader=rugby24_downloader, output=output,
     )
     if not apply:
         return _run_unlocked(database, uri, destination, **kwargs)

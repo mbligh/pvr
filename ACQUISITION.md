@@ -284,3 +284,21 @@ frequent full-catalogue refreshes or unbounded historical backfills.
 - Cleaning up lower-ranked incoming recordings.
 - Distributed host locking or automatic repair of partial Atlas writes.
 - Full historical RugbyPass discovery beyond its featured catalogue.
+
+## Men's Gallagher PREM (Rugby24)
+
+The official `Rugby_Mens_Prem` episodes already exist in Atlas.
+Rugby24 full-match articles are indexed separately from fixture imports;
+only league games are matched to this series. Premiership Rugby **Cup**
+recordings remain unmatched until a distinct cup fixture series exists.
+OK.ru embeds are passed directly to `yt-dlp` and verified with `ffprobe`
+in a temporary directory before atomic MKV publication.
+
+    ./indexers/rugby24 --pages 2
+    ./refresh_releases --source rugby24 --rugby24-pages 2 --apply
+    ./acquire_rugby --series Rugby_Mens_Prem --limit 5
+    ./acquire_rugby --series Rugby_Mens_Prem --limit 1 --apply
+    ./run_rugby --series Rugby_Mens_Prem --apply
+
+Existing `./run_rugby --apply` cron automatically includes this source,
+subject to the global episode limit. No cron changes are required.

@@ -157,3 +157,22 @@ and preserve existing links; the importer's RugbyPass source listing remains
 limited to accessible/featured full-match sections. For detailed matching
 rules and preview commands see [MATCHING.md](MATCHING.md).
 
+
+## Rugby24 men's Premiership replay indexer (2026-11-22)
+
+`indexers/rugby24` enumerates the Premiership category (`?page2` etc),
+visits each full-match article, and emits a stable `rugby24:<article-slug>`
+release only when a validated `https://ok.ru/videoembed/<id>` iframe is present.
+It records article URL, embed URL, match date from the title and league/cup classification.
+Cup articles are indexed, but are **not** matched to the Gallagher PREM league
+fixtures. This source uses no account credentials.
+
+    ./indexers/rugby24 --pages 2 | ./index_releases --dry-run
+    ./refresh_releases --source rugby24 --rugby24-pages 3 --apply
+    ./match_prem                    # preview fixture links
+    ./match_prem --apply            # apply links, if desired
+
+The refresh command runs `match_prem --apply` after indexing. It matches
+only unambiguous league fixtures by home/away team and a ±2-day date window.
+`run_rugby --series Rugby_Mens_Prem` uses Rugby24 discovery and acquisition
+with the same per-source polling, retry, locking and provenance rules as PWR.

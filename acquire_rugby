@@ -22,7 +22,7 @@ import sys
 
 from orchestration.acquire import SOURCES, host_name, planning_rows
 from matchers.pwr import SERIES_ID
-from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
+from orchestration.source_registry import RUGBY_SERIES, sources_for
 from selection.quality import select_episode
 from orchestration.locks import LockBusy, episode_lock
 
@@ -45,7 +45,7 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
         episode_number=None, series_id=SERIES_ID,
         sports_root="/data/sports", incoming_root="/data/incoming",
         hostname=None, min_age_hours=3, retry_after_hours=6,
-        max_candidates=3, sources=SOURCES,
+        max_candidates=3, sources=None,
         yt_dlp="yt-dlp", get_iplayer="get_iplayer",
         rugbypass="~/tools/video/rugbypass", ffmpeg="ffmpeg",
         ffprobe="ffprobe", show_skipped=False,
@@ -57,13 +57,11 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
     if min_age_hours < 0 or retry_after_hours < 0:
         raise ValueError("Negative age/retry delay")
     hostname = host_name(hostname)
-    sources = tuple(dict.fromkeys(sources))
-    if not sources or any(source not in SOURCES for source in sources):
-        raise ValueError("Invalid acquisition source")
-    if series_id not in (SERIES_ID, *INTERNATIONAL_SERIES):
+    if series_id not in RUGBY_SERIES:
         raise ValueError("Unsupported acquisition series")
-    if series_id != SERIES_ID and sources != ("rugbypass",):
-        raise ValueError("International/Nations acquisition supports RugbyPass only")
+    sources = tuple(dict.fromkeys(sources if sources is not None else sources_for(series_id)))
+    if not sources or any(source not in sources_for(series_id) for source in sources):
+        raise ValueError("Source not supported for selected series")
 
     def execute():
         rows, info = planning_rows(
@@ -205,7 +203,7 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--series", choices=(SERIES_ID, *INTERNATIONAL_SERIES),
+    parser.add_argument("--series", choices=RUGBY_SERIES,
                         default=SERIES_ID,
                         help="Fixture series (default Rugby_Womens_PWR)")
     parser.add_argument("--season", "--year", type=int, dest="season",
@@ -259,8 +257,7 @@ def main(argv=None):
                 client[args.database], apply=args.apply,
                 limit=args.limit, season=args.season, round_no=args.round_no,
                 episode_number=args.episode_number, series_id=args.series,
-                sources=args.source or (
-                    SOURCES if args.series == SERIES_ID else ("rugbypass",)),
+                sources=args.source or sources_for(args.series),
                 max_candidates=args.max_candidates,
                 sports_root=args.sports_root, incoming_root=args.incoming_root,
                 hostname=args.host, min_age_hours=args.min_age_hours,

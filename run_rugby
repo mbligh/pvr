@@ -35,14 +35,14 @@ def source_set(series, sources):
     allowed = RUGBY_SOURCES if series is None else sources_for(series)
     values = tuple(dict.fromkeys(sources or allowed))
     if not values or any(item not in allowed for item in values):
-        raise ValueError("RugbyPass only for non-PWR series, or invalid source")
+        raise ValueError("RugbyPass only for international series; source not supported for selected series")
     return values
 
 
 def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None,
         season=None, round_no=None, episode_number=None, limit=1,
         max_candidates=3, sources=None,
-        youtube_limit=100, bbc_pages=10, rugbypass_pages=5,
+        youtube_limit=100, bbc_pages=10, rugbypass_pages=5, rugby24_pages=2,
         sports_root="/data/sports", incoming_root="/data/incoming",
         hostname=None, min_age_hours=3, retry_after_hours=6,
         yt_dlp="yt-dlp", get_iplayer="get_iplayer",
@@ -57,7 +57,8 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
         raise ValueError("Invalid season, round or episode")
     if min_age_hours < 0 or retry_after_hours < 0:
         raise ValueError("Invalid minimum age or retry delay")
-    if not 1 <= youtube_limit <= 5000 or not 1 <= bbc_pages <= 20 or not 1 <= rugbypass_pages <= 50:
+    if (not 1 <= youtube_limit <= 5000 or not 1 <= bbc_pages <= 20
+            or not 1 <= rugbypass_pages <= 50 or not 1 <= rugby24_pages <= 25):
         raise ValueError("Invalid source discovery limits")
     if skip_discovery and force_discovery:
         raise ValueError("--skip-discovery conflicts with --force-discovery")
@@ -162,6 +163,7 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                     args = ["--apply", "--source", source,
                             "--youtube-limit", youtube_limit, "--bbc-pages", bbc_pages,
                             "--rugbypass-pages", rugbypass_pages,
+                            "--rugby24-pages", rugby24_pages,
                             "--yt-dlp", yt_dlp, "--rugbypass", rugbypass,
                             "--database", database, "--lock-root", incoming_root]
                     try:
@@ -209,6 +211,7 @@ def main(argv=None):
     parser.add_argument("--youtube-limit", type=int, default=100)
     parser.add_argument("--bbc-pages", type=int, default=10)
     parser.add_argument("--rugbypass-pages", type=int, default=5)
+    parser.add_argument("--rugby24-pages", type=int, default=2)
     parser.add_argument("--sports-root", default="/data/sports")
     parser.add_argument("--incoming-root", default="/data/incoming")
     parser.add_argument("--host")
@@ -238,6 +241,7 @@ def main(argv=None):
                    max_candidates=args.max_candidates, sources=args.source,
                    youtube_limit=args.youtube_limit, bbc_pages=args.bbc_pages,
                    rugbypass_pages=args.rugbypass_pages,
+                   rugby24_pages=args.rugby24_pages,
                    sports_root=args.sports_root, incoming_root=args.incoming_root,
                    hostname=args.host, min_age_hours=args.min_age_hours,
                    retry_after_hours=args.retry_after_hours, yt_dlp=args.yt_dlp,
