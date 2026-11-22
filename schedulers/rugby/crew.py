@@ -68,6 +68,7 @@ TEAM_ALIASES = {
     "trailfinders women": "trailfinders",
     "loughborough lightning": "loughborough",
     "gloucester hartpury": "gloucester hartpury",
+    "gloucesterhartpury": "gloucester hartpury",
     "bristol bears women": "bristol bears",
     "sale sharks women": "sale sharks",
     "saracens women": "saracens",

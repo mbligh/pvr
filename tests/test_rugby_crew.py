@@ -76,6 +76,8 @@ class CrewTests(unittest.TestCase):
             "away": "Trailfinders Women",
             "scheduled": dt.datetime(2026, 11, 20, 19, 30, tzinfo=UTC),
         }, parsed))
+        self.assertEqual(crew.normalize_team("GloucesterHartpury"),
+                         crew.normalize_team("Gloucester Hartpury"))
         self.assertFalse(crew.same_game({
             "series_id": "Rugby_Mens_Prem", "home": "Loughborough Lightning",
             "away": "Trailfinders Women",
