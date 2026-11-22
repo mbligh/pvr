@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Acquire rugby recordings with bounded provider selection.
 
-Preview-first. Optional --refresh performs source discovery and matching;
+Preview-first. Uses releases already indexed and matched in Atlas;
 --apply downloads/compares at most --max-candidates per due episode and
 canonically files the winner, without replacing published media.
+run_rugby orchestrates optional discovery, indexing and matching.
 
 Shared CLI filters --season/--year, --round, --episode, --limit,
 --dry-run and --apply have the same meaning as acquire_f1. Rugby also
-supports source discovery and a per-episode candidate-comparison budget.
+supports per-episode candidate comparison.
 """
 import argparse
 import contextlib
@@ -41,7 +42,7 @@ file_recording = _load_cli("pvr_acquire_filer", "file_recording")
 
 @contextlib.contextmanager
 def acquire_lock(incoming_root):
-    """Prevent overlapping host-local acquisition runs (including refresh)."""
+    """Prevent overlapping host-local acquisition workers."""
     lock_path = pathlib.Path(incoming_root) / ".pvr-acquire.lock"
     flags = os.O_CREAT | os.O_RDWR
     if hasattr(os, "O_NOFOLLOW"):
@@ -60,8 +61,7 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
         sports_root="/data/sports", incoming_root="/data/incoming",
         hostname=None, min_age_hours=3, retry_after_hours=6,
         max_candidates=3, sources=SOURCES,
-        refresh=False, refresh_fn=None, youtube_limit=100, bbc_pages=10,
-        rugbypass_pages=5, yt_dlp="yt-dlp", get_iplayer="get_iplayer",
+        yt_dlp="yt-dlp", get_iplayer="get_iplayer",
         rugbypass="~/tools/video/rugbypass", ffmpeg="ffmpeg",
         ffprobe="ffprobe", show_skipped=False,
         downloader=download_release.run, filer=file_recording.run,
@@ -81,21 +81,6 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
         raise ValueError("International/Nations acquisition supports RugbyPass only")
 
     def execute():
-        refresh_result = None
-        if refresh:
-            # Preview fetches catalogue data but deliberately does not write
-            # matches. The subsequent plan uses currently stored Atlas links.
-            active_refresher = refresh_fn or _load_cli(
-                "pvr_acquire_refresh", "refresh_releases").run
-            refresh_result = active_refresher(
-                database, apply=apply, sources=sources,
-                youtube_limit=youtube_limit, bbc_pages=bbc_pages,
-                rugbypass_pages=rugbypass_pages,
-                rugbypass=rugbypass, yt_dlp=yt_dlp,
-                output=io.StringIO())
-            print(json.dumps(dict(type="refresh", **refresh_result), sort_keys=True),
-                  file=stream)
-
         rows, info = planning_rows(
             database, sports_root=sports_root, incoming_root=incoming_root,
             season=season, round_no=round_no,
@@ -184,7 +169,7 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
             "host": hostname, "season": season, "limit": limit,
             "round": round_no, "episode": episode_number,
             "max_candidates": max_candidates, "sources": list(sources),
-            "refreshed": refresh, "fixtures": info["fixtures"], "due": info["due"],
+            "fixtures": info["fixtures"], "due": info["due"],
             "actionable": len(actionable), "planned": count,
             "skipped": len(rows) - len(actionable), **totals,
         }
@@ -213,12 +198,7 @@ def main(argv=None):
     parser.add_argument("--max-candidates", type=int, default=3,
                         help="Maximum local and remote candidates per episode (default 3)")
     parser.add_argument("--source", choices=SOURCES, action="append",
-                        help="Limit acquisition/refresh to this source; repeatable")
-    parser.add_argument("--refresh", action="store_true",
-                        help="First discover and match releases; preview never writes Atlas")
-    parser.add_argument("--youtube-limit", type=int, default=100)
-    parser.add_argument("--bbc-pages", type=int, default=10)
-    parser.add_argument("--rugbypass-pages", type=int, default=5)
+                        help="Acquire from this already-indexed source; repeatable")
     parser.add_argument("--sports-root", default="/data/sports")
     parser.add_argument("--incoming-root", default="/data/incoming")
     parser.add_argument("--host", help="Local inventory host (default hostname)")
@@ -261,8 +241,6 @@ def main(argv=None):
                 sources=args.source or (
                     SOURCES if args.series == SERIES_ID else ("rugbypass",)),
                 max_candidates=args.max_candidates,
-                refresh=args.refresh, youtube_limit=args.youtube_limit,
-                bbc_pages=args.bbc_pages, rugbypass_pages=args.rugbypass_pages,
                 sports_root=args.sports_root, incoming_root=args.incoming_root,
                 hostname=args.host, min_age_hours=args.min_age_hours,
                 retry_after_hours=args.retry_after_hours,

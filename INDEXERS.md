@@ -142,7 +142,7 @@ Preview fetches current source listings but **does not match new releases
 against Atlas until --apply**. Existing links are never overwritten by
 matching. Unlike a full historical archive, the RugbyPass listing only
 covers currently featured/accessible sections and iPlayer only returns
-currently listed episodes. The worker `acquire_rugby --refresh` can
+currently listed episodes. The worker `run_rugby --apply` can
 invoke this exact procedure before scheduling its bounded downloads.
 See [ACQUISITION.md](ACQUISITION.md).
 

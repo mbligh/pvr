@@ -1,31 +1,38 @@
 # PVR rugby source refresh and missing-recording acquisition
 
-Two independent preview-first tools work together:
+Three one-shot commands separate rugby discovery and acquisition:
 
-- `refresh_releases` discovers current **BBC iPlayer**, **YouTube PWR**
-  and **RugbyPass** catalogue entries, validates their stable IDs and
-  matches them to known PWR and international fixtures in Atlas. Preview performs no writes;
-  `--apply` imports releases and links unambiguous matches.
-- `acquire_rugby` finds due numbered rugby episodes that lack a published recording,
-  downloads the needed source recordings, evaluates their **actual** video
-  properties, and canonically files the winner with the NFO stored in Atlas.
-  It is limited to one episode per run unless `--limit` is increased.
+- **refresh_releases** discovers BBC iPlayer, YouTube PWR and RugbyPass
+  releases, validates their IDs, indexes them in Atlas, and links recordings
+  to already scheduled fixtures. Preview makes no writes; --apply imports
+  and matches. It never downloads media.
+- **acquire_rugby** uses only releases *already linked in Atlas*, evaluates
+  available recordings, downloads at most --max-candidates per due episode,
+  and publishes the quality winner with the canonical NFO. It never calls
+  provider discovery or release indexers. Preview is the default.
+- **run_rugby** orchestrates both. On --apply it calls refresh_releases
+  --apply, then acquire_rugby --apply. A failed or empty provider catalogue
+  aborts before downloads. Without --apply it only previews existing
+  indexed acquisitions, matching run_f1's behavior. --skip-discovery
+  skips refresh, even on --apply.
 
-Use **./acquire_rugby** for rugby acquisition; the previous
-acquisition command has been retired now that its cron callers use
-the new name.
+Command pairing: run_rugby/run_f1 for discovery and acquisition,
+acquire_rugby/acquire_f1 for previously indexed releases, and
+import_rugby/import_f1 for official fixture schedules. The runners
+do not update fixture schedules.
 
-Both workers accept --season (with --year as an alias), --round,
---episode, --limit, --min-age-hours, --retry-after-hours,
---sports-root, --incoming-root, --host, --ffmpeg, --ffprobe,
---show-skipped, --database, and --apply or --dry-run (mutually exclusive,
-with preview as the default).
+Both acquire workers accept --season (alias --year), --round, --episode,
+--limit, --min-age-hours, --retry-after-hours, --sports-root, --incoming-root,
+--host, --ffmpeg, --ffprobe, --show-skipped, --database, and mutually
+exclusive --apply/--dry-run. Rugby-specific acquisition options include
+--series, --source and --max-candidates. Discovery pagination options
+(--youtube-limit, --bbc-pages, --rugbypass-pages) now belong to
+run_rugby or refresh_releases, not acquire_rugby.
 
-Rugby-specific options include --series, --source, --refresh,
---max-candidates, and provider discovery limits. F1-specific options
-include --recent-hours, --backfill, --max-checks, and
---unavailable-recheck-hours. Candidate and check limits control
-different operations and intentionally are not aliases.
+**Cron migration:** Existing commands of the form
+`./acquire_rugby --refresh --apply` must become
+`./run_rugby --apply`. The --refresh flag is no longer
+accepted by acquire_rugby. No crontab changes are performed automatically.
 
 ## Getting started on slagg
 
@@ -49,14 +56,22 @@ python3 refresh_releases --apply
 To combine discovery, matching and acquisition in one invocation:
 
 ```sh
-./acquire_rugby --refresh --limit 1 --apply
+./run_rugby --limit 1 --apply
 ```
 
-Without `--apply`, `--refresh` queries providers but **does not import newly
-discovered releases into Atlas**. The subsequent acquisition preview can
-therefore include only releases already linked in the database. For a fully
-accurate plan including newly discovered sources, run
-`refresh_releases --apply` first, then preview `acquire_rugby`.
+To preview from currently indexed releases:
+
+```sh
+./run_rugby --limit 3
+```
+
+Like run_f1, this preview **does not discover new recordings**. To
+inspect a plan using newly discovered sources, first run
+`./refresh_releases --apply`, then preview
+`./acquire_rugby`.
+For apply against previously indexed releases only, use
+`./run_rugby --skip-discovery --apply` or
+`./acquire_rugby --apply`.
 
 Continue the historical **YouTube-only** backfill without involving new
 providers:
@@ -66,8 +81,8 @@ providers:
 ```
 
 `--source` is repeatable, e.g. `--source bbc --source youtube`. The
-acquisition worker uses the same provider filter for optional refresh and
-for choosing source candidates.
+acquisition worker filters already indexed sources; run_rugby applies the
+same selected sources during its refresh.
 
 ## RugbyPass: internationals and Nations Championship
 
@@ -102,7 +117,7 @@ python3 match_rugbypass --apply
 ./acquire_rugby --series Rugby_Mens_Nations --limit 1 --apply
 
 # Later: refresh RugbyPass listings, match and acquire in one bounded run:
-./acquire_rugby --series Rugby_Womens_Intl --refresh --limit 1 --apply
+./run_rugby --series Rugby_Womens_Intl --limit 1 --apply
 ```
 
 These commands use the existing `pvr.episodes` IDs, numbered
@@ -245,10 +260,10 @@ installed by the repository. Once manual trials are successful and all
 three providers work on slagg, a conservative unattended invocation is:
 
 ```cron
-30 5 * * * cd /home/mbligh/pvr && /usr/bin/./acquire_rugby --refresh --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
+30 5 * * * cd /home/mbligh/pvr && ./run_rugby --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
 ```
 
-The sample is not installed or enabled. A refresh fetches the BBC brand,
+The sample is not installed or enabled. run_rugby --apply refreshes the BBC brand,
 up to 100 YouTube stream entries and up to five RugbyPass catalogue pages
 per section by default. Override with `--youtube-limit`,
 `--bbc-pages`, `--rugbypass-pages` and `--rugbypass`. Avoid very

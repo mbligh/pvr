@@ -585,3 +585,25 @@ multi-provider refresh and a maximum number of video candidates;
 F1 supports a recent-session window, backfill and an availability
 check budget. No Atlas schemas, downloader behavior, acquired
 filenames or cron schedules were changed.
+
+
+## Separate rugby run orchestrator (2026-11-21)
+
+run_rugby is the one-shot orchestration counterpart of run_f1:
+preview-only by default (uses already indexed Atlas releases), and on
+--apply first invokes refresh_releases --apply (BBC/YouTube/RugbyPass
+discovery, validation, indexing and fixture matching), then invokes
+acquire_rugby --apply to download/compare/file. A failed, malformed or
+empty discovery response aborts before acquisition; a dedicated host-local
+flock serializes the entire discovery/acquisition pipeline, while the
+acquisition worker retains its existing shared media lock. --skip-discovery
+permits a bounded apply pass against previously indexed releases.
+run_rugby exposes acquisition filters/budgets and provider discovery
+limits and forwards selected sources consistently to both phases.
+
+acquire_rugby no longer invokes refresh_releases; its --refresh
+and discovery pagination CLI options were removed. Existing cron calls using
+acquire_rugby --refresh --apply must explicitly switch to
+run_rugby --apply. Source filters and downloader settings remain
+available on acquire_rugby; no fixture import or schema modification
+is part of this change. See ACQUISITION.md.

@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""One-shot rugby release discovery, matching, and acquisition.
+
+Default: preview already indexed recordings without network discovery or writes.
+--apply: refresh BBC/YouTube/RugbyPass releases, match them to Atlas fixtures,
+then invoke acquire_rugby --apply. Abort acquisition on discovery failure.
+--skip-discovery: acquire only releases already indexed in Atlas.
+Official fixture scheduling remains the separate import_rugby command.
+"""
+import argparse
+import contextlib
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+from orchestration.acquire import SOURCES
+from matchers.pwr import SERIES_ID
+from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
+
+ROOT = Path(__file__).resolve().parent
+
+
+def command(script, *args):
+    return [sys.executable, str(ROOT / script), *[str(arg) for arg in args]]
+
+
+@contextlib.contextmanager
+def lock_run(incoming_root):
+    """Serialize full discovery/acquisition pipelines on this host."""
+    path = Path(incoming_root) / ".pvr-rugby-run.lock"
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "r+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("Another rugby discovery/acquisition run is active") from exc
+        yield
+
+
+def source_set(series, sources):
+    if series not in (SERIES_ID, *INTERNATIONAL_SERIES):
+        raise ValueError("Unsupported rugby series")
+    values = tuple(dict.fromkeys(sources or (
+        SOURCES if series == SERIES_ID else ("rugbypass",)
+    )))
+    if not values or any(value not in SOURCES for value in values):
+        raise ValueError("Unsupported rugby recording source")
+    if series != SERIES_ID and values != ("rugbypass",):
+        raise ValueError("International/Nations acquisition supports RugbyPass only")
+    return values
+
+
+def run(*, apply=False, skip_discovery=False, series=SERIES_ID,
+        season=None, round_no=None, episode_number=None, limit=1,
+        max_candidates=3, sources=None,
+        youtube_limit=100, bbc_pages=10, rugbypass_pages=5,
+        sports_root="/data/sports", incoming_root="/data/incoming",
+        hostname=None, min_age_hours=3, retry_after_hours=6,
+        yt_dlp="yt-dlp", get_iplayer="get_iplayer",
+        rugbypass="~/tools/video/rugbypass", ffmpeg="ffmpeg", ffprobe="ffprobe",
+        show_skipped=False, database="pvr",
+        execute=subprocess.run, output=sys.stdout, error=sys.stderr):
+    if not 1 <= limit <= 100 or not 1 <= max_candidates <= 5:
+        raise ValueError("Invalid episode/candidate budget")
+    if (season is not None and season < 2025) or (
+            round_no is not None and not 1 <= round_no <= 99) or (
+            episode_number is not None and episode_number < 1):
+        raise ValueError("Invalid season, round or episode")
+    if min_age_hours < 0 or retry_after_hours < 0:
+        raise ValueError("Invalid minimum age or retry delay")
+    if not 1 <= youtube_limit <= 5000 or not 1 <= bbc_pages <= 20 or not 1 <= rugbypass_pages <= 50:
+        raise ValueError("Invalid source discovery limits")
+    sources = source_set(series, sources)
+    if not Path(incoming_root).is_dir():
+        raise ValueError("Incoming directory does not exist")
+
+    acquire_args = ["--series", series, "--limit", limit,
+                    "--max-candidates", max_candidates,
+                    "--sports-root", sports_root, "--incoming-root", incoming_root,
+                    "--min-age-hours", min_age_hours,
+                    "--retry-after-hours", retry_after_hours,
+                    "--yt-dlp", yt_dlp, "--get-iplayer", get_iplayer,
+                    "--rugbypass", rugbypass,
+                    "--ffmpeg", ffmpeg, "--ffprobe", ffprobe,
+                    "--database", database]
+    if season is not None:
+        acquire_args.extend(("--season", season))
+    if round_no is not None:
+        acquire_args.extend(("--round", round_no))
+    if episode_number is not None:
+        acquire_args.extend(("--episode", episode_number))
+    if hostname is not None:
+        acquire_args.extend(("--host", hostname))
+    if show_skipped:
+        acquire_args.append("--show-skipped")
+    for source in sources:
+        acquire_args.extend(("--source", source))
+
+    def invoke(script, *args):
+        result = execute(command(script, *args), capture_output=True,
+                         text=True, check=False)
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n",
+                  file=output)
+        if result.stderr:
+            print(result.stderr, end="" if result.stderr.endswith("\n") else "\n",
+                  file=error)
+        return result
+
+    if not apply:
+        # Match run_f1: only read currently linked Atlas releases on preview.
+        return invoke("acquire_rugby", *acquire_args).returncode
+
+    # Acquire_rugby holds its own shared acquisition lock while downloading.
+    # The outer lock covers the preceding discovery/matching as well.
+    with lock_run(incoming_root):
+        if not skip_discovery:
+            discover_args = ["--apply", "--youtube-limit", youtube_limit,
+                             "--bbc-pages", bbc_pages,
+                             "--rugbypass-pages", rugbypass_pages,
+                             "--yt-dlp", yt_dlp, "--rugbypass", rugbypass,
+                             "--database", database]
+            for source in sources:
+                discover_args.extend(("--source", source))
+            discovered = invoke("refresh_releases", *discover_args)
+            if discovered.returncode:
+                raise RuntimeError(
+                    "Rugby release discovery/matching failed; refusing acquisition")
+            try:
+                result = json.loads(discovered.stdout)
+                if (result["mode"] != "apply" or result["sources"] != list(sources)
+                        or not isinstance(result["total_releases"], int)
+                        or result["total_releases"] <= 0):
+                    raise ValueError("Invalid or empty provider catalogue")
+            except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                raise RuntimeError(
+                    "Rugby discovery returned no verified releases; refusing acquisition"
+                ) from exc
+        return invoke("acquire_rugby", *acquire_args, "--apply").returncode
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--series", choices=(SERIES_ID, *INTERNATIONAL_SERIES),
+                        default=SERIES_ID)
+    parser.add_argument("--season", "--year", type=int, dest="season",
+                        help="Season to acquire; default latest first")
+    parser.add_argument("--round", type=int, dest="round_no")
+    parser.add_argument("--episode", type=int, dest="episode_number")
+    parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--max-candidates", type=int, default=3)
+    parser.add_argument("--source", choices=SOURCES, action="append",
+                        help="Discovery and acquisition provider (repeatable)")
+    parser.add_argument("--youtube-limit", type=int, default=100)
+    parser.add_argument("--bbc-pages", type=int, default=10)
+    parser.add_argument("--rugbypass-pages", type=int, default=5)
+    parser.add_argument("--sports-root", default="/data/sports")
+    parser.add_argument("--incoming-root", default="/data/incoming")
+    parser.add_argument("--host")
+    parser.add_argument("--min-age-hours", type=float, default=3)
+    parser.add_argument("--retry-after-hours", type=float, default=6)
+    parser.add_argument("--yt-dlp", default="yt-dlp")
+    parser.add_argument("--get-iplayer", default="get_iplayer")
+    parser.add_argument("--rugbypass", default="~/tools/video/rugbypass")
+    parser.add_argument("--ffmpeg", default="ffmpeg")
+    parser.add_argument("--ffprobe", default="ffprobe")
+    parser.add_argument("--show-skipped", action="store_true")
+    parser.add_argument("--skip-discovery", action="store_true",
+                        help="Do not refresh providers; use already indexed releases")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true",
+                      help="Discover, index, match, download and file; default preview")
+    mode.add_argument("--dry-run", action="store_true",
+                      help="Preview only (already the default)")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    try:
+        return run(apply=args.apply, skip_discovery=args.skip_discovery,
+                   series=args.series, season=args.season, round_no=args.round_no,
+                   episode_number=args.episode_number, limit=args.limit,
+                   max_candidates=args.max_candidates, sources=args.source,
+                   youtube_limit=args.youtube_limit, bbc_pages=args.bbc_pages,
+                   rugbypass_pages=args.rugbypass_pages,
+                   sports_root=args.sports_root, incoming_root=args.incoming_root,
+                   hostname=args.host, min_age_hours=args.min_age_hours,
+                   retry_after_hours=args.retry_after_hours, yt_dlp=args.yt_dlp,
+                   get_iplayer=args.get_iplayer, rugbypass=args.rugbypass,
+                   ffmpeg=args.ffmpeg, ffprobe=args.ffprobe,
+                   show_skipped=args.show_skipped, database=args.database)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"Rugby run: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

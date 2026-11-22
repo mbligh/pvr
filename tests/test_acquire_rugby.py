@@ -272,32 +272,12 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(summary["skipped_on_apply"], 1)
         self.assertEqual(summary["failed"], 1)
 
-    def test_preview_refresh_is_read_only_and_calls_provider_discovery(self):
-        called = []
-        def refresh(db, **kwargs):
-            called.append(kwargs["apply"])
-            self.assertEqual(kwargs["sources"], ("bbc", "youtube", "rugbypass"))
-            return {"mode": "preview", "total_releases": 4}
-        summary = self.run_cli(refresh=True, refresh_fn=refresh)
-        self.assertEqual(called, [False])
-        self.assertEqual(summary["planned"], 1)
-        self.db.jobs.insert_one.assert_not_called()
-
-    def test_apply_refresh_occurs_before_download(self):
-        called = []
-        def refresh(db, **kwargs):
-            called.append("refresh")
-            self.assertTrue(kwargs["apply"])
-            return {"mode": "apply", "total_releases": 1}
-        def download(db, uri, path, **kwargs):
-            called.append("download")
-            return {"status": "downloaded"}
-        def file(db, source, **kwargs):
-            called.append("file")
-            return {"status": "filed"}
-        self.run_cli(apply=True, refresh=True, refresh_fn=refresh,
-                     downloader=download, filer=file)
-        self.assertEqual(called, ["refresh", "download", "file"])
+    def test_worker_has_no_discovery_side_effects_or_refresh_argument(self):
+        # Source discovery is owned by run_rugby, not this Atlas-only worker.
+        self.assertEqual(self.run_cli()["planned"], 1)
+        with self.assertRaises(TypeError):
+            self.run_cli(refresh=True)
+        self.db.releases.bulk_write.assert_not_called()
 
     def test_national_rugby_series_only_acquires_rugbypass(self):
         for series_id, root, name in (
