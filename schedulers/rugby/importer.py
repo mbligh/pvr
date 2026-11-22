@@ -175,7 +175,8 @@ def build_catalogue(db, config, now, refresh):
                 continue
             timed = isinstance(event.decoded("DTSTART"), dt.datetime)
             season = (start.astimezone(plex_nfo.UK).year
-                      if entry.get("type") == "world-rugby"
+                      if (entry.get("type") == "world-rugby" or
+                          entry.get("season_mode") == "calendar")
                       else plex_nfo.season_year(start))
             episode = {
                 "_id": fixture_id,

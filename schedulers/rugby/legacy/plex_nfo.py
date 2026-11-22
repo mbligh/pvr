@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from icalendar import Calendar
 from filter import ROOT, start_time
 from prem import fetch_prem
+from schedulers.rugby.six_nations import fixture_rounds
 
 UK = ZoneInfo("Europe/London")
 ROUND = re.compile(r"\bRound\s+(\d+)\b", re.I)
@@ -115,6 +116,8 @@ def build(config, source_dir, now):
                 raise ValueError(f"Missing source snapshot: {path}")
             calendar = Calendar.from_ical(path.read_bytes())
         grouped = defaultdict(list)
+        six_nations_rounds = (fixture_rounds(calendar)
+                              if entry.get("rounds") == "six-nations" else {})
         wxv_week_start = {}
         if entry["slug"] == "Rugby_Womens_WXV":
             # Each WXV tournament year has independent week-based rounds.
@@ -141,7 +144,34 @@ def build(config, source_dir, now):
                 continue
             description = str(event.get("DESCRIPTION", ""))
             round_match = ROUND.search(description)
-            if entry.get("type") == "world-rugby":
+            if entry.get("rounds") == "six-nations":
+                # Both championships use calendar-year seasons, unlike PWR
+                # and Gallagher PREM, which use the July-to-June convention.
+                year = kickoff.astimezone(UK).year
+                fixture_id = f"{entry['slug']}:{event.get('UID', '')}"
+                prior = old_assignments.get(fixture_id)
+                if (prior and prior.get("season") == year and
+                        isinstance(prior.get("episode"), int) and
+                        isinstance(prior.get("round"), int)):
+                    # Do not renumber previously accepted fixtures if the
+                    # current feed later becomes incomplete or moves dates.
+                    round_no = prior["round"]
+                else:
+                    round_no = six_nations_rounds.get(str(event.get("UID", "")).strip())
+                if round_no is None:
+                    # An incomplete schedule may not be safely ranked;
+                    # retain fixture metadata, but no fabricated episode.
+                    manifest["fixtures"].append({
+                        "id": fixture_id, "competition": entry["slug"],
+                        "showtitle": showtitle, "season": year,
+                        "round": None, "episode": None,
+                        "kickoff_utc": kickoff.astimezone(dt.timezone.utc).isoformat(),
+                        "home": teams[0].strip(), "away": teams[1].strip(),
+                        "venue": str(event.get("LOCATION", "")).strip(),
+                        "rugbypass_id": None, "nfo": None,
+                    })
+                    continue
+            elif entry.get("type") == "world-rugby":
                 year = kickoff.astimezone(UK).year
                 if entry["slug"] == "Rugby_Womens_WXV":
                     local = kickoff.astimezone(UK)
@@ -182,13 +212,15 @@ def build(config, source_dir, now):
                 year = season_year(kickoff)
             grouped[(year, round_no)].append((kickoff.astimezone(dt.timezone.utc), str(event.get("UID", "")), teams, event))
         for (year, round_no), matches in sorted(grouped.items()):
-            # The published library uses display-name case, not the lowercase calendar slug.
-            # Allow an explicit per-series directory override where needed.
+            # Series identifier and directory are exactly the same string.
             show = entry["slug"]
             # Keep show identifiers stable and filesystem-safe.
             show_dir = f"{show}/"
             output[show_dir + "tvshow.nfo"] = xml_bytes("tvshow", [
-                ("title", f"{entry['name']} {year}" if entry.get("type") == "world-rugby" else f"{entry['name']} {year}-{str((year + 1) % 100).zfill(2)}"),
+                ("title", (f"{entry['name']} {year}"
+                           if entry.get("type") == "world-rugby" or
+                           entry.get("season_mode") == "calendar"
+                           else f"{entry['name']} {year}-{str((year + 1) % 100).zfill(2)}")),
                 ("plot", "Spoiler-free rugby fixture metadata"),
             ])
             # Deterministic order for simultaneous kickoffs.

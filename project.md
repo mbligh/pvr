@@ -460,3 +460,15 @@ folder name. Former hyphenated series IDs and F1 episode prefix f1: are
 legacy migration inputs only. See SERIES_ID_MIGRATION.md. New code must not
 write old-schema data before the migration; no live Atlas changes were made
 by these Git commits.
+
+## Six Nations 2027 metadata correction
+
+Both men's and women's Six Nations use calendar-year seasons, unlike
+Premiership/PWR. Fixtures from the public ICS sources lack explicit rounds.
+The scheduler validates six teams, 15 unique fixtures, and five complete
+weeks of three games before assigning round/episode 101..503. Existing
+assigned episode numbers are preserved; partial feeds stay unnumbered.
+A subsequent import_rugby upsert corrects the 2027 fixtures previously
+stored under season 2026 without changing their stable fixture IDs.
+The newly created Rugby_Mens_Prem directory is now in the canonical
+filing series registry, pending proper Premiership episode numbering.

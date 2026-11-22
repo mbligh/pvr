@@ -13,6 +13,10 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers copied from `mb
 - PWR: pwr.py
 - Gallagher PREM direct feed: prem.py (requires existing PREM_APP_ID and PREM_API_KEY credentials)
 - Existing Premiership and Six Nations ICS feeds: filter.py
+  Men's and women's Six Nations both use calendar-year seasons and
+  conservative round-number validation in schedulers/rugby/six_nations.py.
+  Complete 15-match six-team fixture sets receive episodes 101..503;
+  incomplete sets remain unnumbered unless a prior episode was assigned.
 - Existing episode numbering and NFO generation: plex_nfo.py
 
 All supported fixture calendars are imported, including fixtures without a trustworthy season episode number (episode = null).
@@ -27,7 +31,7 @@ series ID and directory. Display names do not affect canonical identity.
 
 The PVR scheduler now uses directory names as canonical series slugs
 and has no redundant library_dir overrides.
-The canonical filer registers the full eleven-directory list in
+The canonical filer registers all twelve rugby directories in
 [FILING.md](FILING.md). A directory mapping does not create fixtures.
 
 **WXV migration is implemented and takes effect on the next live import.**
@@ -94,3 +98,17 @@ The legacy modules are copied as-is to preserve fixture parsing, spoiler avoidan
 After updating both repositories on slagg, preview the Atlas ID conversion with
 ./migrate_series_ids and apply it with ./migrate_series_ids --apply before
 running import_rugby. See SERIES_ID_MIGRATION.md.
+
+## Six Nations 2027 correction
+
+The first import assigned 2027 Six Nations fixtures to season 2026 by
+mistakenly applying the July-to-June rule used for Premiership/PWR. Both
+Six Nations competitions now specify calendar-year seasons. Once a complete
+15-match six-team, five-round feed is verified, round/episode numbers and
+matching NFO records are generated. The underlying source ICS does not give
+round labels, so an incomplete fixture set is not assigned invented rounds.
+Previously accepted assignments are retained. The 2027 source snapshots were
+validated against this code. Rerun ./import_rugby on slagg after pulling to
+correct the stored season and NFO metadata without changing fixture UIDs.
+The newly created Rugby_Mens_Prem directory is also registered for filing,
+but its existing fixtures still await reliable episode numbering.

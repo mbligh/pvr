@@ -17,6 +17,7 @@ numbered yet.
 | `Rugby_Mens_Lions` | `Rugby_Mens_Lions` |
 | `Rugby_Mens_World_Cup` | `Rugby_Mens_World_Cup` |
 | `Rugby_Mens_Nations` | `Rugby_Mens_Nations` |
+| `Rugby_Mens_Prem` | `Rugby_Mens_Prem` |
 | `Rugby_Womens_6N` | `Rugby_Womens_6N` |
 | `Rugby_Womens_Intl` | `Rugby_Womens_Intl` |
 | `Rugby_Womens_Lions` | `Rugby_Womens_Lions` |
@@ -199,3 +200,7 @@ A series ID is exactly its media directory name; registry keys no longer
 require a separate slug-to-folder mapping. Rugby_Mens_Nations replaces the
 former Rugby_Nations path, which the user has already renamed on disk.
 Existing Atlas identities must be converted with ./migrate_series_ids --apply.
+
+Rugby_Mens_Prem is now recognized as an actual media destination, but
+Premiership fixtures cannot yet be automatically filed without episode
+numbers and verified NFOs.

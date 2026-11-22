@@ -48,7 +48,7 @@ class LibraryPathTests(unittest.TestCase):
             self.assertIn(expected, outputs)
             self.assertIn("Rugby_Womens_PWR/tvshow.nfo", outputs)
 
-    def test_explicit_library_dir_override(self):
+    def test_slug_is_only_library_directory_even_if_legacy_override_exists(self):
         with tempfile.TemporaryDirectory() as temp:
             docs = Path(temp) / "docs"
             docs.mkdir()
@@ -64,8 +64,9 @@ class LibraryPathTests(unittest.TestCase):
             outputs, manifest = build({"calendars": [{
                 "slug": "test", "name": "Some Name", "library_dir": "Custom_Directory"
             }]}, docs, dt.datetime(2026, 11, 21, tzinfo=dt.timezone.utc))
-            self.assertTrue(manifest["fixtures"][0]["nfo"].startswith("Custom_Directory/"))
-            self.assertIn("Custom_Directory/tvshow.nfo", outputs)
+            self.assertTrue(manifest["fixtures"][0]["nfo"].startswith("test/"))
+            self.assertIn("test/tvshow.nfo", outputs)
+            self.assertNotIn("Custom_Directory/tvshow.nfo", outputs)
 
 
 if __name__ == "__main__":

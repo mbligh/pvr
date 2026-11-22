@@ -8,6 +8,7 @@ schedulers/
   rugby/
     importer.py           current rugby calendars -> pvr.episodes / NFOs
     pwr_history.py        historical PWR fixture import
+    six_nations.py        validate complete tournament round numbering
     legacy/               vendored source adapters and spoiler-free numbering
       calendars.json
       filter.py
@@ -66,3 +67,10 @@ calendar events to the new feed with their original UIDs.
 The Nations directory has already been renamed to Rugby_Mens_Nations.
 That exact spelling is the series ID. All rugby slugs equal media folder names;
 old lowercase spellings survive only as migration inputs and URL aliases.
+
+Six Nations seasons follow calendar years for both men and women. Complete
+15-match fixtures are validated as five rounds of three matches, one game
+per team each round, before assigning 101..503. Missing or ambiguous
+fixtures remain unnumbered. This fixes 2027 fixtures previously imported
+as season 2026. The Rugby_Mens_Prem directory is also registered in
+filing; it currently has no numbered NFO fixtures.

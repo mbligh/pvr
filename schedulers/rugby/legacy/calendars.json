@@ -29,14 +29,18 @@
       "name": "Rugby Mens 6N",
       "id": "vltlimfim9horepqch3uve5tdntn7nen@import.calendar.google.com",
       "url": "https://data.rugbyfixture.io/ical/v1/six-nations.ics?uid=qsadkjhi",
-      "legacy_slug": "rugby-mens-6n"
+      "legacy_slug": "rugby-mens-6n",
+      "season_mode": "calendar",
+      "rounds": "six-nations"
     },
     {
       "slug": "Rugby_Womens_6N",
       "name": "Rugby Womens 6N",
       "id": "vo97b4mr9uiv5lhp0ggqkqkvp6dq3an2@import.calendar.google.com",
       "url": "https://data.rugbyfixture.io/ical/v1/six-nations-womens.ics?uid=qsadkjhi",
-      "legacy_slug": "rugby-womens-6n"
+      "legacy_slug": "rugby-womens-6n",
+      "season_mode": "calendar",
+      "rounds": "six-nations"
     },
     {
       "slug": "Rugby_Womens_Intl",

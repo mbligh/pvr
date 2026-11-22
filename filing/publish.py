@@ -24,6 +24,7 @@ RUGBY_SERIES_PATHS = {
     "Rugby_Mens_Lions": ("rugbymenslions", 1900),
     "Rugby_Mens_World_Cup": ("rugbymensworldcup", 1900),
     "Rugby_Mens_Nations": ("rugbynationschampionships", 2026),
+    "Rugby_Mens_Prem": ("rugbymensprem", 1900),
     "Rugby_Womens_6N": ("rugbywomens6n", 1900),
     "Rugby_Womens_Intl": ("rugbywomensintl", 2026),
     "Rugby_Womens_Lions": ("rugbywomenslions", 1900),

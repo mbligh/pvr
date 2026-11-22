@@ -17,6 +17,7 @@ DIRECTORIES = {
     "Rugby_Mens_Lions": ("Rugby_Mens_Lions", "Rugby Mens Lions"),
     "Rugby_Mens_World_Cup": ("Rugby_Mens_World_Cup", "Rugby Mens World Cup"),
     "Rugby_Mens_Nations": ("Rugby_Mens_Nations", "Rugby Nations Championships"),
+    "Rugby_Mens_Prem": ("Rugby_Mens_Prem", "Rugby Mens Prem"),
     "Rugby_Womens_6N": ("Rugby_Womens_6N", "Rugby Womens 6N"),
     "Rugby_Womens_Intl": ("Rugby_Womens_Intl", "Rugby Womens Intl"),
     "Rugby_Womens_Lions": ("Rugby_Womens_Lions", "Rugby Womens Lions"),
@@ -88,7 +89,7 @@ class CanonicalRugbyDirectories(unittest.TestCase):
                 self.assertNotIn("library_dir", entry)
 
     def test_unlisted_and_bogus_series_cannot_be_filed(self):
-        for series in ("Rugby_Mens_Prem", "rugby-women-wxv", "not-real"):
+        for series in ("Rugby_Mens_Prem_Bogus", "rugby-women-wxv", "not-real"):
             with self.subTest(series=series):
                 ep = episode(series, "Rugby_Womens_WXV", "Rugby Womens WXV")
                 with self.assertRaisesRegex(ValueError, "Unsupported"):
