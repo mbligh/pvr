@@ -18,7 +18,6 @@ from zoneinfo import ZoneInfo
 
 from icalendar import Calendar
 from filter import ROOT, start_time
-from prem import fetch_prem
 from schedulers.rugby.six_nations import fixture_rounds
 
 UK = ZoneInfo("Europe/London")
@@ -95,7 +94,8 @@ def resolve_round(kickoff, home, away, observations):
     return None, None
 
 
-def build(config, source_dir, now):
+def build(config, source_dir, now, *, prem_metadata=None):
+    prem_metadata = prem_metadata or {}
     output = {}
     manifest = {"schema_version": 2, "generated_at": now.isoformat(), "fixtures": []}
     observations = [r for record in rugby_observations(source_dir.parent / "data" / "rugbypass.json")
@@ -108,13 +108,10 @@ def build(config, source_dir, now):
             old_assignments = {f["id"]: f for f in old_data.get("fixtures", [])}
     for entry in config["calendars"] + config.get("plex_sources", []):
         showtitle = entry.get("nfo_showtitle", entry["name"])
-        if entry.get("type") == "prem":
-            calendar = fetch_prem(entry["url"], comp_id=entry["compId"], season=entry["season"])
-        else:
-            path = source_dir / (entry["slug"] + ".ics")
-            if not path.exists():
-                raise ValueError(f"Missing source snapshot: {path}")
-            calendar = Calendar.from_ical(path.read_bytes())
+        path = source_dir / (entry["slug"] + ".ics")
+        if not path.exists():
+            raise ValueError(f"Missing source snapshot: {path}")
+        calendar = Calendar.from_ical(path.read_bytes())
         grouped = defaultdict(list)
         six_nations_rounds = (fixture_rounds(calendar)
                               if entry.get("rounds") == "six-nations" else {})
@@ -144,7 +141,28 @@ def build(config, source_dir, now):
                 continue
             description = str(event.get("DESCRIPTION", ""))
             round_match = ROUND.search(description)
-            if entry.get("rounds") == "six-nations":
+            if entry.get("rounds") == "prem":
+                year = season_year(kickoff)
+                uid = str(event.get("UID", "")).strip()
+                previous = old_assignments.get(f"{entry['slug']}:{uid}")
+                round_no = prem_metadata.get(uid, {}).get("round")
+                if round_no is None:
+                    round_no = (previous.get("round") if previous and
+                                isinstance(previous.get("episode"), int) else
+                                int(round_match.group(1)) if round_match else None)
+                if round_no is None:
+                    manifest["fixtures"].append({
+                        "id": f"{entry['slug']}:{uid}",
+                        "competition": entry["slug"],
+                        "showtitle": showtitle, "season": year,
+                        "round": None, "episode": None,
+                        "kickoff_utc": kickoff.astimezone(dt.timezone.utc).isoformat(),
+                        "home": teams[0].strip(), "away": teams[1].strip(),
+                        "venue": str(event.get("LOCATION", "")).strip(),
+                        "rugbypass_id": None, "nfo": None,
+                    })
+                    continue
+            elif entry.get("rounds") == "six-nations":
                 # Both championships use calendar-year seasons, unlike PWR
                 # and Gallagher PREM, which use the July-to-June convention.
                 year = kickoff.astimezone(UK).year

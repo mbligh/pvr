@@ -26,8 +26,10 @@ from icalendar import Calendar  # noqa: E402
 import filter as calendar_filter  # noqa: E402
 import plex_nfo  # noqa: E402
 from pwr import fetch_pwr  # noqa: E402
+from prem import fetch_prem  # noqa: E402
 from world_rugby import fetch_world_rugby  # noqa: E402
 from schedulers.series_ids import assert_migrated, canonicalize, CANONICAL_TO_LEGACY
+from schedulers.rugby.prem_identity import reconcile_uids, season_for
 from schedulers.rugby.wxv import (
     WOMENS, WXV, split_snapshot, legacy_id, validate_migration,
 )
@@ -69,6 +71,12 @@ def fetch_calendar(entry, now):
     kind = entry.get("type")
     if kind == "pwr":
         return fetch_pwr(entry["url"])
+    if kind == "prem":
+        # The provider uses YYYY01 for the July-June campaign.
+        season = season_for(now)
+        separator = "&" if "?" in entry["url"] else "?"
+        return fetch_prem(entry["url"] + f"{separator}season={season}",
+                          comp_id=entry["compId"], season=season)
     if kind == "world-rugby":
         return fetch_world_rugby(entry["group"], now)
     url = entry.get("url")
@@ -82,14 +90,9 @@ def fetch_calendar(entry, now):
 def build_catalogue(db, config, now, refresh):
     """Build in memory first. No Atlas writes until ALL source parsing/numbering succeeds."""
     config = json.loads(json.dumps(config))
-    # PREM's direct match API requires licensed credentials. Existing public
-    # Premiership calendar is still imported via its score-free ICS.
-    if not (os.environ.get("PREM_APP_ID") and os.environ.get("PREM_API_KEY")):
-        config["plex_sources"] = [entry for entry in config.get("plex_sources", [])
-                                  if entry.get("type") != "prem"]
-
     prior_manifest = old_manifest(db)
     snapshots = {}
+    prem_metadata = {}
     # First WXV migration must use already accepted score-free events.
     # The old women's calendar includes WXV; on subsequent runs the two
     # Atlas snapshots are separate. Never ingest old results from an API.
@@ -113,6 +116,8 @@ def build_catalogue(db, config, now, refresh):
                 previous = read_snapshot(db, slug)
             if refresh:
                 source = fetch_calendar(entry, now)
+                if slug == "Rugby_Mens_Prem":
+                    source, prem_metadata = reconcile_uids(source, previous)
                 merged = calendar_filter.merge(source, previous, now, zone, entry["name"])
             else:
                 merged = previous
@@ -126,7 +131,8 @@ def build_catalogue(db, config, now, refresh):
         )
         # Reuse the legacy numbering, NFO generation, and old assignment
         # preservation rather than reinventing the episode algorithm.
-        output_files, manifest = plex_nfo.build(config, docs, now)
+        output_files, manifest = plex_nfo.build(
+            config, docs, now, prem_metadata=prem_metadata)
 
     episodes = []
     for fixture in manifest["fixtures"]:
@@ -143,8 +149,14 @@ def build_catalogue(db, config, now, refresh):
             "venue": fixture["venue"],
             "showtitle": fixture["showtitle"],
             "nfo_path": fixture["nfo"],
-            "external_ids": {"rugbypass": fixture.get("rugbypass_id")},
-            "metadata_provider": "calendar/rugby",
+            "external_ids": (
+                {"rugbypass": fixture.get("rugbypass_id")}
+                | ({"prem": prem_metadata[fixture["id"].split(":", 1)[1]]["prem"]}
+                   if fixture["competition"] == "Rugby_Mens_Prem" and
+                   fixture["id"].split(":", 1)[1] in prem_metadata else {})
+            ),
+            "metadata_provider": ("prem/official" if fixture["competition"] ==
+                                  "Rugby_Mens_Prem" else "calendar/rugby"),
             "status": "scheduled",
         }
         if fixture["nfo"]:
@@ -188,12 +200,17 @@ def build_catalogue(db, config, now, refresh):
                 "scheduled_date": start.date().isoformat() if not timed else None,
                 "home": teams[0].strip(),
                 "away": teams[1].strip(),
-                "round": None,
+                "round": (prem_metadata.get(uid, {}).get("round")
+                          if slug == "Rugby_Mens_Prem" else None),
                 "venue": str(event.get("LOCATION", "")).strip(),
                 "showtitle": entry.get("nfo_showtitle", entry["name"]),
                 "nfo_path": None,
-                "external_ids": {},
-                "metadata_provider": "calendar/rugby",
+                "external_ids": (
+                    {"prem": prem_metadata[uid]["prem"]}
+                    if slug == "Rugby_Mens_Prem" and uid in prem_metadata else {}
+                ),
+                "metadata_provider": ("prem/official" if slug ==
+                                      "Rugby_Mens_Prem" else "calendar/rugby"),
                 "status": "scheduled",
             }
             episodes.append(episode)
@@ -225,7 +242,12 @@ def persist(db, snapshots, manifest, episodes, now):
     # Never delete merely missing fixtures or existing acquisition state.
     operations = [
         UpdateOne({"_id": episode["_id"]}, {
-            "$set": {k: v for k, v in episode.items() if k != "_id"}
+            "$set": {k: v for k, v in episode.items()
+                     if k != "_id" and
+                     not (episode["series_id"] == "Rugby_Mens_Prem" and
+                          ((k == "external_ids" and
+                            "prem" not in episode["external_ids"]) or
+                           (k == "round" and v is None)))}
                     | {"metadata_updated_at": now},
             "$setOnInsert": {"created_at": now}
         }, upsert=True)

@@ -11,8 +11,8 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers copied from `mb
   The series slug `Rugby_Womens_WXV`, folder `Rugby_Womens_WXV`, canonical
   showtitle and original match/calendar UIDs remain unchanged.
 - PWR: pwr.py
-- Gallagher PREM direct feed: prem.py (requires existing PREM_APP_ID and PREM_API_KEY credentials)
-- Existing Premiership and Six Nations ICS feeds: filter.py
+- Gallagher PREM: the official RugbyViz/InCrowd match API is the sole live source for Rugby_Mens_Prem. The public website X-APP-ID, X-API-KEY, and X-REALM client headers are included in the adapter; PREM_APP_ID, PREM_API_KEY and PREM_REALM are optional overrides if the public key rotates.
+- Existing Six Nations ICS feeds: filter.py
   Men's and women's Six Nations both use calendar-year seasons and
   conservative round-number validation in schedulers/rugby/six_nations.py.
   Complete 15-match six-team fixture sets receive episodes 101..503;
@@ -112,3 +112,28 @@ validated against this code. Rerun ./import_rugby on slagg after pulling to
 correct the stored season and NFO metadata without changing fixture UIDs.
 The newly created Rugby_Mens_Prem directory is also registered for filing,
 but its existing fixtures still await reliable episode numbering.
+
+## Gallagher PREM official API switch
+
+Rugby_Mens_Prem obtains fixtures solely from the official InCrowd
+RugbyViz API via schedulers/rugby/legacy/prem.py; the public rugbyfixture.io
+Premiership ICS feed and separate Gallagher_PREM NFO pseudo-series have been
+retired. Official public browser headers are coded as defaults with optional
+environment overrides. The API season code rolls over in July (e.g. 202601).
+
+This does not rewrite or duplicate the 79 existing Atlas fixture IDs:
+schedulers/rugby/prem_identity.py reconciles official matches to the
+previous stored spoiler-free calendar by the teams, season and kickoff date.
+Current fixtures receive external_ids.prem and authoritative round numbers.
+Existing historical UTC kickoffs remain frozen; no score, result or winner
+fields are accepted. Provisional dates become date-only, without fabricated
+kickoff times or numbered NFOs. Playoff fixtures with unknown TBC teams are
+withheld until those teams are known. The first import is expected to
+number 39 confirmed fixtures and retain 40 provisional date-only fixtures,
+based on the live 2026-27 feed checked 2026-11-21.
+
+On season rollover, previously stored official IDs/rounds are retained
+even when those events are absent from the new current-season feed.
+The calendar publisher uses the same Atlas records to export canonical
+Rugby_Mens_Prem.ics and metadata. Never reintroduce the retired second
+Gallagher_PREM series.

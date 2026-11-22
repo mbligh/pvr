@@ -7,6 +7,15 @@ import urllib.request
 
 from icalendar import Calendar, Event
 
+# Public website client headers (not account credentials).
+# The public X-API-KEY is observable in browser traffic and can rotate.
+# Keep optional environment overrides for operational recovery.
+PUBLIC_HEADERS = {
+    "X-APP-ID": "web",
+    "X-API-KEY": "zDiLQ9o18oVrwn30etwT",
+    "X-REALM": "prl",
+}
+
 
 def convert_prem(payload, *, comp_id=1011, season=202601):
     matches = payload["data"]
@@ -31,16 +40,24 @@ def convert_prem(payload, *, comp_id=1011, season=202601):
             raise ValueError(f"Naive kickoff for {match_id}")
         home = match["homeTeam"]["name"]
         away = match["awayTeam"]["name"]
+        # Play-off placeholders have no actual teams yet. Do not create
+        # bogus "TBC vs TBC" episodes or NFO files.
+        if not home or not away or home.strip().upper() == "TBC" or away.strip().upper() == "TBC":
+            continue
         event = Event()
         event.add("uid", f"prem-{match_id}@mbligh.github.io")
         event.add("summary", f"{home} vs {away}")
         if match.get("tbc"):
-            # Skip TBC fixtures until kickoff is confirmed; the provided date
-            # may be a placeholder and must not determine episode order.
-            continue
-        event.add("dtstart", kickoff)
-        event.add("dtend", kickoff + dt.timedelta(hours=2))
+            # Do not represent a provisional kickoff as an exact datetime.
+            # Preserve the source's provisional date as an all-day fixture.
+            event.add("dtstart", kickoff.date())
+            event.add("dtend", kickoff.date() + dt.timedelta(days=1))
+        else:
+            event.add("dtstart", kickoff)
+            event.add("dtend", kickoff + dt.timedelta(hours=2))
         event.add("description", f"Gallagher PREM — Round {round_no}")
+        event.add("x-prem-id", str(match_id))
+        event.add("x-prem-round", round_no)
         venue = (match.get("venue") or {}).get("name")
         if venue:
             event.add("location", venue)
@@ -61,8 +78,7 @@ def fetch_prem(url, *, comp_id=1011, season=202601):
         ("X-API-KEY", "PREM_API_KEY"),
         ("X-REALM", "PREM_REALM"),
     ):
-        if value := os.environ.get(variable):
-            request.add_header(header, value)
+        request.add_header(header, os.environ.get(variable) or PUBLIC_HEADERS[header])
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             return convert_prem(json.load(response), comp_id=comp_id, season=season)

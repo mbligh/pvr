@@ -472,3 +472,20 @@ A subsequent import_rugby upsert corrects the 2027 fixtures previously
 stored under season 2026 without changing their stable fixture IDs.
 The newly created Rugby_Mens_Prem directory is now in the canonical
 filing series registry, pending proper Premiership episode numbering.
+
+## Official Gallagher PREM feed migration (2026-11-21)
+
+Rugby_Mens_Prem is now sourced directly from the official InCrowd RugbyViz
+match API with three browser-public HTTP headers embedded as defaults and
+optional environment overrides. The importer dynamically selects the active
+July-to-June season, reconciles official match IDs to the 79 original
+spoiler-free ICS calendar UIDs already stored in Atlas, and assigns real
+round/episode/NFO metadata for fixtures with confirmed times. API TBC flags
+produce date-only fixtures, not speculative kickoff times; unknown playoff
+participants are excluded. Previously recorded fixture data remains frozen
+at kickoff and historical primary keys are never replaced by prem- keys.
+Never ingest scores or results from this API. On annual rollover, preserve
+official external IDs and previous round assignments while the active API
+changes seasons. Legacy Gallagher_PREM NFO pseudo-series and the public
+rugbyfixture.io Premiership ICS input are retired; the calendar repo uses
+canonical Rugby_Mens_Prem fixtures from Atlas.

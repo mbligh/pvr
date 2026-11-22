@@ -204,3 +204,8 @@ Existing Atlas identities must be converted with ./migrate_series_ids --apply.
 Rugby_Mens_Prem is now recognized as an actual media destination, but
 Premiership fixtures cannot yet be automatically filed without episode
 numbers and verified NFOs.
+
+The official Gallagher PREM API is now the Rugby_Mens_Prem fixture source;
+confirmed kickoff fixtures can receive verified round/episode numbers and
+NFOs, while time-TBC fixtures remain unnumbered. The old public ICS feed
+is not a continuing dependency.

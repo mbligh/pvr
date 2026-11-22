@@ -74,3 +74,10 @@ per team each round, before assigning 101..503. Missing or ambiguous
 fixtures remain unnumbered. This fixes 2027 fixtures previously imported
 as season 2026. The Rugby_Mens_Prem directory is also registered in
 filing; it currently has no numbered NFO fixtures.
+
+PREM (men's): the official public RugbyViz API is the only active source
+for Rugby_Mens_Prem, using public website client headers in legacy/prem.py.
+The PVR importer reconciles official match IDs against historical stored
+ICS identities, preserves pre-kickoff freezes, and adds per-round numbering.
+Time-TBC fixtures remain date-only. No separate Gallagher_PREM series is
+created, and the public Premiership ICS service is no longer queried.
