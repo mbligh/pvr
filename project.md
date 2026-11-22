@@ -426,7 +426,7 @@ do not change. `indexers/` discover releases; `downloaders/` handle
 recording transfers. Release import/matching remains separate from
 `pvr.episodes` scheduling. See [schedulers/README.md](schedulers/README.md).
 
-The `mbligh/calendar` repository now has an opt-in `export_atlas` CLI
+The `mbligh/calendar` repository now has an opt-in `build_rugby_calendars` CLI
 to preview rugby ICS files derived from `pvr.episodes` using the existing
 calendar freeze-at-kickoff merger. It preserves the source UID suffixes and
 already accepted past events, and never reads media releases. This is
