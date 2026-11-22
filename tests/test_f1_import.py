@@ -24,6 +24,24 @@ class F1ImportTests(unittest.TestCase):
                        "url": "/en/racing/2026/netherlands", "isTestEvent": False},
              "sessions": sessions, "detail": {"meetingContext": {"meetingKey": "1292"}}}]}
 
+    def test_dry_run_flag_matches_default_preview_and_conflicts_with_apply(self):
+        import contextlib
+        import io
+        import json
+        with patch.object(f1, "read_source", return_value=self.payload()) as fetch:
+            for flags in ([], ["--dry-run"]):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    self.assertEqual(f1.main(["--year", "2026", *flags]), 0)
+                report = json.loads(stdout.getvalue())
+                self.assertTrue(report["preview"])
+                self.assertIsNone(report["database"])
+            self.assertEqual(fetch.call_count, 2)
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as exc:
+                f1.main(["--apply", "--dry-run"])
+        self.assertEqual(exc.exception.code, 2)
+
     def test_live_source_calls_scheduler_module_directly(self):
         expected = self.payload()
         with patch.object(f1.f1_data, "fetch_season", return_value=expected) as fetch:

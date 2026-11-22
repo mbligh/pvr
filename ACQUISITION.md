@@ -106,7 +106,7 @@ between those two libraries.
 already-accepted WXV fixtures from the women's-international series,
 creates distinct `Rugby_Womens_WXV` IDs and week-based round numbering,
 and keeps the original WXV records as superseded history. This takes
-effect after `import_rugby` is run on slagg with the new code. The
+effect after `import_rugby --apply` is run on slagg with the new code. The
 RugbyPass matcher then links replays to WXV's dedicated series. No
 existing media recordings are automatically moved or overwritten.
 

@@ -303,22 +303,25 @@ def persist(db, snapshots, manifest, episodes, now):
     return len(episodes)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=pathlib.Path,
                         default=RUGBY_DIR / "calendars.json")
     parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
     parser.add_argument("--no-refresh", action="store_true",
                         help="Import existing spoiler-free calendar snapshots without fetching live APIs")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Parse and report only; does not require Atlas credentials")
-    args = parser.parse_args()
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true",
+                      help="Write validated fixtures to Atlas (default: preview only)")
+    mode.add_argument("--dry-run", action="store_true",
+                      help="Preview only (compatibility alias; now the default)")
+    args = parser.parse_args(argv)
     config = json.loads(args.config.read_text(encoding="utf-8"))
     now = dt.datetime.now(UTC)
 
     client = None
     db = None
-    if not args.dry_run:
+    if args.apply:
         uri = os.environ.get("MONGODB_URI")
         if not uri:
             uri_file = pathlib.Path.home() / ".mongodb" / "pvr"
@@ -342,8 +345,8 @@ def main():
             "calendars": len(snapshots),
             "episodes": len(episodes),
             "numbered": sum(e["episode"] is not None for e in episodes),
-            "preview": args.dry_run,
-            "database": args.database if not args.dry_run else None,
+            "preview": not args.apply,
+            "database": args.database if args.apply else None,
         }, indent=2))
         if db is not None:
             persist(db, snapshots, manifest, episodes, now)

@@ -58,6 +58,10 @@ Only when ready, upsert to Atlas:
 
     ./import_f1 --input f1-2026.json --apply
 
+F1 and rugby importers both default to preview with no Atlas writes.
+Explicit --apply is required for either importer. Both also recognize
+--dry-run as a mutually exclusive, optional preview alias.
+
 The --apply flag uses MONGODB_URI or ~/.mongodb/pvr (plain MongoDB URI)
 and MONGODB_DATABASE (default: pvr), matching import_rugby. Conflicts with
 existing Formula 1 episode numbering are refused. Existing records not

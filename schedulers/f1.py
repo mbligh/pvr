@@ -221,8 +221,11 @@ def main(argv=None):
                         help="Saved f1_data JSON; - for stdin (default: fetch live)")
     parser.add_argument("--year", type=int, help="Expected season (default: current year)")
     parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
-    parser.add_argument("--apply", action="store_true",
-                        help="Upsert to MongoDB Atlas; default is preview only")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true",
+                      help="Upsert to MongoDB Atlas; default is preview only")
+    mode.add_argument("--dry-run", action="store_true",
+                      help="Preview only (already the default)")
     parser.add_argument("--jsonl", action="store_true",
                         help="Emit complete episode records as JSON Lines")
     args = parser.parse_args(argv)

@@ -24,7 +24,7 @@ jobs:
       - name: Test rugby schedulers, adapters, and release indexers
         run: python -m unittest discover -s tests -p 'test_*.py'
       - name: Exercise rugby import against published spoiler-free snapshots
-        run: python import_rugby --dry-run --no-refresh
+        run: python import_rugby --no-refresh
   import:
     # Manual until Atlas secret and network access are configured.
     if: github.event_name == 'workflow_dispatch'
@@ -44,4 +44,4 @@ jobs:
           PREM_APP_ID: ${{ secrets.PREM_APP_ID }}
           PREM_API_KEY: ${{ secrets.PREM_API_KEY }}
           PREM_REALM: ${{ secrets.PREM_REALM }}
-        run: python import_rugby
+        run: python import_rugby --apply

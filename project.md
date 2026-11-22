@@ -547,3 +547,18 @@ Existing external_ids.rugbypass values in Atlas remain undisturbed by
 scheduler upserts; official Premiership external_ids.prem is independently
 updated with dotted field writes. This separates fixture scheduling from
 recording discovery without losing historical IDs.
+
+
+## Consistent fixture-import CLI and safety default (2026-11-21)
+
+The rugby and Formula 1 scheduler entry points now share preview-first
+semantics: an invocation without flags validates and previews; --apply
+is required to write to Atlas. Both accept --dry-run as an optional
+mutually exclusive preview alias (retained for existing rugby callers).
+The historical importers already followed this convention.
+The rugby GitHub Actions manual import uses --apply and its smoke test
+uses the no-write default. The documented daily slagg cron command also
+uses --apply; any previously installed bare import_rugby cron command
+must be updated separately on the host to avoid silently becoming a
+no-write preview. Rugby previews without Atlas credentials still use
+published bootstrap snapshots rather than reading live Atlas state.

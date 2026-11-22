@@ -17,7 +17,7 @@ IDs also acquire the Formula_1: prefix.
    under ~/pvr-series-id-backups/ before any writes. It changes episode IDs,
    series IDs, release/job/file associations, calendar snapshots and
    stored manifests. No filesystem media is renamed.
-5. Run ./migrate_series_ids again to confirm 0 changes. Run ./import_rugby
+5. Run ./migrate_series_ids again to confirm 0 changes. Run ./import_rugby --apply
    to update WXV, then preview calendars with
    cd ~/calendar && ./build_rugby_calendars.
 6. Validate representative entries, file paths, and calendar history before

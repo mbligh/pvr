@@ -68,17 +68,31 @@ plain-text file containing only the MongoDB connection URI, without an export
 statement. Protect it with chmod 600 ~/.mongodb/pvr. MONGODB_URI, if set, takes
 precedence (for GitHub Actions and other automation).
 
-Parse the existing snapshots without connecting to Atlas:
+Both rugby and F1 imports default to preview mode. The --apply flag is
+required to write to MongoDB Atlas; --dry-run is retained as an optional,
+mutually exclusive preview alias. Preview does not require Atlas credentials.
+Rugby previews read the published, spoiler-free bootstrap snapshots rather
+than the current Atlas database, so numbers may differ from live Atlas.
 
-    python3 import_rugby --dry-run --no-refresh
+Preview the existing snapshots without connecting to Atlas:
 
-Perform the live import:
+    ./import_rugby --no-refresh
 
-    python3 import_rugby
+Preview the latest fixture sources:
+
+    ./import_rugby
+
+Perform the live import into Atlas:
+
+    ./import_rugby --apply
 
 To schedule daily on slagg, add this entry with crontab -e:
 
-    17 3 * * * cd "$HOME/pvr" && /usr/bin/python3 import_rugby >> "$HOME/pvr-import.log" 2>&1
+    17 3 * * * cd "$HOME/pvr" && /usr/bin/python3 import_rugby --apply >> "$HOME/pvr-import.log" 2>&1
+
+IMPORTANT: Any existing unattended import_rugby command lacking --apply
+must be updated when this version is deployed. Otherwise it previews
+fixtures but does not update Atlas.
 
 Use a dedicated database user with readWrite access scoped to the pvr database.
 MONGODB_DATABASE overrides the default database name.
@@ -108,7 +122,7 @@ Six Nations competitions now specify calendar-year seasons. Once a complete
 matching NFO records are generated. The underlying source ICS does not give
 round labels, so an incomplete fixture set is not assigned invented rounds.
 Previously accepted assignments are retained. The 2027 source snapshots were
-validated against this code. Rerun ./import_rugby on slagg after pulling to
+validated against this code. Rerun ./import_rugby --apply on slagg after pulling to
 correct the stored season and NFO metadata without changing fixture UIDs.
 Rugby_Mens_Prem is also registered for filing; confirmed kickoffs now receive verified API round and episode numbering.
 
@@ -151,7 +165,7 @@ that all six matches in a scheduled week are present, involve each of the
 12 northern/southern teams exactly once, and match the published 2026
 weekend dates. It preserves existing World Rugby UIDs and all previously
 accepted round/episode assignments; unsupported years and incomplete
-weeks are left unnumbered. Daily ./import_rugby applies this policy.
+weeks are left unnumbered. Daily ./import_rugby --apply applies this policy.
 
 World Rugby still has 18 July 2026 fixtures in its historical match API,
 but the daily importer intentionally does not fetch completed historical

@@ -34,7 +34,14 @@ The root executable names are compatibility wrappers:
 - `./import_f1` delegates to `schedulers.f1`.
 - `./f1_data` delegates to `schedulers.f1_data`.
 
-Existing cron commands and CLI arguments remain unchanged. The former
+All fixture import entry points (./import_rugby, ./import_f1,
+./import_pwr_history, and ./import_nations_history) default to
+preview mode. Explicit --apply is required for Atlas writes. Rugby and
+F1 also accept the redundant --dry-run compatibility flag, but not
+together with --apply. Older rugby cron commands that omitted the flag
+must be updated to include --apply.
+
+The former
 `calendar_legacy/` files and adapters now live directly in
 `schedulers/rugby/` as normal package modules. The legacy subdirectory
 is removed. The original adapter tests now run with the shared suite in
