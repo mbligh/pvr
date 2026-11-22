@@ -12,7 +12,8 @@ API = "https://api.wr-rims-prod.pulselive.com/rugby/v3/match"
 COMPETITIONS = {
     "nations": ("MRU", {"Nations Championship"}),
     "mens-intl": ("MRU", {"Men's Internationals"}),
-    "womens-intl": ("WRU", {"Women's Internationals", "WXV"}),
+    "womens-intl": ("WRU", {"Women's Internationals"}),
+    "wxv": ("WRU", {"WXV"}),
 }
 YEAR_SUFFIX = re.compile(r"\s+20\d{2}$")
 
