@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from icalendar import Calendar, Event
 
 from schedulers.rugby import importer, prem, prem_history
+from schedulers.rugby.prem_identity import reconcile_uids
 
 
 UTC = dt.timezone.utc
@@ -79,12 +80,13 @@ class PremHistoryTests(unittest.TestCase):
     def test_validated_rounds_and_missing_past_only(self):
         source = official_source()
         prem_history.checked_rounds(source, NOW)
-        merged = existing_round_three()
-        merged, added = prem_history.add_history(source, merged, NOW)
-        self.assertEqual(added, 15)  # Call directly, before UID reconciliation.
+        prior = existing_round_three()
+        source, metadata = reconcile_uids(source, prior)
+        merged, added = prem_history.add_history(source, prior, NOW)
+        self.assertEqual(added, 11)
         merged, again = prem_history.add_history(source, merged, NOW)
         self.assertEqual(again, 0)
-        self.assertEqual(len(merged.walk("VEVENT")), 19)
+        self.assertEqual(len(merged.walk("VEVENT")), 15)
         with self.assertRaisesRegex(ValueError, "incomplete"):
             damaged = prem.convert_prem({"data": [
                 {"id": 294908, "compId": 1011, "season": 202601,
@@ -112,7 +114,8 @@ class PremHistoryTests(unittest.TestCase):
                           301, 302, 303, 304, 305])
         self.assertEqual(numbers["294918"], 301)
         self.assertEqual(numbers["294919"], 302)
-        self.assertEqual(numbers["294922"], 305)
+        self.assertEqual(numbers["294922"], 304)
+        self.assertEqual(numbers["294921"], 305)
         self.assertTrue(any(ep["_id"] == "Rugby_Mens_Prem:prior-294919"
                             and ep["episode"] == 302 for ep in episodes))
         self.assertEqual(len(manifest["fixtures"]), 15)
