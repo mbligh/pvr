@@ -23,6 +23,9 @@ class WorldRugbyTests(unittest.TestCase):
     def test_year_suffix(self):
         self.assertEqual(competition_base("Women's Internationals 2026"), "Women's Internationals")
         self.assertEqual(competition_base("WXV 2026"), "WXV")
+        self.assertEqual(competition_base("WXV Global Series 2026"), "WXV Global Series")
+        self.assertEqual(competition_base("WXV Global Series Challenger 2026"),
+                         "WXV Global Series Challenger")
 
     def test_spoiler_free(self):
         event = convert_match(fixture("Women's Internationals 2026", "WRU", "one"))
@@ -63,6 +66,8 @@ class WorldRugbyTests(unittest.TestCase):
             "content": [
                 fixture("Women's Internationals 2026", "WRU", "one"),
                 fixture("WXV 2026", "WRU", "two"),
+                fixture("WXV Global Series 2026", "WRU", "global"),
+                fixture("WXV Global Series Challenger 2026", "WRU", "challenger"),
                 fixture("Bledisloe Cup 2026", "MRU", "three"),
             ],
         }
@@ -71,8 +76,13 @@ class WorldRugbyTests(unittest.TestCase):
         self.assertEqual(str(cal.walk("VEVENT")[0].get("DESCRIPTION")),
                          "Women's Internationals 2026")
         wxv = fetch_world_rugby("wxv")
-        self.assertEqual(len(wxv.walk("VEVENT")), 1)
-        self.assertEqual(str(wxv.walk("VEVENT")[0].get("DESCRIPTION")), "WXV 2026")
+        self.assertEqual(len(wxv.walk("VEVENT")), 2)
+        self.assertEqual({str(e.get("UID")) for e in wxv.walk("VEVENT")},
+                         {"world-rugby-two@mbligh.github.io",
+                          "world-rugby-global@mbligh.github.io"})
+        self.assertEqual({str(e.get("DESCRIPTION")) for e in wxv.walk("VEVENT")},
+                         {"WXV"})
+        self.assertNotIn("Challenger", wxv.to_ical().decode())
 
 
 if __name__ == "__main__":
