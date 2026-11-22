@@ -24,6 +24,17 @@ ID_PATTERN = re.compile(
 )
 SUMMARY_API = "https://api.wr-rims-prod.pulselive.com/rugby/v3/match/{}/summary"
 
+# Rugby XV team-sheet display order is not the shirt number. The RIMS
+# lineups use consistent pitch-slot orders for starters (e.g. prop #3 uses
+# order=5, winger #14 uses order=25). We only consult this mapping when the
+# API repeats a jersey number AND the implied starter slot is vacant.
+STARTER_SHIRT_BY_ORDER = {
+    1: 1, 4: 2, 5: 3, 6: 4, 8: 5,
+    9: 6, 11: 7, 12: 8, 13: 9, 17: 10,
+    18: 11, 19: 12, 21: 13, 25: 14, 26: 15,
+}
+
+
 
 def utc(value):
     """Make PyMongo's naive UTC datetime values comparable with aware ones."""
@@ -61,13 +72,59 @@ def fetch(fixture):
     return payload
 
 
+def inferred_shirt_overrides(roster, match_id, side):
+    """Correct only source jersey conflicts with an unambiguous starter slot.
+
+    Do not infer numbers for arbitrary missing/duplicate rows. Caller must
+    retain the original number for auditability.
+    """
+    by_number = {}
+    for index, row in enumerate(roster):
+        if not isinstance(row, dict):
+            continue
+        raw = row.get("number")
+        if (raw is None or raw == "" or type(raw) not in (str, int)
+                or not str(raw).isdecimal()):
+            continue
+        by_number.setdefault(int(raw), []).append((index, row))
+
+    corrections = {}
+    used = set(by_number)
+    for shirt, entries in list(by_number.items()):
+        if len(entries) <= 1:
+            continue
+        candidates = []
+        for index, row in entries:
+            expected = STARTER_SHIRT_BY_ORDER.get(row.get("order"))
+            player = row.get("player") or {}
+            if (expected is not None and expected != shirt
+                    and expected not in used
+                    and row.get("position") != "Rep"
+                    and player.get("isReplacement") is False):
+                candidates.append((index, expected))
+        if len(candidates) != 1:
+            raise ValueError(
+                f"World Rugby {match_id}: ambiguous duplicate {side} shirt {shirt!r}")
+        index, correct = candidates[0]
+        corrections[index] = correct
+        used.add(correct)
+    return corrections
+
+
 def normalize(payload, episode, now=None):
     now = utc(now or dt.datetime.now(UTC))
     match_id = fixture_id(episode)
     match = payload.get("match")
+    summary_teams = payload.get("teams")
+    if match is None and summary_teams == []:
+        # RIMS responds HTTP 200 with {"match": null, "teams": []}
+        # for certain known fixtures lacking published match detail.
+        # This is not a mismatched ID, and should follow normal retries.
+        match = {"matchId": match_id}
+        summary_teams = [{"teamList": {"list": []}},
+                         {"teamList": {"list": []}}]
     if not isinstance(match, dict) or match.get("matchId") != match_id:
         raise ValueError(f"World Rugby match ID mismatch: {match_id}")
-    summary_teams = payload.get("teams")
     if not isinstance(summary_teams, list) or len(summary_teams) != 2:
         raise ValueError(f"Missing World Rugby team lists: {match_id}")
     match_teams = match.get("teams") or []
@@ -94,8 +151,11 @@ def normalize(payload, episode, now=None):
         roster = team_list.get("list") or []
         if not isinstance(roster, list):
             raise ValueError(f"Invalid World Rugby {side} lineup: {match_id}")
+        # Validate a duplicate against the official pitch slot before
+        # deciding the selected shirt number. The original is retained.
+        overrides = inferred_shirt_overrides(roster, match_id, side)
         numbers = set()
-        for row in roster:
+        for row_index, row in enumerate(roster):
             if not isinstance(row, dict):
                 raise ValueError(f"Malformed World Rugby player record: {match_id}")
             number = row.get("number")
@@ -109,7 +169,11 @@ def normalize(payload, episode, now=None):
                     int(number) in numbers):
                 raise ValueError(
                     f"World Rugby {match_id}: duplicate/invalid {side} shirt {number!r}")
-            number = int(number)
+            reported_number = int(number)
+            number = overrides.get(row_index, reported_number)
+            if number in numbers:
+                raise ValueError(
+                    f"World Rugby {match_id}: duplicate {side} shirt {number!r}")
             numbers.add(number)
             player = row.get("player") or {}
             name = player.get("name") or {}
@@ -127,6 +191,9 @@ def normalize(payload, episode, now=None):
                 "position": row.get("positionLabel") or row.get("position") or "",
                 "group": "forwards" if number <= 8 else "backs" if number <= 15 else "subs",
             }
+            if number != reported_number:
+                result["reported_shirt_number"] = reported_number
+                result["shirt_number_inferred"] = True
             if isinstance(player.get("altId"), str) and player["altId"]:
                 result["alt_id"] = player["altId"]
             for source, key in (("first", "first_name"), ("last", "last_name")):

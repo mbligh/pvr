@@ -49,6 +49,18 @@ World Rugby `summary.teams[0/1].teamList.list` holds home/away players;
 coaches and match results: those records/fields are discarded. Upcoming
 matches without a published team list are `unavailable` and retried.
 
+The RIMS summary API occasionally returns a valid match sheet with one
+duplicated shirt number and one vacant starter shirt. In this case the
+starter's stable pitch-layout `order` can resolve the missing shirt (for
+example order 5 corresponds to jersey 3; order 25 to jersey 14). The
+importer **only** corrects unambiguous conflicts where the inferred starter
+slot is vacant and the player is marked as a starter. Each correction retains
+`reported_shirt_number` (the original API number) and sets
+`shirt_number_inferred: true`. Ambiguous duplicate numbers still fail
+rather than silently losing a player. Some otherwise valid matches return
+HTTP 200 with `{"match":null,"teams":[]}` from `/summary`. Those are
+recorded as `unavailable` and retried on the normal schedule.
+
 All collections use the canonical `episodes._id` as their document `_id`.
 Documents include `fixture_id`, `series_id`, `season`, `home_team`,
 `away_team`, `home`, `away`, `status`, `source`, and `checked_at`.

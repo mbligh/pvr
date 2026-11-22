@@ -103,6 +103,73 @@ class WorldRugbyLineupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.normalize(data, EP, NOW)
 
+    def test_known_source_duplicate_shirts_resolve_from_starter_slots(self):
+        # Observed in six Nations Championship 2026 summaries.
+        # Cases: Italy/Fiji, England/NZ, Scotland/Australia,
+        # France/SA, Italy/SA, and South Africa/England (two teams).
+        cases = ((3, 18, 5), (14, 11, 25), (12, 23, 19),
+                 (2, 16, 4), (4, 19, 6), (7, 20, 11),
+                 (15, 23, 26))
+        for correct, erroneous, slot in cases:
+            with self.subTest(correct=correct, reported=erroneous):
+                data = summary()
+                rows = data["teams"][0]["teamList"]["list"]
+                starter = next(r for r in rows if r["number"] == str(correct))
+                starter["number"] = str(erroneous)
+                starter["order"] = slot
+                starter["position"] = "PR" if correct < 4 else "CE"
+                starter["player"]["isReplacement"] = False
+                result = mod.normalize(data, EP, NOW)
+                self.assertEqual(result["status"], "complete")
+                fixed = next(p for p in result["home"]
+                             if p["id"] == str(1000 + correct))
+                self.assertEqual(fixed["shirt_number"], correct)
+                self.assertEqual(fixed["reported_shirt_number"], erroneous)
+                self.assertTrue(fixed["shirt_number_inferred"])
+                self.assertEqual(len(result["home"]), 23)
+
+    def test_two_independent_duplicate_corrections(self):
+        data = summary()
+        for side, true_number, repeated, slot, player_base in (
+                (0, 7, 20, 11, 1000), (1, 15, 23, 26, 2000)):
+            rows = data["teams"][side]["teamList"]["list"]
+            player = next(row for row in rows if row["number"] == str(true_number))
+            player["number"] = str(repeated)
+            player["order"] = slot
+            player["player"]["isReplacement"] = False
+        result = mod.normalize(data, EP, NOW)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["home"][6]["shirt_number"], 7)
+        self.assertEqual(result["away"][14]["shirt_number"], 15)
+
+    def test_cannot_guess_duplicate_if_starter_slot_is_already_occupied(self):
+        data = summary()
+        rows = data["teams"][0]["teamList"]["list"]
+        row = next(x for x in rows if x["number"] == "3")
+        row["number"] = "18"
+        row["order"] = 5
+        row["player"]["isReplacement"] = False
+        # A second player already occupies inferred jersey #3, so this
+        # is not a provably resolvable single typo.
+        rows.append({
+            "number": "3", "order": 99, "position": "PR",
+            "player": {"id": "999", "name": {"display": "Extra"}},
+        })
+        with self.assertRaisesRegex(ValueError, "ambiguous duplicate"):
+            mod.normalize(data, EP, NOW)
+
+    def test_missing_match_null_response_is_unavailable(self):
+        missing = {"match": None, "teams": [], "officials": [],
+                   "motm": None, "mascots": None}
+        result = mod.normalize(missing, EP, NOW)
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(len(result["home"]), 0)
+        self.assertEqual(len(result["away"]), 0)
+        self.assertGreater(result["next_check_at"], NOW)
+        # Only the exact documented empty summary shape is accepted.
+        with self.assertRaises(ValueError):
+            mod.normalize({"match": None, "teams": [{"teamList": {}}]}, EP, NOW)
+
     def test_duplicate_number_rejected(self):
         data = summary()
         data["teams"][0]["teamList"]["list"][0]["number"] = "1"
