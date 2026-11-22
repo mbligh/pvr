@@ -237,6 +237,28 @@ class CrewTests(unittest.TestCase):
         self.assertEqual(counters["world_rugby_recently_checked"], 1)
         self.assertEqual(episodes[2]["match_officials"]["referee"], "Jess Ling")
 
+    def test_never_checked_precedes_expired_empty_backfill(self):
+        now = dt.datetime.now(UTC)
+        old = self.world_episode("2120baa6-8f19-40bc-98a3-db97e3ef9b45",
+                                 now - dt.timedelta(minutes=2))
+        old["crew_world_rugby_checked_at"] = now - dt.timedelta(days=9)
+        new = self.world_episode("3deba7fe-2095-4691-9555-fb22da23306b",
+                                 now - dt.timedelta(minutes=1))
+        db = Database([old, new])
+        seen = []
+
+        def fetch(url):
+            seen.append(url)
+            return b"<html>no appointments</html>"
+
+        with redirect_stdout(io.StringIO()):
+            crew.run(db, start=now.date(), end=now.date(),
+                     sources=("world-rugby",), apply=True, fetch=fetch,
+                     delay=0, world_delay=0, max_world=1)
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(seen[0].endswith("3deba7fe-2095-4691-9555-fb22da23306b"))
+        self.assertIn("crew_world_rugby_checked_at", new)
+
     @staticmethod
     def world_episode(uid, when):
         return {"_id": f"Rugby_Womens_WXV:world-rugby-{uid}@mbligh.github.io",

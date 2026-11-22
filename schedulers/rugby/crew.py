@@ -313,6 +313,10 @@ def run(db, *, start, end, series=None, sources=None, apply=False,
     if "world-rugby" in sources:
         candidates = [ep for ep in episodes if
                       ep.get("series_id") in WORLD_SERIES and UUID.search(ep["_id"])]
+        # Try never-checked fixtures before rechecking stale empty pages.
+        # Otherwise a large historical backfill can starve newer fixtures.
+        candidates.sort(key=lambda ep:
+                        utc_timestamp(ep.get("crew_world_rugby_checked_at")) is not None)
         blocked_until = world_cooldown(db, now) if candidates else None
         if blocked_until:
             emit({"type": "source_cooldown", "source": "world-rugby",
