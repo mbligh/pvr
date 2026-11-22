@@ -101,6 +101,11 @@ def merge(source, previous, now, tz, name):
     result.add("version", "2.0")
     result.add("x-wr-calname", name + " (No Spoilers)")
     result.add("x-wr-timezone", str(tz))
+    # Carry explicit cancellation evidence into the scheduler snapshot.
+    # Without this, removed VEVENTs cannot be distinguished from merely
+    # missing source fixtures when updating Atlas episode status.
+    for uid in cancelled:
+        result.add("x-wr-cancelled-uid", str(uid))
     # Retain timezone definitions for event DTSTART with TZID parameters.
     # The previous output may reference older timezone definitions.
     seen = set()
