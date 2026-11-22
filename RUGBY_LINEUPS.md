@@ -10,7 +10,7 @@ Examples:
 
 ```bash
 ./import_rugby_lineups                       # preview, newest 50 eligible matches across all APIs
-./import_rugby_lineups --apply --limit 0      # backfill and refresh all eligible matches
+./import_rugby_lineups --apply --limit 0      # bounded backfill with per-provider limits
 ./import_rugby_lineups --provider pwr --apply
 ./import_rugby_lineups --provider prem --fixture 294928 --apply
 ./import_rugby_lineups --provider world --fixture 1e74b48e-25fe-4ebe-beea-abb6cea010a0 --apply
@@ -19,7 +19,8 @@ Examples:
 ```
 
 Options: `--provider {all,pwr,prem,world}` (default all), `--series`,
-`--fixture`, `--season`, `--limit` (global, 0 means all), `--force`
+`--fixture`, `--season`, `--limit` (global; 0 disables only the global cap), `--max-world`,
+`--max-provider`, `--world-delay`, `--provider-delay`, `--force`
 (revisit completed or deliberately skipped matches), `--database`, and
 `--apply`. A fixture ID requires a provider or a series to disambiguate
 PWR and PREM numeric IDs. `--series` automatically chooses its provider.
@@ -89,6 +90,47 @@ fixture `episodes` nor score-free calendars/NFOs are modified. The
 existing PREM public client headers can be overridden by `PREM_APP_ID`,
 `PREM_API_KEY`, `PREM_REALM`. The database URI comes from
 `MONGODB_URI` or `~/.mongodb/pvr`.
+
+## Request budgets and HTTP throttling
+
+Unlike fixture calendars, the team-sheet importer fetches **one HTTP response
+per selected match**. This command is safe to run from cron every few hours,
+but large historical backfills should not burst requests.
+
+- Normal selection skips completed team sheets and fixtures more than three
+  days in the future. Partial/unavailable sheets use age-based retries:
+  every 3 hours near kickoff, daily for the following two weeks, then every
+  30 days. The automatic PWR history cutoff is July 2023.
+- By default, each invocation fetches **at most 8 World Rugby match summaries**,
+  **12 PWR lineups**, and **12 PREM lineups**, in addition to the global
+  \`--limit 50\`. Limits are applied per provider **before** selecting the
+  global limit, so one provider cannot consume all the slots.
+- Requests are sequential and paced **at least 10 seconds apart for World
+  Rugby** and **3 seconds for PWR/PREM**, measured between the starts of
+  successive requests to the *same* provider. A single run may take several
+  minutes. Adjust with \`--world-delay\` / \`--provider-delay\`.
+- A provider's HTTP **429**, **403**, or **503** immediately stops further
+  requests to **that provider** for the remainder of the run. Other providers
+  continue. The importer honors \`Retry-After\` (seconds or an HTTP date),
+  subject to a minimum cooldown of **6 hours on 429**, **24 hours on 403**,
+  and **1 hour on 503**.
+- Cooldown deadlines persist in MongoDB Atlas \`metadata_state\` as
+  \`rugby_lineups_world\`, \`rugby_lineups_pwr\`, or \`rugby_lineups_prem\`.
+  Subsequent cron runs avoid the blocked provider. \`--force\` does not
+  bypass these server-requested cooldowns.
+- PREM wraps its underlying HTTP error in \`RuntimeError\`; the common
+  importer inspects the cause to apply the same throttling policy.
+- **Preview does not make HTTP requests or modify Atlas**. Other HTTP
+  errors are reported without inventing lineups and without creating a
+  provider-wide cooldown. Existing completed team sheets remain untouched.
+
+\`--limit 0\` removes only the global cap; it **no longer means unbounded
+requests**. Raise \`--max-world\` or \`--max-provider\` explicitly when
+conducting a controlled backfill.
+
+For a more cautious backfill:
+
+    ./import_rugby_lineups --apply --limit 0 --max-world 4 --world-delay 20
 
 ## Optional cron
 

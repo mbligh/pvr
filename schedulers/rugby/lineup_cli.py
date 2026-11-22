@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 import uuid
 
-from schedulers.rugby import prem_lineups, pwr_lineups, world_rugby_lineups
+from schedulers.rugby import prem_lineups, pwr_lineups, world_rugby_lineups, lineup_traffic
 
 UTC = dt.timezone.utc
 PROVIDERS = {
@@ -65,8 +65,8 @@ def date_sort(episode):
 
 def select_candidates(database, *, provider="all", series=None,
                       fixture=None, season=None, force=False, limit=50,
-                      now=None):
-    """Plan across providers; limit is global, not one quota per provider."""
+                      now=None, provider_limits=None):
+    """Plan across providers; apply provider budgets before the global cap."""
     now = now or dt.datetime.now(UTC)
     chosen = []
     for name in active_providers(provider, series, fixture):
@@ -88,7 +88,21 @@ def select_candidates(database, *, provider="all", series=None,
     chosen.sort(
         key=lambda row: (date_sort(row["episode"]), row["episode"]["_id"]),
         reverse=True)
-    return chosen[:limit] if limit else chosen
+    if provider_limits is None:
+        return chosen[:limit] if limit else chosen
+    # When all the newest fixtures belong to World Rugby, its cap must not
+    # prevent otherwise eligible PWR or PREM matches from being selected.
+    filtered = []
+    counts = {provider: 0 for provider in PROVIDERS}
+    for row in chosen:
+        name = row["provider"]
+        if counts[name] >= provider_limits[name]:
+            continue
+        filtered.append(row)
+        counts[name] += 1
+        if limit and len(filtered) >= limit:
+            break
+    return filtered
 
 
 def main(argv=None):
@@ -105,11 +119,26 @@ def main(argv=None):
     parser.add_argument("--fixture", help="Provider match ID (numeric or UUID)")
     parser.add_argument("--season", type=int, help="PVR episode season")
     parser.add_argument("--limit", type=int, default=50,
-                        help="Maximum total checks (0 = all)")
+                        help="Global limit (0 = no global cap; provider caps still apply)")
+    parser.add_argument("--max-world", type=int,
+                        default=lineup_traffic.DEFAULT_WORLD_LIMIT,
+                        help="Max World Rugby requests per run (default 8)")
+    parser.add_argument("--max-provider", type=int,
+                        default=lineup_traffic.DEFAULT_OTHER_LIMIT,
+                        help="Max PWR and PREM requests per provider/run (default 12)")
+    parser.add_argument("--world-delay", type=float,
+                        default=lineup_traffic.DEFAULT_WORLD_DELAY,
+                        help="Minimum interval between World Rugby requests (default 10s)")
+    parser.add_argument("--provider-delay", type=float,
+                        default=lineup_traffic.DEFAULT_OTHER_DELAY,
+                        help="Minimum interval between PWR/PREM requests (default 3s)")
     parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
     args = parser.parse_args(argv)
-    if args.limit < 0 or args.season is not None and args.season < 1900:
-        parser.error("Invalid limit or season")
+    if (args.limit < 0 or (args.season is not None and args.season < 1900)
+            or args.max_world < 1 or args.max_provider < 1
+            or not 0 <= args.world_delay <= 600
+            or not 0 <= args.provider_delay <= 600):
+        parser.error("Invalid limits, delays or season")
     try:
         for provider in active_providers(args.provider, args.series, args.fixture):
             parsed_fixture(provider, args.fixture)
@@ -127,39 +156,15 @@ def main(argv=None):
         parser.error("MongoDB URI is empty")
     from pymongo import MongoClient
     now = dt.datetime.now(UTC)
-    errors = 0
     with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+        database = client[args.database]
+        limits = {"world": args.max_world, "pwr": args.max_provider,
+                  "prem": args.max_provider}
         selected = select_candidates(
-            client[args.database], provider=args.provider, series=args.series,
+            database, provider=args.provider, series=args.series,
             fixture=args.fixture, season=args.season, force=args.force,
-            limit=args.limit, now=now)
-        for row in selected:
-            provider = row["provider"]
-            adapter = row["module"]
-            episode = row["episode"]
-            fixture = row["fixture_id"]
-            if not args.apply:
-                print(json.dumps({
-                    "provider": provider, "series_id": episode["series_id"],
-                    "fixture_id": fixture, "episode_id": episode["_id"],
-                    "preview": True,
-                }))
-                continue
-            try:
-                record = adapter.normalize(adapter.fetch(fixture), episode, now=now)
-                updated = adapter.upsert(client[args.database], record)
-                print(json.dumps({
-                    "provider": provider, "series_id": episode["series_id"],
-                    "fixture_id": fixture, "episode_id": episode["_id"],
-                    "status": record["status"],
-                    "home": len(record["home"]), "away": len(record["away"]),
-                    "updated": updated,
-                }))
-            except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
-                errors += 1
-                print(f"{provider} lineup {fixture}: {exc}", file=sys.stderr)
-    print(json.dumps({
-        "candidates": len(selected), "preview": not args.apply,
-        "errors": errors,
-    }), file=sys.stderr)
-    return 1 if errors else 0
+            limit=args.limit, now=now, provider_limits=limits)
+        return lineup_traffic.process(
+            database, selected, apply=args.apply,
+            delays={"world": args.world_delay, "pwr": args.provider_delay,
+                    "prem": args.provider_delay})
