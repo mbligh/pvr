@@ -27,6 +27,9 @@ import filter as calendar_filter  # noqa: E402
 import plex_nfo  # noqa: E402
 from pwr import fetch_pwr  # noqa: E402
 from world_rugby import fetch_world_rugby  # noqa: E402
+from schedulers.rugby.wxv import (
+    WOMENS, WXV, split_snapshot, legacy_id, validate_migration,
+)
 
 LEGACY_BASE = "https://raw.githubusercontent.com/mbligh/calendar/main/docs/"
 UTC = dt.timezone.utc
@@ -83,6 +86,11 @@ def build_catalogue(db, config, now, refresh):
 
     prior_manifest = old_manifest(db)
     snapshots = {}
+    # First WXV migration must use already accepted score-free events.
+    # The old women's calendar includes WXV; on subsequent runs the two
+    # Atlas snapshots are separate. Never ingest old results from an API.
+    original_womens = read_snapshot(db, WOMENS)
+    intl_previous, wxv_seed = split_snapshot(original_womens)
     zone = ZoneInfo(config.get("timezone", "UTC"))
     with tempfile.TemporaryDirectory(prefix="pvr-rugby-") as temp:
         output = pathlib.Path(temp)
@@ -90,7 +98,15 @@ def build_catalogue(db, config, now, refresh):
         docs.mkdir()
         for entry in config["calendars"]:
             slug = entry["slug"]
-            previous = read_snapshot(db, slug)
+            if slug == WOMENS:
+                previous = intl_previous
+            elif slug == WXV:
+                current = (db.calendar_snapshots.find_one({"_id": WXV})
+                           if db is not None else None)
+                previous = (Calendar.from_ical(current["ics"].encode("utf-8"))
+                            if current else wxv_seed)
+            else:
+                previous = read_snapshot(db, slug)
             if refresh:
                 source = fetch_calendar(entry, now)
                 merged = calendar_filter.merge(source, previous, now, zone, entry["name"])
@@ -125,6 +141,7 @@ def build_catalogue(db, config, now, refresh):
             "nfo_path": fixture["nfo"],
             "external_ids": {"rugbypass": fixture.get("rugbypass_id")},
             "metadata_provider": "calendar/rugby",
+            "status": "scheduled",
         }
         if fixture["nfo"]:
             record["nfo"] = output_files[fixture["nfo"]].decode("utf-8")
@@ -172,6 +189,7 @@ def build_catalogue(db, config, now, refresh):
                 "nfo_path": None,
                 "external_ids": {},
                 "metadata_provider": "calendar/rugby",
+                "status": "scheduled",
             }
             episodes.append(episode)
             known_ids.add(fixture_id)
@@ -183,6 +201,22 @@ def build_catalogue(db, config, now, refresh):
 def persist(db, snapshots, manifest, episodes, now):
     from pymongo import UpdateOne
 
+    # Preflight *before any writes*: if recordings exist in the old Intl
+    # directory, we cannot safely reassign them to WXV without moving
+    # their physical files. Keep all old WXV records as disabled history.
+    targets = [ep for ep in episodes if ep["series_id"] == WXV]
+    old_ids = [legacy_id(ep["_id"]) for ep in targets]
+    previous = list(db.episodes.find({"_id": {"$in": old_ids}})) if old_ids else []
+    media = list(db.files.find({"episode_id": {"$in": old_ids}})) if previous else []
+    validate_migration(episodes, previous, files=media)
+    new_ids = [ep["_id"] for ep in targets]
+    already = list(db.episodes.find({"_id": {"$in": new_ids}})) if new_ids else []
+    for doc in already:
+        if (doc.get("series_id") != WXV or
+                doc.get("nfo_path") not in (None,
+                    next(ep["nfo_path"] for ep in targets if ep["_id"] == doc["_id"]))):
+            raise ValueError(f"Conflicting existing WXV episode {doc['_id']}")
+
     # Never delete merely missing fixtures or existing acquisition state.
     operations = [
         UpdateOne({"_id": episode["_id"]}, {
@@ -193,8 +227,32 @@ def persist(db, snapshots, manifest, episodes, now):
         for episode in episodes
     ]
     db.episodes.bulk_write(operations, ordered=False)
-    # Commit snapshot state only after the episode records have been stored.
+    for old in previous:
+        replaced = WXV + ":" + old["_id"][len(WOMENS) + 1:]
+        # Use a tombstone rather than deleting an episode that has appeared
+        # in previous published manifests or third-party calendars.
+        db.episodes.update_one(
+            {"_id": old["_id"], "series_id": WOMENS},
+            {"$set": {"status": "superseded", "superseded_by": replaced,
+                      "metadata_updated_at": now}})
+        # Preserve release association while changing the canonical episode.
+        db.releases.update_many(
+            {"episode_id": old["_id"]},
+            {"$set": {"episode_id": replaced}})
+        db.jobs.update_many(
+            {"episode_id": old["_id"]},
+            {"$set": {"episode_id": replaced}})
+    # Explicitly cancelled events are retained as historical records but
+    # marked cancelled for the calendar publisher and acquisition worker.
     for slug, ics in snapshots.items():
+        calendar = Calendar.from_ical(ics.encode("utf-8"))
+        cancelled = calendar.get("x-wr-cancelled-uid", [])
+        if not isinstance(cancelled, list):
+            cancelled = [cancelled]
+        for uid in cancelled:
+            db.episodes.update_many(
+                {"_id": slug + ":" + str(uid), "series_id": slug},
+                {"$set": {"status": "cancelled", "metadata_updated_at": now}})
         db.calendar_snapshots.update_one({"_id": slug}, {
             "$set": {"ics": ics, "updated_at": now}
         }, upsert=True)
