@@ -572,10 +572,9 @@ conflict checks; only --apply performs writes.
 
 ## Acquisition CLI naming and shared argument conventions (2026-11-21)
 
-acquire_rugby is the primary rugby acquisition worker (formerly
-acquire_missing). The original executable is retained as a
-compatibility shim, so existing host cron jobs keep running. Both
-acquire_rugby and acquire_f1 expose --season / --year
+acquire_rugby is the rugby acquisition worker; the previous
+compatibility executable was retired after the operator updated the
+host cron jobs. Both acquire_rugby and acquire_f1 expose --season / --year
 interchangeably; rugby additionally supports F1-style --round and
 --episode filters in its read-only Atlas planner. Both expose
 --dry-run for preview (already the default) and --apply for writes,

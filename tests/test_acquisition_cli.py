@@ -1,4 +1,4 @@
-"""Shared rugby/F1 acquisition CLI interface and legacy compatibility."""
+"""Shared rugby/F1 acquisition CLI interface."""
 import contextlib
 import importlib.machinery
 import importlib.util
@@ -23,7 +23,6 @@ def load(name, script):
 
 rugby = load("pvr_acquire_rugby_cli", "acquire_rugby")
 f1 = load("pvr_acquire_f1_cli", "acquire_f1")
-old = load("pvr_acquire_missing_cli", "acquire_missing")
 
 
 class AcquisitionCLITests(unittest.TestCase):
@@ -62,14 +61,16 @@ class AcquisitionCLITests(unittest.TestCase):
                     worker.main(["--apply", "--dry-run"])
                 self.assertEqual(caught.exception.code, 2)
 
-    def test_old_name_exposes_same_worker_and_help(self):
-        self.assertEqual(old.run.__code__.co_code, rugby.run.__code__.co_code)
-        self.assertTrue(callable(old.main))
-        result = subprocess.run([sys.executable, str(ROOT / "acquire_missing"), "--help"],
-                                cwd=ROOT, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--season", result.stdout)
-        self.assertIn("--round", result.stdout)
+    def test_primary_workers_expose_consistent_cli_help(self):
+        for name in ("acquire_rugby", "acquire_f1"):
+            with self.subTest(worker=name):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / name), "--help"],
+                    cwd=ROOT, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for flag in ("--season", "--year", "--round", "--episode",
+                             "--limit", "--apply", "--dry-run"):
+                    self.assertIn(flag, result.stdout)
 
 
 if __name__ == "__main__":

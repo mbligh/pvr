@@ -11,9 +11,9 @@ Two independent preview-first tools work together:
   properties, and canonically files the winner with the NFO stored in Atlas.
   It is limited to one episode per run unless `--limit` is increased.
 
-The primary rugby worker is now **./acquire_rugby**; the older
-**./acquire_missing** executable remains a compatibility alias for existing
-cron jobs and scripts.
+Use **./acquire_rugby** for rugby acquisition; the previous
+acquisition command has been retired now that its cron callers use
+the new name.
 
 Both workers accept --season (with --year as an alias), --round,
 --episode, --limit, --min-age-hours, --retry-after-hours,
