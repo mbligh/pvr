@@ -728,5 +728,6 @@ NFO/numbering manifest without them, preserving episode numbers for
 the remaining men's internationals (no compaction).
 Before removing stale duplicate Atlas episodes, importer.persist
 rejects any that have linked releases, jobs or files. A one-time
-backup is retained in the pvr_cleanup_backups Atlas collection.
+per-event backup (episode record, VEVENT and prior manifest entry)
+is retained in the pvr_cleanup_backups Atlas collection.
 No downloaded media is moved or deleted. See RUGBY_IMPORT.md.

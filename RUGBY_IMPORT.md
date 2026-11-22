@@ -271,8 +271,10 @@ Related media history would fail the import before any changes. The
 generated rugby manifest and the accepted Men's Intl calendar snapshot
 also exclude these entries. No downloaded media is moved or deleted.
 
-A one-time backup of the pre-cleanup episode documents, calendar
-snapshot and manifest is stored in Atlas `pvr_cleanup_backups`.
+A one-time backup of the 24 removed episode documents, their exact
+original ICS VEVENT components, and their prior manifest fixture records
+is stored in Atlas `pvr_cleanup_backups` (one archive record per
+removed event). The remaining calendar and manifest entries were preserved.
 
 Use `./import_rugby --no-refresh` to preview the stored calendar,
 or `./import_rugby --no-refresh --apply` to persist without
