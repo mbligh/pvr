@@ -53,8 +53,13 @@ The RIMS summary API occasionally returns a valid match sheet with one
 duplicated shirt number and one vacant starter shirt. In this case the
 starter's stable pitch-layout `order` can resolve the missing shirt (for
 example order 5 corresponds to jersey 3; order 25 to jersey 14). The
-importer **only** corrects unambiguous conflicts where the inferred starter
-slot is vacant and the player is marked as a starter. Each correction retains
+importer **only** corrects unambiguous conflicts where an inferred starter
+slot is vacant, potentially after a chain of other incorrectly numbered
+starters (for example South Africa vs England in July 2026: reported
+20 -> starter 7, whose existing occupant should instead be starter 4).
+Each inferred player must have a recognized starter slot, and a chain must
+terminate at an empty shirt number; genuine ambiguity still fails.
+Each correction retains
 `reported_shirt_number` (the original API number) and sets
 `shirt_number_inferred: true`. Ambiguous duplicate numbers still fail
 rather than silently losing a player. Some otherwise valid matches return

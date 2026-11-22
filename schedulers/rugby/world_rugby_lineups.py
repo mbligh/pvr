@@ -89,25 +89,55 @@ def inferred_shirt_overrides(roster, match_id, side):
         by_number.setdefault(int(raw), []).append((index, row))
 
     corrections = {}
-    used = set(by_number)
-    for shirt, entries in list(by_number.items()):
+    targets = set()
+
+    def relocate(index, trail):
+        """Follow occupied starter shirts to an unoccupied pitch slot."""
+        if index in trail:
+            raise ValueError(
+                f"World Rugby {match_id}: cyclic duplicate {side} shirts")
+        if index in corrections:
+            return
+
+        row = roster[index]
+        reported = int(row["number"])
+        correct = STARTER_SHIRT_BY_ORDER.get(row.get("order"))
+        player = row.get("player") or {}
+        if (correct is None or correct == reported or
+                row.get("position") == "Rep" or
+                player.get("isReplacement") is not False or
+                correct in targets):
+            raise ValueError(
+                f"World Rugby {match_id}: ambiguous duplicate {side} shirt {reported!r}")
+
+        owners = by_number.get(correct, [])
+        if len(owners) > 1:
+            raise ValueError(
+                f"World Rugby {match_id}: ambiguous duplicate {side} shirt {correct!r}")
+        if owners:
+            # That apparently occupied shirt must itself be an incorrectly
+            # numbered starter with a free destination further down the
+            # chain. Never overwrite a correctly assigned player.
+            relocate(owners[0][0], trail | {index})
+
+        corrections[index] = correct
+        targets.add(correct)
+
+    for shirt, entries in by_number.items():
         if len(entries) <= 1:
             continue
         candidates = []
         for index, row in entries:
             expected = STARTER_SHIRT_BY_ORDER.get(row.get("order"))
             player = row.get("player") or {}
-            if (expected is not None and expected != shirt
-                    and expected not in used
-                    and row.get("position") != "Rep"
-                    and player.get("isReplacement") is False):
-                candidates.append((index, expected))
+            if (expected is not None and expected != shirt and
+                    row.get("position") != "Rep" and
+                    player.get("isReplacement") is False):
+                candidates.append(index)
         if len(candidates) != 1:
             raise ValueError(
                 f"World Rugby {match_id}: ambiguous duplicate {side} shirt {shirt!r}")
-        index, correct = candidates[0]
-        corrections[index] = correct
-        used.add(correct)
+        relocate(candidates[0], set())
     return corrections
 
 

@@ -143,6 +143,64 @@ class WorldRugbyLineupTests(unittest.TestCase):
         self.assertEqual(result["home"][6]["shirt_number"], 7)
         self.assertEqual(result["away"][14]["shirt_number"], 15)
 
+    def test_chained_duplicate_conflict_south_africa_england(self):
+        # RIMS summary 572577b5-5e95-4ad5-8fce-25da14ed11e4:
+        # du Toit: reported 7, order 6 -> actual 4;
+        # Hanekom: reported 20, order 11 -> actual 7;
+        # Dixon: correctly assigned 20, replacement.
+        data = summary()
+        rows = data["teams"][0]["teamList"]["list"]
+        lock = next(r for r in rows if r["number"] == "4")
+        lock["number"] = "7"
+        lock["order"] = 6
+        lock["position"] = "SR"
+        lock["player"]["isReplacement"] = False
+        flanker = next(r for r in rows if r["number"] == "7" and r is not lock)
+        flanker["number"] = "20"
+        flanker["order"] = 11
+        flanker["position"] = "FL"
+        flanker["player"]["isReplacement"] = False
+        substitute = next(r for r in rows if r["number"] == "20" and r is not flanker)
+        substitute["position"] = "Rep"
+        substitute["player"]["isReplacement"] = True
+
+        record = mod.normalize(data, EP, NOW)
+        self.assertEqual(record["status"], "complete")
+        self.assertEqual(len(record["home"]), 23)
+        self.assertEqual({p["shirt_number"] for p in record["home"]},
+                         set(range(1, 24)))
+        by_id = {p["id"]: p for p in record["home"]}
+        self.assertEqual(by_id["1004"]["shirt_number"], 4)
+        self.assertEqual(by_id["1004"]["reported_shirt_number"], 7)
+        self.assertTrue(by_id["1004"]["shirt_number_inferred"])
+        self.assertEqual(by_id["1007"]["shirt_number"], 7)
+        self.assertEqual(by_id["1007"]["reported_shirt_number"], 20)
+        self.assertEqual(by_id["1020"]["shirt_number"], 20)
+        self.assertNotIn("reported_shirt_number", by_id["1020"])
+
+    def test_chained_duplicate_rejects_occupied_final_shirt(self):
+        data = summary()
+        rows = data["teams"][0]["teamList"]["list"]
+        lock = next(r for r in rows if r["number"] == "4")
+        lock["number"] = "7"
+        lock["order"] = 6
+        lock["position"] = "SR"
+        lock["player"]["isReplacement"] = False
+        flanker = next(r for r in rows if r["number"] == "7" and r is not lock)
+        flanker["number"] = "20"
+        flanker["order"] = 11
+        flanker["position"] = "FL"
+        flanker["player"]["isReplacement"] = False
+        rows.append({
+            "number": "4", "order": 99, "position": "Rep",
+            "player": {
+                "id": "9999", "name": {"display": "Unrelated extra"},
+                "isReplacement": True,
+            },
+        })
+        with self.assertRaisesRegex(ValueError, "ambiguous duplicate"):
+            mod.normalize(data, EP, NOW)
+
     def test_cannot_guess_duplicate_if_starter_slot_is_already_occupied(self):
         data = summary()
         rows = data["teams"][0]["teamList"]["list"]
