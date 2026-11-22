@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Optional cron entry point for F1 discovery, indexing and acquisition.
 
-Default: preview currently indexed episodes (no Reddit or Atlas writes).
---apply: refresh teletz, import verified observations, and acquire at most
---limit recent F1 episodes. Abort if discovery/indexing fails. This is a
+Default: preview polling state and currently indexed F1 episodes, read-only.
+--apply: schedule-aware teletz refresh with age-based backoff and daily
+fallback, then acquire up to --limit recent missing F1 sessions.
+Abort acquisition if discovery/indexing fails. This is a
 one-shot command; no schedules are installed by PVR.
 """
 import argparse
@@ -15,6 +16,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+
+from orchestration import polling
 
 ROOT = Path(__file__).resolve().parent
 
@@ -40,58 +43,93 @@ def command(script, *args):
 
 def run(*, apply=False, pages=3, year=2026, limit=1,
         max_checks=8, recent_hours=120, incoming_root="/data/incoming",
-        skip_discovery=False, execute=subprocess.run, output=sys.stdout):
+        sports_root="/data/sports", database="pvr",
+        skip_discovery=False, force_discovery=False,
+        poll_db=None, now=None, execute=subprocess.run, output=sys.stdout):
+    if skip_discovery and force_discovery:
+        raise ValueError("--skip-discovery conflicts with --force-discovery")
     args = ["--year", str(year), "--limit", str(limit),
             "--max-checks", str(max_checks), "--recent-hours", str(recent_hours),
-            "--incoming-root", str(incoming_root)]
-    if not apply:
-        result = execute(command("acquire_f1", *args),
-                         capture_output=True, text=True, check=False)
-        if result.stdout:
-            print(result.stdout, end="", file=output)
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
-        return result.returncode
+            "--incoming-root", str(incoming_root), "--sports-root", str(sports_root),
+            "--database", str(database)]
 
-    with lock_run(incoming_root):
-        if not skip_discovery:
-            discovery = execute(
-                command("indexers/reddit_teletz", "--pages", str(pages),
-                        "--bundle"), capture_output=True, text=True, check=False)
-            if discovery.stderr:
-                print(discovery.stderr, end="", file=sys.stderr)
-            if discovery.returncode:
-                raise RuntimeError("Reddit discovery failed; refusing acquisition")
-            if not discovery.stdout.strip():
-                raise RuntimeError("Reddit discovery returned no verified comments; refusing acquisition")
-            imported = execute(
-                command("import_teletz", "--apply"), input=discovery.stdout,
-                capture_output=True, text=True, check=False)
-            if imported.stderr:
-                print(imported.stderr, end="", file=sys.stderr)
-            if imported.returncode:
-                raise RuntimeError("Reddit importer failed; refusing acquisition")
-            print(imported.stdout.strip(), file=sys.stderr)
-        result = execute(command("acquire_f1", *args, "--apply"),
-                         capture_output=True, text=True, check=False)
+    def invoke(script, *parameters, **kwargs):
+        result = execute(command(script, *parameters), capture_output=True,
+                         text=True, check=False, **kwargs)
         if result.stdout:
             print(result.stdout, end="", file=output)
         if result.stderr:
             print(result.stderr, end="", file=sys.stderr)
-        return result.returncode
+        return result
+
+    def work():
+        if poll_db is None:
+            scope = polling.database_connection(database)
+        else:
+            scope = contextlib.nullcontext(poll_db)
+        with scope as connection:
+            db = connection[database] if poll_db is None else connection
+            decisions, missing = polling.plan(
+                db, sources=("reddit-teletz",), now=now,
+                sports_root=sports_root, season=None)
+            print(json.dumps({"type": "polling", "sources":
+                              polling.status_summary(decisions)}, sort_keys=True),
+                  file=output)
+            if apply and not skip_discovery and (
+                    decisions["reddit-teletz"]["due"] or force_discovery):
+                try:
+                    discovery = invoke("indexers/reddit_teletz", "--pages",
+                                       str(pages), "--bundle")
+                    if discovery.returncode:
+                        raise RuntimeError("Reddit discovery failed; refusing acquisition")
+                    # An empty catalogue is a legitimate successful check;
+                    # do not keep hammering Reddit when nothing was posted.
+                    if discovery.stdout.strip():
+                        imported = invoke("import_teletz", "--apply",
+                                          input=discovery.stdout)
+                        if imported.returncode:
+                            raise RuntimeError("Reddit importer failed; refusing acquisition")
+                    polling.record_success(db, "reddit-teletz", now=now)
+                except Exception:
+                    polling.record_failure(db, "reddit-teletz", now=now)
+                    raise
+
+            # No finished, missing episodes: no acquisition worker necessary.
+            recent_missing = any(
+                (polling.aware(now) or dt.datetime.now(dt.timezone.utc)) -
+                event["finished"] <= dt.timedelta(hours=recent_hours)
+                for event in missing
+            )
+            if not recent_missing:
+                return 0
+            result = invoke("acquire_f1", *args, *(["--apply"] if apply else []))
+            return result.returncode
+
+    if apply:
+        with lock_run(incoming_root):
+            return work()
+    return work()
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true",
+                      help="Apply due discovery and acquisition (default preview)")
+    mode.add_argument("--dry-run", action="store_true",
+                      help="Read-only preview (already the default)")
     parser.add_argument("--pages", type=int, default=3,
                         help="Reddit user profile pages to revisit (default 3)")
-    parser.add_argument("--year", type=int,
+    parser.add_argument("--season", "--year", dest="year", type=int,
                         default=dt.datetime.now(dt.timezone.utc).year)
     parser.add_argument("--limit", type=int, default=1)
     parser.add_argument("--max-checks", type=int, default=8)
     parser.add_argument("--recent-hours", type=float, default=120)
     parser.add_argument("--incoming-root", default="/data/incoming")
+    parser.add_argument("--sports-root", default="/data/sports")
+    parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
+    parser.add_argument("--force-discovery", action="store_true",
+                        help="Ignore successful poll cooldown (manual override)")
     parser.add_argument("--skip-discovery", action="store_true",
                         help="Use releases already indexed; no Reddit fetch")
     args = parser.parse_args(argv)
@@ -105,6 +143,8 @@ def main(argv=None):
                    limit=args.limit, max_checks=args.max_checks,
                    recent_hours=args.recent_hours,
                    incoming_root=args.incoming_root,
+                   sports_root=args.sports_root, database=args.database,
+                   force_discovery=args.force_discovery,
                    skip_discovery=args.skip_discovery)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"F1 run: {exc}", file=sys.stderr)

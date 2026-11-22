@@ -142,8 +142,8 @@ Preview fetches current source listings but **does not match new releases
 against Atlas until --apply**. Existing links are never overwritten by
 matching. Unlike a full historical archive, the RugbyPass listing only
 covers currently featured/accessible sections and iPlayer only returns
-currently listed episodes. The worker `run_rugby --apply` can
-invoke this exact procedure before scheduling its bounded downloads.
+currently listed episodes. The worker `run_rugby --apply` checks Atlas's per-source poll schedule
+before invoking source discovery and bounded downloads. See POLLING.md.
 See [ACQUISITION.md](ACQUISITION.md).
 
 ## International RugbyPass matching

@@ -1,5 +1,6 @@
 """run_rugby orchestration: read-only preview, discovery, fail-closed acquisition."""
 import contextlib
+import datetime as dt
 import importlib.machinery
 import importlib.util
 import io
@@ -9,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader("pvr_run_rugby_tests", str(ROOT / "run_rugby"))
@@ -33,11 +34,15 @@ class RugbyRunTests(unittest.TestCase):
         self.calls = []
         self.stdout = io.StringIO()
         self.stderr = io.StringIO()
+        self.db = MagicMock()
         self.discovery = json.dumps({
             "mode": "apply",
-            "sources": ["bbc", "youtube", "rugbypass"],
-            "total_releases": 5
+            "sources": ["bbc"], "total_releases": 5
         })
+        self.finished = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
+        self.planned_by_series = {}
+        self.due_by_source = {}
+        self.missing = None
 
     def execute(self, cmd, **kwargs):
         self.calls.append((cmd, kwargs))
@@ -45,12 +50,38 @@ class RugbyRunTests(unittest.TestCase):
         self.assertTrue(kwargs["text"])
         self.assertFalse(kwargs["check"])
         if "refresh_releases" in cmd[1]:
-            return Result(stdout=self.discovery + "\n")
-        return Result(stdout='{"mode": "apply"}\n')
+            source = cmd[cmd.index("--source") + 1]
+            report = json.loads(self.discovery)
+            report["sources"] = [source]
+            return Result(stdout=json.dumps(report) + "\n")
+        series = cmd[cmd.index("--series") + 1]
+        count = self.planned_by_series.get(series, 1)
+        return Result(stdout='{"mode": "apply"}\n',
+                      stderr=json.dumps({"planned": count}) + "\n")
 
     def invoke(self, **kwargs):
-        return runner.run(incoming_root=self.incoming, execute=self.execute,
-                          output=self.stdout, error=self.stderr, **kwargs)
+        selected = kwargs.get("series") or "Rugby_Womens_PWR"
+        source_values = kwargs.get("sources") or (
+            ["bbc", "youtube", "rugbypass"] if selected == "Rugby_Womens_PWR"
+            else ["rugbypass"]
+        )
+        def decision(db, *, sources, now=None, **other):
+            pending = (self.missing if self.missing is not None else
+                       [{"series_id": selected, "episode_id": selected + ":fixture",
+                         "finished": self.finished}])
+            statuses = {
+                src: {"due": self.due_by_source.get(src, True),
+                      "reason": "due", "missing": sum(
+                          ev["series_id"] in runner.polling.SOURCE_SERIES[src]
+                          for ev in pending),
+                      "interval_minutes": 5, "next_at": self.finished}
+                for src in sources
+            }
+            return statuses, pending
+        with patch.object(runner.polling, "plan", side_effect=decision):
+            return runner.run(incoming_root=self.incoming, execute=self.execute,
+                              poll_db=self.db, output=self.stdout,
+                              error=self.stderr, **kwargs)
 
     def test_preview_calls_only_acquisition_with_no_apply(self):
         self.assertEqual(self.invoke(), 0)
@@ -68,12 +99,13 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual(self.invoke(apply=True, limit=2, series="Rugby_Womens_PWR",
                                   sources=["bbc", "youtube"]), 0)
         self.assertEqual([Path(x[0][1]).name for x in self.calls],
-                         ["refresh_releases", "acquire_rugby"])
-        # Refresh consumes the same provider filter as the acquisition stage.
-        refresh = self.calls[0][0]
-        self.assertIn("--apply", refresh)
-        self.assertEqual(refresh.count("--source"), 2)
-        acquisition = self.calls[1][0]
+                         ["refresh_releases", "refresh_releases", "acquire_rugby"])
+        # Each source is now independently throttled and recorded.
+        self.assertTrue(all("--apply" in call[0] for call in self.calls))
+        self.assertEqual(
+            [call[0][call[0].index("--source") + 1] for call in self.calls[:2]],
+            ["bbc", "youtube"])
+        acquisition = self.calls[-1][0]
         self.assertIn("--apply", acquisition)
         self.assertEqual(acquisition[acquisition.index("--limit") + 1], "2")
         self.assertEqual(acquisition.count("--source"), 2)
@@ -93,16 +125,18 @@ class RugbyRunTests(unittest.TestCase):
             self.invoke(apply=True)
         self.assertEqual(len(self.calls), 1)
 
-    def test_empty_discovery_fails_closed(self):
-        for body in ('{"mode": "apply", "sources": ["bbc", "youtube", "rugbypass"], "total_releases": 0}',
-                     "invalid JSON",
-                     '{"mode": "preview", "sources": ["bbc", "youtube", "rugbypass"], "total_releases": 5}'):
+    def test_malformed_discovery_fails_closed_but_valid_empty_is_success(self):
+        for body in ("invalid JSON", '{"mode": "preview", "sources": ["bbc"], "total_releases": 5}'):
             with self.subTest(body=body):
                 self.calls.clear()
                 self.discovery = body
-                with self.assertRaisesRegex(RuntimeError, "no verified releases"):
+                with self.assertRaises(Exception):
                     self.invoke(apply=True)
                 self.assertEqual(len(self.calls), 1)
+        self.calls.clear()
+        self.discovery = '{"mode": "apply", "sources": ["bbc"], "total_releases": 0}'
+        self.assertEqual(self.invoke(apply=True, sources=["bbc"]), 0)
+        self.assertEqual(len(self.calls), 2)
 
     def test_national_series_refresh_is_only_rugbypass(self):
         self.discovery = json.dumps({
@@ -144,6 +178,52 @@ class RugbyRunTests(unittest.TestCase):
                     pass
         with runner.lock_run(self.incoming):
             pass
+
+    def test_per_indexer_cooldown_skips_only_unneeded_providers(self):
+        self.due_by_source = {"bbc": False, "youtube": False, "rugbypass": True}
+        self.assertEqual(self.invoke(apply=True), 0)
+        self.assertEqual([Path(x[0][1]).name for x in self.calls],
+                         ["refresh_releases", "acquire_rugby"])
+        self.assertEqual(self.calls[0][0][self.calls[0][0].index("--source") + 1],
+                         "rugbypass")
+        self.assertEqual(self.db.indexer_poll_state.update_one.call_count, 1)
+
+    def test_no_missing_and_all_sources_fresh_exits_without_work(self):
+        self.missing = []
+        self.due_by_source = dict.fromkeys(("bbc", "youtube", "rugbypass"), False)
+        self.assertEqual(self.invoke(apply=True), 0)
+        self.assertEqual(self.calls, [])
+        self.db.indexer_poll_state.update_one.assert_not_called()
+
+    def test_daily_fallback_runs_indexers_without_missing_fixtures(self):
+        self.missing = []
+        self.assertEqual(self.invoke(apply=True), 0)
+        self.assertEqual(
+            [Path(x[0][1]).name for x in self.calls],
+            ["refresh_releases", "refresh_releases", "refresh_releases"])
+        self.assertEqual(self.db.indexer_poll_state.update_one.call_count, 3)
+
+    def test_auto_targets_all_rugby_series_with_global_episode_budget(self):
+        recent = self.finished + dt.timedelta(minutes=10)
+        self.missing = [
+            {"series_id": "Rugby_Womens_PWR", "episode_id": "pwr:1",
+             "finished": self.finished},
+            {"series_id": "Rugby_Mens_Intl", "episode_id": "intl:1",
+             "finished": recent},
+        ]
+        self.planned_by_series["Rugby_Mens_Intl"] = 0
+        self.planned_by_series["Rugby_Womens_PWR"] = 1
+        self.assertEqual(self.invoke(apply=True, skip_discovery=True, limit=1), 0)
+        self.assertEqual(
+            [c[0][c[0].index("--series") + 1] for c in self.calls],
+            ["Rugby_Mens_Intl", "Rugby_Womens_PWR"])
+        self.assertTrue(all(c[0][c[0].index("--limit") + 1] == "1"
+                            for c in self.calls))
+        # When first series consumed the budget, the second is never invoked.
+        self.calls.clear()
+        self.planned_by_series["Rugby_Mens_Intl"] = 1
+        self.assertEqual(self.invoke(apply=True, skip_discovery=True, limit=1), 0)
+        self.assertEqual(len(self.calls), 1)
 
     def test_cli_rejects_contradictory_flags_and_has_help(self):
         with contextlib.redirect_stderr(io.StringIO()):

@@ -10,16 +10,19 @@ Three one-shot commands separate rugby discovery and acquisition:
   available recordings, downloads at most --max-candidates per due episode,
   and publishes the quality winner with the canonical NFO. It never calls
   provider discovery or release indexers. Preview is the default.
-- **run_rugby** orchestrates both. On --apply it calls refresh_releases
-  --apply, then acquire_rugby --apply. A failed or empty provider catalogue
-  aborts before downloads. Without --apply it only previews existing
-  indexed acquisitions, matching run_f1's behavior. --skip-discovery
-  skips refresh, even on --apply.
+- **run_rugby** orchestrates both. On --apply it checks Atlas's
+  per-source polling schedule (age-based backoff and daily fallback),
+  runs refresh_releases --apply for due sources, then attempts
+  bounded acquisition. Discovery errors abort acquisition, while
+  valid empty scans count as successful checks. Without --apply it
+  previews poll decisions and indexed acquisition candidates.
+  --skip-discovery bypasses refresh even on --apply.
 
 Command pairing: run_rugby/run_f1 for discovery and acquisition,
 acquire_rugby/acquire_f1 for previously indexed releases, and
 import_rugby/import_f1 for official fixture schedules. The runners
-do not update fixture schedules.
+do not update fixture schedules. See [POLLING.md](POLLING.md) for the
+source registry and full polling policy.
 
 Both acquire workers accept --season (alias --year), --round, --episode,
 --limit, --min-age-hours, --retry-after-hours, --sports-root, --incoming-root,
@@ -53,7 +56,7 @@ python3 refresh_releases --apply
 ./acquire_rugby --limit 1 --apply
 ```
 
-To combine discovery, matching and acquisition in one invocation:
+To combine due discovery, matching and acquisition in one invocation:
 
 ```sh
 ./run_rugby --limit 1 --apply
@@ -260,10 +263,11 @@ installed by the repository. Once manual trials are successful and all
 three providers work on slagg, a conservative unattended invocation is:
 
 ```cron
-30 5 * * * cd /home/mbligh/pvr && ./run_rugby --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
+*/5 * * * * cd /home/mbligh/pvr && ./run_rugby --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
 ```
 
-The sample is not installed or enabled. run_rugby --apply refreshes the BBC brand,
+The sample is not installed or enabled. Only when the source is due,
+run_rugby --apply refreshes the BBC brand,
 up to 100 YouTube stream entries and up to five RugbyPass catalogue pages
 per section by default. Override with `--youtube-limit`,
 `--bbc-pages`, `--rugbypass-pages` and `--rugbypass`. Avoid very

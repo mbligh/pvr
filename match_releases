@@ -13,8 +13,9 @@ import pathlib
 import sys
 
 from matchers.pwr import SERIES_ID, match_release
+from orchestration.source_registry import sources_for
 
-SOURCES = ("bbc", "youtube", "rugbypass")
+SOURCES = sources_for(SERIES_ID)
 METHOD = "pwr-teams-date-v1"
 
 

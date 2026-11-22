@@ -16,7 +16,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
-SOURCES = ("bbc", "youtube", "rugbypass")
+from orchestration.source_registry import RUGBY_SOURCES
+
+SOURCES = RUGBY_SOURCES
 
 
 def load_file(name, path):
@@ -97,6 +99,7 @@ def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
         for source in sources:
             indexer.upsert_releases(database, validated[source])
         matched = matcher.run(database, apply=True,
+                              source=sources[0] if len(sources) == 1 else None,
                               stream=io.StringIO(), summary_stream=io.StringIO())
         if "rugbypass" in sources:
             national = load_file("pvr_refresh_match_rugbypass", "match_rugbypass")

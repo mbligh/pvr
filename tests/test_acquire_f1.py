@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from downloaders.transfernow import TransferNowError
 from orchestration.f1_acquire import rows
@@ -367,6 +367,20 @@ class F1RunWrapperTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
         self.calls = []
+        self.db = MagicMock()
+        self.plan_patch = patch.object(runner.polling, "plan", side_effect=self.poll_plan)
+        self.plan_patch.start()
+        self.addCleanup(self.plan_patch.stop)
+
+    def poll_plan(self, db, **kwargs):
+        now = dt.datetime.now(dt.timezone.utc)
+        return ({"reddit-teletz": {
+                    "source": "reddit-teletz", "due": True, "missing": 1,
+                    "reason": "due", "next_at": now,
+                    "interval_minutes": 5}},
+                [{"episode_id": "Formula_1:11416",
+                  "series_id": "Formula_1",
+                  "finished": now - dt.timedelta(hours=4)}])
 
     def fake(self, cmd, **kwargs):
         self.calls.append((cmd, kwargs))
@@ -378,6 +392,7 @@ class F1RunWrapperTests(unittest.TestCase):
 
     def test_preview_does_not_discover_or_write(self):
         result = runner.run(incoming_root=self.path, execute=self.fake,
+                            poll_db=self.db,
                             output=io.StringIO())
         self.assertEqual(result, 0)
         self.assertEqual(len(self.calls), 1)
@@ -387,7 +402,7 @@ class F1RunWrapperTests(unittest.TestCase):
     def test_apply_indexes_then_downloads_only_after_both_succeed(self):
         out = io.StringIO()
         result = runner.run(apply=True, incoming_root=self.path,
-                            execute=self.fake, output=out)
+                            poll_db=self.db, execute=self.fake, output=out)
         self.assertEqual(result, 0)
         self.assertEqual([Path(call[0][1]).name for call in self.calls],
                          ["reddit_teletz", "import_teletz", "acquire_f1"])
@@ -400,16 +415,20 @@ class F1RunWrapperTests(unittest.TestCase):
             self.calls.append((cmd, kwargs))
             return subprocess.CompletedProcess(cmd, 1, "", "Reddit blocked\n")
         with self.assertRaisesRegex(RuntimeError, "discovery failed"):
-            runner.run(apply=True, incoming_root=self.path, execute=failed)
+            runner.run(apply=True, incoming_root=self.path, poll_db=self.db, execute=failed)
         self.assertEqual(len(self.calls), 1)
 
-    def test_empty_discovery_fails_closed(self):
+    def test_empty_discovery_is_a_successful_check(self):
         def no_records(cmd, **kwargs):
             self.calls.append((cmd, kwargs))
             return subprocess.CompletedProcess(cmd, 0, "", "")
-        with self.assertRaisesRegex(RuntimeError, "no verified comments"):
-            runner.run(apply=True, incoming_root=self.path, execute=no_records)
-        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(
+            runner.run(apply=True, incoming_root=self.path,
+                       poll_db=self.db, execute=no_records), 0)
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual([Path(c[0][1]).name for c in self.calls],
+                         ["reddit_teletz", "acquire_f1"])
+        self.db.indexer_poll_state.update_one.assert_called_once()
 
     def test_import_failure_aborts_acquisition(self):
         def fail_import(cmd, **kwargs):
@@ -418,8 +437,44 @@ class F1RunWrapperTests(unittest.TestCase):
                 return subprocess.CompletedProcess(cmd, 0, '{"observation":{}}', "")
             return subprocess.CompletedProcess(cmd, 1, "", "Atlas outage")
         with self.assertRaisesRegex(RuntimeError, "importer failed"):
-            runner.run(apply=True, incoming_root=self.path, execute=fail_import)
+            runner.run(apply=True, incoming_root=self.path, poll_db=self.db, execute=fail_import)
         self.assertEqual(len(self.calls), 2)
+
+    def test_f1_not_due_still_acquires_previously_indexed_releases(self):
+        self.plan_patch.stop()
+        def ready_plan(db, **kwargs):
+            status, episodes = self.poll_plan(db, **kwargs)
+            status["reddit-teletz"]["due"] = False
+            return status, episodes
+        with patch.object(runner.polling, "plan", side_effect=ready_plan):
+            self.assertEqual(runner.run(apply=True, incoming_root=self.path,
+                                        poll_db=self.db, execute=self.fake), 0)
+        self.assertEqual([Path(c[0][1]).name for c in self.calls], ["acquire_f1"])
+        self.db.indexer_poll_state.update_one.assert_not_called()
+
+    def test_f1_no_missing_and_daily_fallback(self):
+        self.plan_patch.stop()
+        def plan(db, **kwargs):
+            status, _ = self.poll_plan(db, **kwargs)
+            return status, []
+        with patch.object(runner.polling, "plan", side_effect=plan):
+            self.assertEqual(runner.run(apply=True, incoming_root=self.path,
+                                        poll_db=self.db, execute=self.fake), 0)
+        self.assertEqual([Path(c[0][1]).name for c in self.calls],
+                         ["reddit_teletz", "import_teletz"])
+
+    def test_run_f1_cli_has_matching_preview_and_year_aliases(self):
+        result = subprocess.run([sys.executable, str(ROOT / "run_f1"), "--help"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for flag in ("--year", "--season", "--apply", "--dry-run",
+                     "--force-discovery", "--skip-discovery"):
+            self.assertIn(flag, result.stdout)
+        with patch.object(runner, "run", return_value=0) as mocked:
+            self.assertEqual(runner.main(["--season", "2026", "--dry-run",
+                                         "--incoming-root", str(self.path)]), 0)
+        self.assertEqual(mocked.call_args.kwargs["year"], 2026)
+        self.assertFalse(mocked.call_args.kwargs["apply"])
 
     def test_run_lock_blocks_overlap(self):
         with runner.lock_run(self.path):

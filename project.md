@@ -607,3 +607,31 @@ acquire_rugby --refresh --apply must explicitly switch to
 run_rugby --apply. Source filters and downloader settings remain
 available on acquire_rugby; no fixture import or schema modification
 is part of this change. See ACQUISITION.md.
+
+
+## Atlas-based recording source polling/backoff (2026-11-22)
+
+The source registry in orchestration/source_registry.py records which
+canonical series each indexer can serve. BBC and PWR YouTube serve only
+Rugby_Womens_PWR; RugbyPass supports PWR plus Intl/Nations/WXV; teletz
+serves Formula_1. Men's Premiership and Six Nations have no recording
+indexer, so their fixtures never trigger PWR source requests.
+
+orchestration/polling.py reads finished, numbered, unpublished fixtures,
+existing canonical/inventory files and usable linked releases to determine
+outstanding discovery demand. F1 uses explicit scheduled_end and rugby
+uses explicit end or conservative two-hour kickoff estimate. Demand
+intervals depend on fixture age: 5 minutes (<2h), 15 minutes (2-12h),
+1h (12-48h), 6h (2-7d), daily (7-30d), weekly (30+d).
+Each source also gets a successful check at least once per 24h while
+the runner executes. Failures retry after 5,10,20,40, then at most 60m.
+Successful empty scans count as success. Atlas indexer_poll_state stores
+per-source last_success, last_attempt, failures, retry_not_before.
+
+run_rugby --apply now checks only due sources and considers all supported
+rugby series by default; the per-run episode budget spans series.
+run_f1 --apply uses the same policy. Both provide --force-discovery
+for manual checks and --skip-discovery for acquisition without indexing.
+Preview never fetches or writes. Existing acquisition minimum-age,
+source-quality, no-overwrite and F1 historical backfill limits remain.
+No cron jobs installed; see POLLING.md for suggested five-minute entries.

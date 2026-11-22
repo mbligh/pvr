@@ -12,11 +12,12 @@ import socket
 import stat
 
 from filing.publish import canonical_paths, validate_nfo
+from orchestration.source_registry import RUGBY_SOURCES
 from matchers.pwr import SERIES_ID
 from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
 from selection.quality import evaluate_file, select
 
-SOURCES = ("bbc", "youtube", "rugbypass")
+SOURCES = RUGBY_SOURCES
 SOURCE_ORDER = {name: i for i, name in enumerate(SOURCES)}
 BLOCKED_LIVE_STATES = {"is_live", "is_upcoming", "post_live"}
 ID_PATTERNS = {

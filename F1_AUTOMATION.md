@@ -5,9 +5,11 @@ Two commands:
 - ./acquire_f1: preview or explicitly acquire and file F1 sessions from
   already indexed teletz releases. No discovery or source URLs accessed in
   preview mode.
-- ./run_f1: one-shot cron wrapper. With --apply it discovers current teletz
-  posts, imports new/edited releases, then calls acquire_f1 --apply.
-  Discovery or importer failure aborts acquisition.
+- ./run_f1: one-shot cron wrapper. With --apply it uses Atlas
+  polling state to decide when to check Reddit/teletz (age-based
+  intervals, at least daily), imports new/edited releases if present,
+  and acquires eligible recent missing sessions. Discovery/importer
+  failure aborts acquisition. See POLLING.md.
 
 ## Try on slagg
 
@@ -76,10 +78,14 @@ pipeline to avoid overlapping cron invocations.
 ## Optional cron on slagg
 
 No crontab is installed or activated by GitHub. Once the manual --apply
-test passes, add one user crontab entry (crontab -e), for Thursday
-through Monday every 30 minutes:
+test passes, call the runner every five minutes; source checks only run
+when due under the Atlas-backed polling policy:
 
-    */30 * * * 0,1,4,5,6 cd /home/mbligh/pvr && ./run_f1 --apply --pages 3 --limit 1 --max-checks 8 >> /home/mbligh/.log/pvr-f1 2>&1
+    */5 * * * * cd /home/mbligh/pvr && ./run_f1 --apply --pages 3 --limit 1 --max-checks 8 >> /home/mbligh/.log/pvr-f1 2>&1
+
+A recent missing session permits five-minute polling; an old missing
+session does not. --force-discovery manually bypasses the successful
+poll cooldown. See POLLING.md.
 
 See the per-run summaries with:
 
