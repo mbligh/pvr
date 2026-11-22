@@ -134,7 +134,7 @@ def planning_rows(database, *, sports_root="/data/sports",
         if isinstance(ep.get("episode"), int)
         and (scheduled := aware(ep.get("scheduled"))) is not None
         and scheduled <= cutoff
-        and ep.get("status") not in ("cancelled", "canceled")
+        and ep.get("status") not in ("cancelled", "canceled", "superseded")
     ]
     ids = [ep["_id"] for ep in due]
     if not ids:
