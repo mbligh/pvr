@@ -489,3 +489,22 @@ official external IDs and previous round assignments while the active API
 changes seasons. Legacy Gallagher_PREM NFO pseudo-series and the public
 rugbyfixture.io Premiership ICS input are retired; the calendar repo uses
 canonical Rugby_Mens_Prem fixtures from Atlas.
+
+## Rugby historical backfill and Nations round completion (2026-11-21)
+
+The official Nations Championship labels the 27-29 November 2026 Finals
+Weekend as round 7. The daily importer now validates every 2026 fixture
+week as six uniquely matched northern/southern teams before assigning the
+published seven-round layout (July rounds 1-3, November 4-6, Finals 7).
+Pre-existing 2026 round 4/5 numbering remains frozen and new round 6/7
+episodes use the canonical Rugby_Mens_Nations directory and stable UIDs.
+
+Historical imports are deliberately separate from the daily scheduler:
+import_nations_history preview/apply retrieves 18 source fixtures for July
+2026 (six in each of rounds 1-3), filters results/score data and inserts
+missing episodes/NFO XML without editing prior Atlas records or calendars.
+Historical PWR imports support --all-available for 2017-2024 (602 records),
+with the 26 source-roundless 2020/21 matches retained as unnumbered
+episodes. Historic writes are insert-only after conflict preflight, and the
+source provides no usable 2015/16 or 2016/17 fixtures. Both backfill
+commands remain opt-in; no unattended cron jobs scrape past outcomes.

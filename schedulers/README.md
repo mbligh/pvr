@@ -7,7 +7,9 @@ The `schedulers/` package owns **what should exist** in the PVR, not
 schedulers/
   rugby/
     importer.py           current rugby calendars -> pvr.episodes / NFOs
-    pwr_history.py        historical PWR fixture import
+    pwr_history.py        historical PWR fixture import (preview-first)
+    nations_history.py    July 2026 Nations historical import (preview-first)
+    nations.py            verified Nations Championship rounds 1-7
     six_nations.py        validate complete tournament round numbering
     legacy/               vendored source adapters and spoiler-free numbering
       calendars.json
@@ -81,3 +83,14 @@ The PVR importer reconciles official match IDs against historical stored
 ICS identities, preserves pre-kickoff freezes, and adds per-round numbering.
 Time-TBC fixtures remain date-only. No separate Gallagher_PREM series is
 created, and the public Premiership ICS service is no longer queried.
+
+The daily import_rugby now verifies 2026 Nations Championship round 6 and
+Finals Weekend round 7 using official competition match windows and full
+12-team, 6-match cross-hemisphere coverage checks. It preserves accepted
+round 4/5 assignments. July rounds 1-3 must be imported separately with
+./import_nations_history --apply; this is intentionally NOT a recurring
+post-kickoff scrape. The first eight PWR seasons with public historical
+fixtures (2017/18 through 2024/25) can be imported once with
+./import_pwr_history --all-available --apply. PWR 2020/21 has 26
+fixtures without source rounds and retains them with null episode numbers,
+rather than silently omitting or guessing.

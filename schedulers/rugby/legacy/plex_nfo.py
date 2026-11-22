@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from icalendar import Calendar
 from filter import ROOT, start_time
 from schedulers.rugby.six_nations import fixture_rounds
+from schedulers.rugby.nations import verified_rounds as nations_verified_rounds
 
 UK = ZoneInfo("Europe/London")
 ROUND = re.compile(r"\bRound\s+(\d+)\b", re.I)
@@ -115,6 +116,8 @@ def build(config, source_dir, now, *, prem_metadata=None):
         grouped = defaultdict(list)
         six_nations_rounds = (fixture_rounds(calendar)
                               if entry.get("rounds") == "six-nations" else {})
+        nations_rounds = (nations_verified_rounds(calendar)
+                          if entry["slug"] == "Rugby_Mens_Nations" else {})
         wxv_week_start = {}
         if entry["slug"] == "Rugby_Womens_WXV":
             # Each WXV tournament year has independent week-based rounds.
@@ -206,7 +209,9 @@ def build(config, source_dir, now, *, prem_metadata=None):
                     replay_round, _ = resolve_round(kickoff, teams[0], teams[1], observations)
                     round_no = (assigned["round"] if assigned and
                                 assigned.get("episode") is not None and
-                                assigned.get("round") is not None else replay_round)
+                                assigned.get("round") is not None else
+                                nations_rounds.get(str(event.get("UID", "")).strip(),
+                                                   replay_round))
                     if round_no is None:
                         # Publish the fixture without fabricating a round/episode.
                         manifest["fixtures"].append({

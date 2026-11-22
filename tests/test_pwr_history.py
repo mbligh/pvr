@@ -74,6 +74,25 @@ class PWRHistoryTests(unittest.TestCase):
         # Other events receive unused IDs from the same round.
         self.assertEqual(len({r["episode"] for r in records}), len(records))
 
+    def test_missing_round_is_preserved_unnumbered(self):
+        cal = calendar_from_fixtures()
+        missing = Event()
+        missing.add("uid", "pwr-999999@mbligh.github.io")
+        missing.add("summary", "Harlequins vs Sale Sharks")
+        missing.add("dtstart", dt.datetime(2026, 3, 1, 14, tzinfo=UTC))
+        missing.add("description", "Premiership Women's Rugby")
+        cal.add_component(missing)
+        records = MODULE.prepare(2025, cal)
+        self.assertEqual(len(records), 6)
+        no_round = next(x for x in records if "999999" in x["_id"])
+        self.assertEqual(no_round["season"], 2025)
+        self.assertIsNone(no_round["round"])
+        self.assertIsNone(no_round["episode"])
+        self.assertIsNone(no_round["nfo_path"])
+        self.assertIsNone(no_round["nfo"])
+        self.assertEqual(no_round["scheduled"].year, 2026)
+        self.assertEqual(sum(x["episode"] is not None for x in records), 5)
+
     def test_mismatched_historical_season_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "Unexpected season"):
             MODULE.prepare(2024, calendar_from_fixtures())
@@ -111,7 +130,8 @@ class PWRHistoryTests(unittest.TestCase):
         operations = db.episodes.bulk_write.call_args.args[0]
         self.assertEqual(len(operations), 5)
         # The importer updates metadata only; it never sets download state.
-        self.assertTrue(all("download_status" not in op._doc["$set"]
+        self.assertTrue(all("$set" not in op._doc and
+                            "download_status" not in op._doc["$setOnInsert"]
                             for op in operations))
         db.episodes.find.return_value = [{"_id": records[0]["_id"]}]
         with patch("schedulers.series_ids.assert_migrated", return_value=None):

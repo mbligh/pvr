@@ -137,3 +137,54 @@ even when those events are absent from the new current-season feed.
 The calendar publisher uses the same Atlas records to export canonical
 Rugby_Mens_Prem.ics and metadata. Never reintroduce the retired second
 Gallagher_PREM series.
+
+## Nations Championship 2026 round numbering and July backfill
+
+The 2026 Nations Championship has seven official match weeks: July rounds
+1-3, November rounds 4-6, and the 27-29 November Finals Weekend (Round 7).
+The official fixture listing is at
+https://nationschampionshiprugby.com/en/match-centre/fixtures
+and the finals format is described at
+https://nationschampionshiprugby.com/en/finals-weekend .
+
+schedulers/rugby/nations.py assigns an episode number only after validating
+that all six matches in a scheduled week are present, involve each of the
+12 northern/southern teams exactly once, and match the published 2026
+weekend dates. It preserves existing World Rugby UIDs and all previously
+accepted round/episode assignments; unsupported years and incomplete
+weeks are left unnumbered. Daily ./import_rugby applies this policy.
+
+World Rugby still has 18 July 2026 fixtures in its historical match API,
+but the daily importer intentionally does not fetch completed historical
+months. To backfill without changing saved historical calendar snapshots
+or already numbered November fixtures:
+
+    ./import_nations_history                 # Preview only
+    ./import_nations_history --apply         # Insert missing July episodes
+
+This preview-first, opt-in command retrieves only the official July 2026
+World Rugby fixtures; validates exactly six for each of rounds 1, 2 and 3,
+and writes score-free canonical episodes/NFOs with insert-only upserts.
+It never imports historical source scores/results, changes published ICS
+snapshots, or edits existing Atlas records. Future years require separate
+official round-window verification.
+
+## PWR historical backfill coverage
+
+./import_pwr_history --all-available previews the eight supported, currently
+unimported PWR starting years 2017-2024 (2017/18 through 2024/25).
+./import_pwr_history --all-available --apply imports them into Atlas,
+without updating calendar snapshots or the currently published calendars.
+The official PWR API has 602 fixtures across these years: 576 with confirmed
+rounds and 26 in 2020/21 with no source round. The latter remain
+unnumbered with no NFO path; do not invent episode numbers.
+
+The website returned no usable 2015/16 or 2016/17 fixture lists when
+checked on 2026-11-21. These two seasons are not in the --all-available
+set. The already imported 2025/26 season is likewise excluded.
+--year YYYY remains available for a specific historical season.
+
+The historical importer validates all requested years before any writes,
+upserts only missing records, and refuses to overwrite an existing episode
+or conflicting identity. External fixture data is allowlisted and does not
+copy score/result/winner information.

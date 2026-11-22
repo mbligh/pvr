@@ -81,11 +81,15 @@ def prepare(year, calendar, prior=None, now=None):
         nfo_files, manifest = plex_nfo.build(config, docs, now)
 
     fixtures = manifest["fixtures"]
-    if len(fixtures) != len(events):
-        raise ValueError(f"Historical PWR fixture loss: {len(fixtures)} numbered "
-                         f"from {len(events)} source fixtures")
+    # Some older official PWR fixtures (notably 2020/21) have no round in
+    # the API. Preserve them as unnumbered, rather than inventing episode
+    # numbers or silently excluding them from the historical catalogue.
     if len({f["id"] for f in fixtures}) != len(fixtures):
         raise ValueError("Duplicate historical PWR fixture identities")
+    known_ids = {f["id"] for f in fixtures}
+    source_ids = [SERIES + ":" + str(e.get("UID", "")).strip() for e in events]
+    if len(set(source_ids)) != len(source_ids) or not set(known_ids).issubset(source_ids):
+        raise ValueError("Invalid or duplicate historical PWR fixture UIDs")
     old_assignments = {f["id"]: f for f in prior}
     records = []
     for fixture in fixtures:
@@ -117,8 +121,46 @@ def prepare(year, calendar, prior=None, now=None):
             "external_ids": {"rugbypass": fixture.get("rugbypass_id")},
             "metadata_provider": "calendar/rugby",
         })
-    identifiers = [(e["season"], e["episode"]) for e in records]
-    if len(set(identifiers)) != len(records):
+    for event in events:
+        eid = SERIES + ":" + str(event.get("UID", "")).strip()
+        if eid in known_ids:
+            continue
+        # Only events without a source round may legitimately be unnumbered.
+        summary = str(event.get("SUMMARY", ""))
+        teams = plex_nfo.VERSUS.split(summary, maxsplit=1)
+        description = str(event.get("DESCRIPTION", ""))
+        if (not eid.startswith(SERIES + ":pwr-") or len(teams) != 2 or
+                plex_nfo.ROUND.search(description)):
+            raise ValueError(f"Unexplained loss of numbered PWR fixture: {eid}")
+        kickoff = event.decoded("DTSTART")
+        if isinstance(kickoff, dt.datetime):
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=UK)
+            timed = kickoff.astimezone(UTC)
+            season = plex_nfo.season_year(timed)
+            date_only = None
+        else:
+            timed = None
+            date_only = kickoff.isoformat()
+            season = kickoff.year if kickoff.month >= 7 else kickoff.year - 1
+        if season != year:
+            raise ValueError(f"Unexpected unnumbered PWR season for {eid}")
+        record = {
+            "_id": eid, "series_id": SERIES, "season": year,
+            "episode": None, "round": None, "title": summary,
+            "scheduled": timed, "home": teams[0].strip(), "away": teams[1].strip(),
+            "venue": str(event.get("LOCATION", "")).strip(),
+            "showtitle": SHOW, "nfo_path": None, "nfo": None,
+            "external_ids": {}, "metadata_provider": "calendar/rugby",
+        }
+        if date_only is not None:
+            record["scheduled_date"] = date_only
+        records.append(record)
+    if len(records) != len(events):
+        raise ValueError("Historical PWR fixture loss during reconstruction")
+    identifiers = [(e["season"], e["episode"]) for e in records
+                   if isinstance(e.get("episode"), int)]
+    if len(set(identifiers)) != len(identifiers):
         raise ValueError("Duplicate historical PWR season/episode numbering")
     return records
 
@@ -135,20 +177,28 @@ def persist(db, records, now=None):
     expected_year = records[0]["season"]
     if any(r["season"] != expected_year or r["series_id"] != SERIES for r in records):
         raise ValueError("Historical import contains mixed series or years")
+    targets = {item["_id"]: item for item in records}
+    numbers = [r["episode"] for r in records if isinstance(r.get("episode"), int)]
+    existing = list(db.episodes.find({"$or": [
+        {"_id": {"$in": ids}},
+        {"series_id": SERIES, "season": expected_year,
+         "episode": {"$in": numbers}},
+    ]}, {"_id": 1, "series_id": 1, "season": 1, "episode": 1}))
     conflicts = [
-        d["_id"] for d in db.episodes.find(
-            {"_id": {"$in": ids}, "$or": [
-                {"series_id": {"$ne": SERIES}}, {"season": {"$ne": expected_year}},
-            ]}, {"_id": 1})
+        doc["_id"] for doc in existing if (
+            doc["_id"] not in targets or
+            doc.get("series_id") != SERIES or
+            doc.get("season") != expected_year or
+            doc.get("episode") != targets[doc["_id"]]["episode"])
     ]
     if conflicts:
         raise ValueError(f"Historical fixture identities already used: {conflicts[:5]}")
     now = now or dt.datetime.now(UTC)
+    # Historical records are immutable after first import. A later fetch
+    # from a result-bearing API must not rewrite their accepted metadata.
     operations = [
         UpdateOne({"_id": item["_id"]}, {
-            "$set": {k: v for k, v in item.items() if k != "_id"}
-                    | {"metadata_updated_at": now},
-            "$setOnInsert": {"created_at": now}
+            "$setOnInsert": item | {"created_at": now, "metadata_updated_at": now}
         }, upsert=True)
         for item in records
     ]
@@ -165,6 +215,8 @@ def main(argv=None):
                         help="Season starting year, default 2025 (2025/26)")
     parser.add_argument("--apply", action="store_true",
                         help="Write historical episode records into MongoDB")
+    parser.add_argument("--all-available", action="store_true",
+                        help="Backfill supported unimported PWR seasons 2017/18 through 2024/25")
     parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
     args = parser.parse_args(argv)
     try:
@@ -184,20 +236,30 @@ def main(argv=None):
             client = MongoClient(mongo_uri, serverSelectionTimeoutMS=15000)
             client.admin.command("ping")
         db = client[args.database] if client is not None else None
-        calendar = fetch_pwr(url)
-        records = prepare(args.year, calendar, previous_fixtures(db, args.year))
-        rounds = Counter(str(r["round"]) for r in records)
-        print(json.dumps({
-            "season": args.year,
-            "season_id": int(f"{args.year}01"),
-            "fixtures": len(records),
-            "rounds": dict(sorted(rounds.items(), key=lambda p: int(p[0]))),
-            "preview": not args.apply,
-            "first": min(r["scheduled"] for r in records).date().isoformat(),
-            "last": max(r["scheduled"] for r in records).date().isoformat(),
-        }, sort_keys=True))
+        years = list(range(2017, 2025)) if args.all_available else [args.year]
+        batches = []
+        # Preflight every requested season before writing any of them.
+        for year in years:
+            calendar = fetch_pwr(api_url(year))
+            records = prepare(year, calendar, previous_fixtures(db, year))
+            rounds = Counter(str(r["round"]) if r["round"] is not None else "unknown"
+                             for r in records)
+            times = [r["scheduled"] for r in records if r.get("scheduled")]
+            print(json.dumps({
+                "season": year, "season_id": int(f"{year}01"),
+                "fixtures": len(records), "numbered": sum(
+                    isinstance(r["episode"], int) for r in records),
+                "unnumbered": sum(r["episode"] is None for r in records),
+                "rounds": dict(sorted(rounds.items())),
+                "preview": not args.apply,
+                "first": min(times).date().isoformat() if times else None,
+                "last": max(times).date().isoformat() if times else None,
+            }, sort_keys=True))
+            batches.append((year, records))
         if args.apply:
-            print(json.dumps(persist(db, records), sort_keys=True))
+            for year, records in batches:
+                print(json.dumps({"season": year, "write": persist(db, records)},
+                                 sort_keys=True))
     except (OSError, ValueError, KeyError) as exc:
         print(f"PWR historical importer: {exc}", file=sys.stderr)
         return 1

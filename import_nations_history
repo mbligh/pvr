@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Compatibility CLI for the separate, preview-first July 2026 backfill."""
+from schedulers.rugby.nations_history import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())
