@@ -18,13 +18,12 @@ from collections import Counter
 from icalendar import Calendar
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-LEGACY = pathlib.Path(__file__).resolve().parent / "legacy"
-sys.path.insert(0, str(LEGACY))
-import plex_nfo  # noqa: E402
-from world_rugby import (  # noqa: E402
+
+from . import plex_nfo
+from .world_rugby import (
     request_page, convert_match, competition_base, COMPETITIONS, is_cancelled,
 )
-from schedulers.rugby.nations import verified_rounds  # noqa: E402
+from .nations import verified_rounds
 
 SERIES = "Rugby_Mens_Nations"
 UTC = dt.timezone.utc

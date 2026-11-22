@@ -123,6 +123,24 @@ class WXVSplitTests(unittest.TestCase):
         self.assertNotIn("Rugby_Womens_Intl:world-rugby-first@mbligh.github.io", ids)
         self.assertTrue(all("score" not in str(e).lower() for e in episodes))
 
+    def test_offline_bootstrap_uses_published_wxv_snapshot(self):
+        # The calendar publisher now separates WXV from Women's Intl.
+        # Without Atlas, the CLI smoke test must load both snapshots.
+        intl, wxv_snapshot = wxv.split_snapshot(mixed_snapshot())
+        old_manifest = {"schema_version": 2, "fixtures": []}
+        with patch.object(importer, "read_snapshot",
+                          side_effect=lambda _db, slug: (
+                              intl if slug == wxv.WOMENS else wxv_snapshot)) as read, patch.object(
+                importer, "old_manifest", return_value=old_manifest):
+            snapshots, manifest, episodes = importer.build_catalogue(
+                None, CONFIG, NOW, refresh=False)
+        self.assertEqual(len(episodes), 4)
+        self.assertEqual(
+            len([e for e in episodes if e["series_id"] == wxv.WXV]), 3)
+        self.assertEqual(set(snapshots), {wxv.WOMENS, wxv.WXV})
+        self.assertTrue(any(c.args == (None, wxv.WXV)
+                            for c in read.call_args_list))
+
     def test_migration_marks_old_wxv_as_superseded_and_updates_links(self):
         old = {
             "_id": "Rugby_Womens_Intl:world-rugby-first@mbligh.github.io",

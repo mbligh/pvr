@@ -11,13 +11,14 @@ schedulers/
     nations_history.py    July 2026 Nations historical import (preview-first)
     nations.py            verified Nations Championship rounds 1-7
     six_nations.py        validate complete tournament round numbering
-    legacy/               vendored source adapters and spoiler-free numbering
-      calendars.json
-      filter.py
-      plex_nfo.py
-      pwr.py
-      world_rugby.py
-      prem.py
+    calendars.json         competition/source configuration
+    filter.py              spoiler-free calendar merge
+    plex_nfo.py            round numbering and NFO generation
+    pwr.py                 official women's PWR fixture API
+    world_rugby.py         official World Rugby fixture API
+    prem.py                official Gallagher PREM fixture API
+    prem_identity.py       preserve existing PREM match identifiers
+    wxv.py                 womens international/WXV partitioning
   f1.py                   Formula 1 sessions -> pvr.episodes / NFOs
   f1_data.py              fetch official F1 event/session schedules
 indexers/                 discover obtainable *recordings*
@@ -28,14 +29,16 @@ orchestration/            bounded acquisition workflows
 
 The root executable names are compatibility wrappers:
 
-- `python3 import_rugby` delegates to `schedulers.rugby.importer`.
-- `python3 import_pwr_history` delegates to `schedulers.rugby.pwr_history`.
-- `python3 import_f1` delegates to `schedulers.f1`.
-- `python3 f1_data` delegates to `schedulers.f1_data`.
+- `./import_rugby` delegates to `schedulers.rugby.importer`.
+- `./import_pwr_history` delegates to `schedulers.rugby.pwr_history`.
+- `./import_f1` delegates to `schedulers.f1`.
+- `./f1_data` delegates to `schedulers.f1_data`.
 
 Existing cron commands and CLI arguments remain unchanged. The former
-`calendar_legacy/` files have been moved (not duplicated) into
-`schedulers/rugby/legacy/` so there is only one active copy of each module.
+`calendar_legacy/` files and adapters now live directly in
+`schedulers/rugby/` as normal package modules. The legacy subdirectory
+is removed. The original adapter tests now run with the shared suite in
+tests/; no separate PYTHONPATH is required.
 
 **Atlas ownership:** schedulers write canonical `pvr.episodes`, NFO XML,
 stable event identities and saved calendar-source snapshots/assignment
@@ -75,10 +78,10 @@ Six Nations seasons follow calendar years for both men and women. Complete
 per team each round, before assigning 101..503. Missing or ambiguous
 fixtures remain unnumbered. This fixes 2027 fixtures previously imported
 as season 2026. The Rugby_Mens_Prem directory is also registered in
-filing; it currently has no numbered NFO fixtures.
+filing; confirmed kickoff fixtures now have numbered NFO metadata.
 
 PREM (men's): the official public RugbyViz API is the only active source
-for Rugby_Mens_Prem, using public website client headers in legacy/prem.py.
+for Rugby_Mens_Prem, using public website client headers in prem.py.
 The PVR importer reconciles official match IDs against historical stored
 ICS identities, preserves pre-kickoff freezes, and adds per-round numbering.
 Time-TBC fixtures remain date-only. No separate Gallagher_PREM series is

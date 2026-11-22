@@ -11,7 +11,7 @@ from icalendar import Calendar, Event
 
 from schedulers.rugby.nations import NORTH, SOUTH, verified_rounds
 from schedulers.rugby import nations_history
-from schedulers.rugby.legacy import plex_nfo
+from schedulers.rugby import plex_nfo
 
 UTC = dt.timezone.utc
 WEEKENDS = {

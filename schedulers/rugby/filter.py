@@ -1,25 +1,16 @@
-#!/usr/bin/env python3
-"""Publish spoiler-free mirrors of public Google ICS calendars.
+"""Fetch and merge score-free rugby calendar events.
+
+Source fixtures may originate from public ICS feeds or official rugby APIs.
 
 Existing events are frozen at their last accepted DTSTART. A source update
 whose LAST-MODIFIED/DTSTAMP is later than kickoff is never accepted, even if
 the updater first encounters it after the match. Missing timestamps cannot
 prove safety; an event is only updated while its saved kickoff is future.
 """
-import argparse
 import datetime as dt
-import json
-import pathlib
-import sys
-import urllib.parse
 import urllib.request
-from zoneinfo import ZoneInfo
 
-from icalendar import Calendar, Event
-from pwr import fetch_pwr
-from world_rugby import fetch_world_rugby
-
-ROOT = pathlib.Path(__file__).resolve().parent
+from icalendar import Calendar
 UTC = dt.timezone.utc
 
 
@@ -50,12 +41,6 @@ def modified_time(event):
 
 def events(calendar):
     return {event_key(c): c for c in calendar.walk("VEVENT") if event_key(c)[0]}
-
-
-def read_existing(path):
-    if not path.exists():
-        return None
-    return Calendar.from_ical(path.read_bytes())
 
 
 def fetch(url):
@@ -121,41 +106,3 @@ def merge(source, previous, now, tz, name):
     for key in sorted(accepted):
         result.add_component(accepted[key])
     return result
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=pathlib.Path, default=ROOT / "calendars.json")
-    parser.add_argument("--output", type=pathlib.Path, default=ROOT / "docs")
-    args = parser.parse_args()
-    config = json.loads(args.config.read_text())
-    tz = ZoneInfo(config.get("timezone", "UTC"))
-    now = dt.datetime.now(UTC)
-    args.output.mkdir(parents=True, exist_ok=True)
-    failures = 0
-    for entry in config["calendars"]:
-        slug = entry["slug"]
-        path = args.output / (slug + ".ics")
-        url = entry.get("url")
-        if not url and entry.get("type") != "world-rugby":
-            url = "https://calendar.google.com/calendar/ical/" + urllib.parse.quote(entry["id"], safe="") + "/public/basic.ics"
-        try:
-            source = (fetch_pwr(url) if entry.get("type") == "pwr"
-                      else fetch_world_rugby(entry["group"], now) if entry.get("type") == "world-rugby"
-                      else fetch(url))
-            previous = read_existing(path)
-            result = merge(source, previous, now, tz, entry["name"])
-            payload = result.to_ical()
-            if not path.exists() or path.read_bytes() != payload:
-                path.write_bytes(payload)
-                print(f"{slug}: updated ({len(events(result))} events)")
-            else:
-                print(f"{slug}: unchanged ({len(events(result))} events)")
-        except Exception as exc:
-            failures += 1
-            print(f"{slug}: ERROR: {exc}", file=sys.stderr)
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

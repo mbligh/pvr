@@ -50,7 +50,7 @@ Do not store media files in MongoDB. Keep large artwork and verbose logs on disk
 
 ## Implementation status (2026-11-20)
 
-Initial rugby ingestion is in place: `schedulers/rugby/legacy/` contains independently copied rugby parsers, fixture/ICS spoiler filtering, numbering and NFO generation from `mbligh/calendar`. Canonical scheduling logic is in `schedulers/rugby/importer.py`. `import_rugby` seeds historical accepted calendars and prior episode assignments from published snapshots, then upserts all known fixtures (including unnumbered ones) and NFO XML into the Atlas `pvr` database. See [RUGBY_IMPORT.md](RUGBY_IMPORT.md).
+Initial rugby ingestion is in place: `schedulers/rugby/` contains independently copied rugby parsers, fixture/ICS spoiler filtering, numbering and NFO generation from `mbligh/calendar`. Canonical scheduling logic is in `schedulers/rugby/importer.py`. `import_rugby` seeds historical accepted calendars and prior episode assignments from published snapshots, then upserts all known fixtures (including unnumbered ones) and NFO XML into the Atlas `pvr` database. See [RUGBY_IMPORT.md](RUGBY_IMPORT.md).
 
 The GitHub Actions workflow runs offline regression tests and a snapshot-bootstrap smoke test; Atlas ingestion remains manual-only in GitHub Actions. For local runs on `slagg`, the importer reads `~/.mongodb/pvr` (plain MongoDB URI) using system Python; `MONGODB_URI` remains an optional override. GitHub-hosted Atlas imports still require a secret and allowlisted network egress. The original `mbligh/calendar` and `mbligh/tools` workflows remain unchanged. Google Calendar publishing from Atlas, F1, and release/download handling are not yet migrated.
 
@@ -422,9 +422,9 @@ F1_AUTOMATION.md.
 
 Canonical fixture metadata creators now live under `schedulers/`:
 `schedulers/rugby/importer.py`, `schedulers/rugby/pwr_history.py`,
-`schedulers/f1.py`, and `schedulers/f1_data.py`. Vendored rugby
+`schedulers/f1.py`, and `schedulers/f1_data.py`. Rugby
 source/calendar/numbering code, formerly in `calendar_legacy/`, is now
-maintained in `schedulers/rugby/legacy/`; the old directory was removed.
+maintained in `schedulers/rugby/`; the old directory was removed.
 `import_rugby`, `import_pwr_history`, `import_f1`, and `f1_data`
 remain top-level compatibility CLIs so existing slagg cron and callers
 do not change. `indexers/` discover releases; `downloaders/` handle
@@ -508,3 +508,15 @@ with the 26 source-roundless 2020/21 matches retained as unnumbered
 episodes. Historic writes are insert-only after conflict preflight, and the
 source provides no usable 2015/16 or 2016/17 fixtures. Both backfill
 commands remain opt-in; no unattended cron jobs scrape past outcomes.
+
+## Rugby scheduler package cleanup (2026-11-21)
+
+All active rugby adapters, calendar configuration, spoiler-safe merging
+and NFO numbering are directly under schedulers/rugby, alongside
+importer.py, pwr_history.py and nations_history.py. The old
+schedulers/rugby/legacy directory has been removed. Package-relative
+imports replace sys.path manipulation. Original legacy adapter tests
+moved to tests/ and participate in the standard CI suite. The
+obsolete standalone filter.py and plex_nfo.py entry points were retired.
+Root importer CLIs and the data-only bootstrap from published calendar
+snapshots remain unchanged. No database schema or fixture IDs changed.

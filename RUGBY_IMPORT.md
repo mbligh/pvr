@@ -1,6 +1,6 @@
 # Rugby fixture importer
 
-The rugby scraping, spoiler filtering, numbering and NFO helpers copied from `mbligh/calendar` now live in `schedulers/rugby/legacy/`. The canonical fixture importer implementation is `schedulers/rugby/importer.py` and its stable entry point is `import_rugby`. All of them are maintained in PVR rather than imported live from `mbligh/calendar`. PVR continues to upsert canonical fixture records into MongoDB Atlas.
+The rugby scraping, spoiler filtering, numbering and NFO helpers originally copied from `mbligh/calendar` now live in `schedulers/rugby/`. The canonical fixture importer implementation is `schedulers/rugby/importer.py` and its stable entry point is `import_rugby`. All of them are maintained in PVR rather than imported live from `mbligh/calendar`. PVR continues to upsert canonical fixture records into MongoDB Atlas.
 
 ## Sources
 
@@ -26,7 +26,7 @@ All supported fixture calendars are imported, including fixtures without a trust
 Episode NFO paths use the case of the series display name, e.g.
 `Rugby_Womens_PWR/Season_2026/Rugby_Womens_PWR-s2026e101-....nfo`.
 The calendar slug is the exact media directory name (e.g. Rugby_Womens_PWR).
-The slug in schedulers/rugby/legacy/calendars.json determines both the
+The slug in schedulers/rugby/calendars.json determines both the
 series ID and directory. Display names do not affect canonical identity.
 
 The PVR scheduler now uses directory names as canonical series slugs
@@ -110,13 +110,12 @@ round labels, so an incomplete fixture set is not assigned invented rounds.
 Previously accepted assignments are retained. The 2027 source snapshots were
 validated against this code. Rerun ./import_rugby on slagg after pulling to
 correct the stored season and NFO metadata without changing fixture UIDs.
-The newly created Rugby_Mens_Prem directory is also registered for filing,
-but its existing fixtures still await reliable episode numbering.
+Rugby_Mens_Prem is also registered for filing; confirmed kickoffs now receive verified API round and episode numbering.
 
 ## Gallagher PREM official API switch
 
 Rugby_Mens_Prem obtains fixtures solely from the official InCrowd
-RugbyViz API via schedulers/rugby/legacy/prem.py; the public rugbyfixture.io
+RugbyViz API via schedulers/rugby/prem.py; the public rugbyfixture.io
 Premiership ICS feed and separate Gallagher_PREM NFO pseudo-series have been
 retired. Official public browser headers are coded as defaults with optional
 environment overrides. The API season code rolls over in July (e.g. 202601).
@@ -188,3 +187,18 @@ The historical importer validates all requested years before any writes,
 upserts only missing records, and refuses to overwrite an existing episode
 or conflicting identity. External fixture data is allowlisted and does not
 copy score/result/winner information.
+
+## Native rugby scheduler package
+
+All actively used rugby metadata adapters and helpers live directly in
+schedulers/rugby: calendar configuration, the three official fixture
+adapters, spoiler-safe ICS merges, NFO generation and the separate
+backfill importers. The transitional legacy subdirectory is removed.
+Imports use the normal Python package, not sys.path manipulation.
+
+The unused standalone command-line entry points previously embedded in
+filter.py and plex_nfo.py are removed. Use ./import_rugby,
+./import_pwr_history and ./import_nations_history for active workflows.
+The two original adapter tests are now in tests/ and run with CI.
+Canonical Atlas IDs, calendar freezes, NFO paths and CLI arguments
+are unchanged.

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from icalendar import Calendar, Event
 from schedulers.rugby.six_nations import fixture_rounds
-from schedulers.rugby.legacy import plex_nfo
+from schedulers.rugby import plex_nfo
 from schedulers.rugby import importer
 
 UTC = dt.timezone.utc
@@ -62,7 +62,7 @@ def build_calendars(entries):
 
 class SixNationsTests(unittest.TestCase):
     def entries(self):
-        cfg = json.loads((ROOT / "schedulers/rugby/legacy/calendars.json").read_text())
+        cfg = json.loads((ROOT / "schedulers/rugby/calendars.json").read_text())
         return [e for e in cfg["calendars"]
                 if e["slug"] in ("Rugby_Mens_6N", "Rugby_Womens_6N")]
 

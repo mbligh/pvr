@@ -10,7 +10,7 @@ from icalendar import Calendar, Event
 
 from schedulers.rugby import importer
 from schedulers.rugby.prem_identity import reconcile_uids, season_for
-from schedulers.rugby.legacy import prem
+from schedulers.rugby import prem
 
 
 UTC = dt.timezone.utc
@@ -91,7 +91,7 @@ class OfficialPremTests(unittest.TestCase):
         ]:
             self.assertEqual(season_for(when), expected)
         entry = next(e for e in json.loads(
-            (importer.LEGACY / "calendars.json").read_text())["calendars"]
+            (importer.RUGBY_DIR / "calendars.json").read_text())["calendars"]
             if e["slug"] == "Rugby_Mens_Prem")
         self.assertEqual(entry["type"], "prem")
         self.assertNotIn("rugbyfixture.io", entry["url"])
@@ -138,7 +138,7 @@ class OfficialPremTests(unittest.TestCase):
                     "2027-04-17T14:00:00Z", round_no=16, tbc=1),
         ]})
         e = next(e for e in json.loads(
-            (importer.LEGACY / "calendars.json").read_text())["calendars"]
+            (importer.RUGBY_DIR / "calendars.json").read_text())["calendars"]
             if e["slug"] == "Rugby_Mens_Prem")
         db = MagicMock()
         db.calendar_snapshots.find_one.return_value = None

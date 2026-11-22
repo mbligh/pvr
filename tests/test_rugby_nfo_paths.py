@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from icalendar import Calendar, Event
-from plex_nfo import build
+from schedulers.rugby.plex_nfo import build
 
 
 class LibraryPathTests(unittest.TestCase):

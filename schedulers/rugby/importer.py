@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Import spoiler-free rugby fixture metadata into MongoDB Atlas.
 
-Historical calendar logic is vendored under schedulers/rugby/legacy/.
+Fixture-source adapters, spoiler-safe calendar merging, and NFO generation
+live alongside this importer in schedulers/rugby/.
 Current mbligh/calendar publication is not modified.
 
 Bootstrap from the published ICS snapshots, NOT newly fetched historical scores.
@@ -12,22 +13,20 @@ import datetime as dt
 import json
 import os
 import pathlib
-import sys
 import tempfile
 import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-LEGACY = pathlib.Path(__file__).resolve().parent / "legacy"
-sys.path.insert(0, str(LEGACY))
+RUGBY_DIR = pathlib.Path(__file__).resolve().parent
 
-from icalendar import Calendar  # noqa: E402
-import filter as calendar_filter  # noqa: E402
-import plex_nfo  # noqa: E402
-from pwr import fetch_pwr  # noqa: E402
-from prem import fetch_prem  # noqa: E402
-from world_rugby import fetch_world_rugby  # noqa: E402
+from icalendar import Calendar
+from . import filter as calendar_filter
+from . import plex_nfo
+from .pwr import fetch_pwr
+from .prem import fetch_prem
+from .world_rugby import fetch_world_rugby
 from schedulers.series_ids import assert_migrated, canonicalize, CANONICAL_TO_LEGACY
 from schedulers.rugby.prem_identity import reconcile_uids, season_for
 from schedulers.rugby.wxv import (
@@ -110,8 +109,16 @@ def build_catalogue(db, config, now, refresh):
             elif slug == WXV:
                 current = (db.calendar_snapshots.find_one({"_id": WXV})
                            if db is not None else None)
-                previous = (Calendar.from_ical(current["ics"].encode("utf-8"))
-                            if current else wxv_seed)
+                if current:
+                    previous = Calendar.from_ical(current["ics"].encode("utf-8"))
+                elif db is None:
+                    # Offline smoke tests have no Atlas snapshots. Read the
+                    # already published, score-free canonical WXV snapshot,
+                    # rather than seeding from a now-separated Intl feed.
+                    previous = read_snapshot(None, WXV)
+                else:
+                    # Initial Atlas migration must use accepted Intl history.
+                    previous = wxv_seed
             else:
                 previous = read_snapshot(db, slug)
             if refresh:
@@ -129,8 +136,8 @@ def build_catalogue(db, config, now, refresh):
         (docs / "rugby-metadata-manifest.json").write_text(
             json.dumps(prior_manifest), encoding="utf-8"
         )
-        # Reuse the legacy numbering, NFO generation, and old assignment
-        # preservation rather than reinventing the episode algorithm.
+        # Shared numbering and NFO generation preserve previously accepted
+        # episode assignments across imports.
         output_files, manifest = plex_nfo.build(
             config, docs, now, prem_metadata=prem_metadata)
 
@@ -294,7 +301,7 @@ def persist(db, snapshots, manifest, episodes, now):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=pathlib.Path,
-                        default=LEGACY / "calendars.json")
+                        default=RUGBY_DIR / "calendars.json")
     parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
     parser.add_argument("--no-refresh", action="store_true",
                         help="Import existing spoiler-free calendar snapshots without fetching live APIs")

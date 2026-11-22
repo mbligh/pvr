@@ -15,11 +15,9 @@ from collections import Counter
 from zoneinfo import ZoneInfo
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-LEGACY = pathlib.Path(__file__).resolve().parent / "legacy"
-sys.path.insert(0, str(LEGACY))
 
-import plex_nfo  # noqa: E402
-from pwr import fetch_pwr  # noqa: E402
+from . import plex_nfo
+from .pwr import fetch_pwr
 
 SERIES = "Rugby_Womens_PWR"
 SHOW = "Rugby Womens PWR"

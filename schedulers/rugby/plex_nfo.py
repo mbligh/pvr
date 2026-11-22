@@ -1,25 +1,20 @@
-#!/usr/bin/env python3
-"""Build spoiler-free Plex NFO files from the existing published ICS snapshots.
+"""Assign rugby season/episode numbers and build spoiler-free NFO metadata.
 
-The same sources and pre-kickoff freeze policy as filter.py are used.
-Only source fields already present in the score-free calendars are read.
+Input consists of accepted calendar snapshots. The calendar filter controls
+source updates and protects pre-kickoff fixture details from later spoilers.
 """
-import argparse
 import datetime as dt
 import hashlib
-import io
 import json
-import pathlib
 import re
-import tarfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 from icalendar import Calendar
-from filter import ROOT, start_time
-from schedulers.rugby.six_nations import fixture_rounds
-from schedulers.rugby.nations import verified_rounds as nations_verified_rounds
+from .filter import start_time
+from .six_nations import fixture_rounds
+from .nations import verified_rounds as nations_verified_rounds
 
 UK = ZoneInfo("Europe/London")
 ROUND = re.compile(r"\bRound\s+(\d+)\b", re.I)
@@ -301,35 +296,3 @@ def build(config, source_dir, now, *, prem_metadata=None):
                                                x["kickoff_utc"], x["id"]))
     manifest["files"] = {p: hashlib.sha256(data).hexdigest() for p, data in sorted(output.items())}
     return output, manifest
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=pathlib.Path, default=ROOT / "calendars.json")
-    parser.add_argument("--source", type=pathlib.Path, default=ROOT / "docs")
-    parser.add_argument("--output", type=pathlib.Path, default=ROOT / "docs")
-    args = parser.parse_args()
-    now = dt.datetime.now(dt.timezone.utc)
-    output, manifest = build(json.loads(args.config.read_text()), args.source, now)
-    payload = json.dumps(manifest, indent=2, sort_keys=True).encode() + b"\n"
-    args.output.mkdir(parents=True, exist_ok=True)
-    archive = args.output / "rugby-metadata.tar.gz"
-    # Reproducible archive bytes except for manifest generation timestamp.
-    with tarfile.open(archive.with_suffix(".tmp"), "w:gz") as tar:
-        for name, data in sorted(output.items()):
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            info.mode = 0o644
-            info.mtime = 0
-            tar.addfile(info, io.BytesIO(data))
-        info = tarfile.TarInfo("manifest.json")
-        info.size = len(payload)
-        info.mtime = 0
-        tar.addfile(info, io.BytesIO(payload))
-    archive.with_suffix(".tmp").replace(archive)
-    (args.output / "rugby-metadata-manifest.json").write_bytes(payload)
-    print(f"Published {len(manifest['fixtures'])} rugby fixtures")
-
-
-if __name__ == "__main__":
-    main()

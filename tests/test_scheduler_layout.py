@@ -7,7 +7,7 @@ from schedulers import f1, f1_data
 from schedulers.rugby import importer, pwr_history
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-LEGACY = ROOT / "schedulers" / "rugby" / "legacy"
+RUGBY = ROOT / "schedulers" / "rugby"
 
 
 class SchedulerLayoutTests(unittest.TestCase):
@@ -16,12 +16,14 @@ class SchedulerLayoutTests(unittest.TestCase):
             with self.subTest(module=mod.__name__):
                 self.assertTrue(
                     pathlib.Path(mod.__file__).is_relative_to(ROOT / "schedulers"))
-        self.assertEqual(importer.LEGACY, LEGACY)
-        self.assertEqual(pwr_history.LEGACY, LEGACY)
+        self.assertEqual(importer.RUGBY_DIR, RUGBY)
         self.assertFalse((ROOT / "calendar_legacy").exists())
+        self.assertFalse((RUGBY / "legacy").exists())
         for filename in ("calendars.json", "plex_nfo.py", "filter.py",
                          "pwr.py", "prem.py", "world_rugby.py"):
-            self.assertTrue((LEGACY / filename).is_file())
+            self.assertTrue((RUGBY / filename).is_file())
+        self.assertTrue((ROOT / "tests" / "test_rugby_world_rugby.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_rugby_nfo_paths.py").is_file())
 
     def test_existing_cli_entry_points_reexport_active_implementations(self):
         for script, module, method in (
@@ -36,12 +38,15 @@ class SchedulerLayoutTests(unittest.TestCase):
                 self.assertIs(wrapper.main, module.main)
 
     def test_imports_do_not_require_calendar_repository_checkout(self):
-        # Only local copies of the old calendar algorithms are in the
-        # scheduling import path. First bootstrap may fetch *data* from the
-        # published calendar repo, but never source code.
-        self.assertTrue(pathlib.Path(importer.plex_nfo.__file__).is_relative_to(LEGACY))
-        self.assertTrue(pathlib.Path(importer.calendar_filter.__file__).is_relative_to(LEGACY))
-        self.assertTrue(pathlib.Path(importer.fetch_world_rugby.__code__.co_filename).is_relative_to(LEGACY))
+        # Package-local imports do not depend on a legacy sys.path override
+        # or a calendar repository checkout. First bootstrap may fetch *data*.
+        self.assertTrue(pathlib.Path(importer.plex_nfo.__file__).is_relative_to(RUGBY))
+        self.assertTrue(pathlib.Path(importer.calendar_filter.__file__).is_relative_to(RUGBY))
+        self.assertTrue(pathlib.Path(importer.fetch_world_rugby.__code__.co_filename).is_relative_to(RUGBY))
+        self.assertIs(importer.plex_nfo.start_time, importer.calendar_filter.start_time)
+        from schedulers.rugby import pwr_history, nations_history
+        self.assertIs(pwr_history.plex_nfo, importer.plex_nfo)
+        self.assertIs(nations_history.plex_nfo, importer.plex_nfo)
 
 
 if __name__ == "__main__":

@@ -10,9 +10,9 @@ explicitly named `2025/26`: 18 regular-season rounds (72 fixtures),
 round 19 (two semifinals) and round 20 (one final).
 
 The `import_pwr_history` CLI intentionally reuses
-`schedulers/rugby/legacy/pwr.fetch_pwr`, which allowlists fixture IDs, kickoff times,
+`schedulers/rugby/pwr.fetch_pwr`, which allowlists fixture IDs, kickoff times,
 team names, round numbers and venues and **never copies scores or match
-outcomes**. It then calls `schedulers/rugby/legacy/plex_nfo.build` for the same
+outcomes**. It then calls `schedulers/rugby/plex_nfo.build` for the same
 existing season, round-based episode numbering and XML NFO conventions as
 `import_rugby`.
 
@@ -30,10 +30,10 @@ cd ~/pvr
 git pull
 
 # Fetch and validate all 2025/26 fixtures, print a summary; NO Atlas writes.
-python3 import_pwr_history --year 2025
+./import_pwr_history --year 2025
 
 # Write season 2025 episodes and NFO metadata to pvr.episodes.
-python3 import_pwr_history --year 2025 --apply
+./import_pwr_history --year 2025 --apply
 
 # Show newly available matches, without modifying release links.
 python3 match_releases

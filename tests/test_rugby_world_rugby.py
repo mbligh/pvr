@@ -3,8 +3,10 @@ import datetime as dt
 import unittest
 from unittest.mock import patch
 
-from world_rugby import competition_base, convert_match, fetch_world_rugby, is_cancelled
-from filter import merge
+from schedulers.rugby.world_rugby import (
+    competition_base, convert_match, fetch_world_rugby, is_cancelled,
+)
+from schedulers.rugby.filter import merge
 from icalendar import Calendar, Event
 from zoneinfo import ZoneInfo
 
@@ -41,8 +43,8 @@ class WorldRugbyTests(unittest.TestCase):
         cancelled["status"] = "CC"
         self.assertTrue(is_cancelled(cancelled))
 
-    @patch("world_rugby.months", return_value=[(dt.date(2026, 11, 1), dt.date(2026, 11, 30))])
-    @patch("world_rugby.request_page")
+    @patch("schedulers.rugby.world_rugby.months", return_value=[(dt.date(2026, 11, 1), dt.date(2026, 11, 30))])
+    @patch("schedulers.rugby.world_rugby.request_page")
     def test_cancellation_removes_saved_event_but_not_missing_one(self, request, _months):
         cancelled = fixture("Men's Internationals 2026", "MRU", "cancel")
         cancelled["status"] = "CC"
@@ -58,8 +60,8 @@ class WorldRugbyTests(unittest.TestCase):
         uids = [str(e.get("UID")) for e in result.walk("VEVENT")]
         self.assertEqual(uids, ["world-rugby-missing@mbligh.github.io"])
 
-    @patch("world_rugby.months", return_value=[(dt.date(2026, 10, 1), dt.date(2026, 10, 31))])
-    @patch("world_rugby.request_page")
+    @patch("schedulers.rugby.world_rugby.months", return_value=[(dt.date(2026, 10, 1), dt.date(2026, 10, 31))])
+    @patch("schedulers.rugby.world_rugby.request_page")
     def test_women_and_wxv_are_independent_feeds(self, request, _months):
         request.return_value = {
             "pageInfo": {"numPages": 1},

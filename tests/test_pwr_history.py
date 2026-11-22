@@ -98,7 +98,7 @@ class PWRHistoryTests(unittest.TestCase):
             MODULE.prepare(2024, calendar_from_fixtures())
 
     def test_safe_api_adapter_discards_result_fields(self):
-        import pwr
+        from schedulers.rugby import pwr
         payload = {"data": [{
             "id": 289126, "dateTime": "2025-10-24T18:30:00.000Z",
             "round": 1, "tbc": 0,
