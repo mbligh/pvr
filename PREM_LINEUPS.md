@@ -11,9 +11,12 @@ Provide the public website `X-APP-ID`, `X-API-KEY` and `X-REALM` headers from
 array exposes IDs, names, `positionId` (jersey number 1–23), positional labels,
 and optional captain information. No page HTML parsing is needed.
 
-`./import_prem_lineups` is preview-only by default. Run
-`./import_prem_lineups --apply --limit 0` to backfill available entries, or
-`./import_prem_lineups --fixture 294928 --apply` for an individual match.
+`./import_rugby_lineups --provider prem` is preview-only by default. Run
+`./import_rugby_lineups --provider prem --apply --limit 0` to backfill
+available entries, or
+`./import_rugby_lineups --provider prem --fixture 294928 --apply` for an individual match.
+The old `./import_prem_lineups` remains a compatibility wrapper. See
+[RUGBY_LINEUPS.md](RUGBY_LINEUPS.md) for the unified command.
 `--season 2026`, `--limit 50`, and `--force` are also supported. The
 `--fixture` argument uses the **official** PREM numeric match ID.
 
@@ -38,5 +41,5 @@ The default MongoDB connection comes from `~/.mongodb/pvr`, or from
 `MONGODB_URI` if defined. The optional one-shot cron entry is:
 
 ```cron
-31 */3 * * * cd "$HOME/pvr" && ./import_prem_lineups --apply --limit 50 >> "$HOME/pvr-prem-lineups.log" 2>&1
+31 */3 * * * cd "$HOME/pvr" && ./import_rugby_lineups --apply --limit 50 >> "$HOME/pvr-lineups.log" 2>&1
 ```

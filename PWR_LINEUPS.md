@@ -6,8 +6,10 @@ selections. The separate endpoint
 returns `data.forwards`, `data.backs` and `data.subs`, with numbered
 home/away player IDs, names, positions and captain flags.
 
-`./import_pwr_lineups` previews matches due for checking;
-`./import_pwr_lineups --apply` fetches and upserts them.
+`./import_rugby_lineups --provider pwr` previews matches due for checking;
+`./import_rugby_lineups --provider pwr --apply` fetches and upserts them.
+The old `./import_pwr_lineups` remains a compatibility wrapper. See
+[RUGBY_LINEUPS.md](RUGBY_LINEUPS.md) for the unified command.
 `--season 2025`, `--fixture 295034`, `--limit 50`, and `--force`
 allow controlled backfill, direct checks and manual refresh.
 
@@ -51,5 +53,5 @@ It reads `MONGODB_URI` or `~/.mongodb/pvr`, as the other PVR CLIs do.
 Use a one-shot cron entry as desired:
 
 ```cron
-23 */3 * * * cd "$HOME/pvr" && ./import_pwr_lineups --apply --limit 50 >> "$HOME/pvr-lineups.log" 2>&1
+23 */3 * * * cd "$HOME/pvr" && ./import_rugby_lineups --apply --limit 50 >> "$HOME/pvr-lineups.log" 2>&1
 ```

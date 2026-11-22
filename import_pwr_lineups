@@ -1,54 +1,7 @@
 #!/usr/bin/env python3
-"""Backfill or refresh PWR selected-player team sheets in MongoDB Atlas."""
-import argparse
-import datetime as dt
-import json
-import os
-from pathlib import Path
+"""Compatibility entry point; use ./import_rugby_lineups --provider pwr."""
 import sys
-
-from schedulers.rugby import pwr_lineups as lineups
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="Fetch and save; without it preview only")
-    parser.add_argument("--force", action="store_true", help="Recheck complete/cooling-down fixtures")
-    parser.add_argument("--season", type=int)
-    parser.add_argument("--fixture", type=int, help="Official PWR fixture ID")
-    parser.add_argument("--limit", type=int, default=50, help="Maximum checks per run (0 = all)")
-    parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
-    args = parser.parse_args()
-    if args.limit < 0 or args.fixture is not None and args.fixture <= 0:
-        parser.error("Invalid limit or fixture ID")
-    uri = os.getenv("MONGODB_URI")
-    if not uri:
-        uri = (Path.home() / ".mongodb" / "pvr").read_text(encoding="utf-8").strip()
-    from pymongo import MongoClient
-    now = dt.datetime.now(dt.timezone.utc)
-    errors = 0
-    with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
-        db = client[args.database]
-        todo = lineups.candidates(db, season=args.season, fixture=args.fixture,
-                                  force=args.force, limit=args.limit, now=now)
-        for episode in todo:
-            number = lineups.fixture_id(episode)
-            if not args.apply:
-                print(json.dumps({"fixture_id": number, "episode_id": episode["_id"], "preview": True}))
-                continue
-            try:
-                record = lineups.normalize(lineups.fetch(number), episode, now=now)
-                changed = lineups.upsert(db, record)
-                print(json.dumps({"fixture_id": number, "status": record["status"],
-                    "home": len(record["home"]), "away": len(record["away"]),
-                    "updated": changed}))
-            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-                errors += 1
-                print(f"PWR lineup {number}: {exc}", file=sys.stderr)
-    print(json.dumps({"candidates": len(todo), "preview": not args.apply,
-                      "errors": errors}), file=sys.stderr)
-    return 1 if errors else 0
-
+from schedulers.rugby.lineup_cli import main
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(["--provider", "pwr", *sys.argv[1:]]))

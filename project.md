@@ -663,7 +663,7 @@ indexers remain eligible.
 
 ## PWR team selections
 
-Official match-day player selections are ingested separately with `import_pwr_lineups` into the `pwr_lineups` collection, keyed by the canonical PWR episode ID. The fixture calendar and NFO remain score-free. See [PWR_LINEUPS.md](PWR_LINEUPS.md) for schema and polling guidance.
+Official match-day player selections are ingested separately with `import_rugby_lineups --provider pwr` into the `pwr_lineups` collection, keyed by the canonical PWR episode ID. The fixture calendar and NFO remain score-free. See [PWR_LINEUPS.md](PWR_LINEUPS.md) for schema and polling guidance.
 
 
 
@@ -709,4 +709,8 @@ See DASHBOARD.md.
 
 ## Gallagher PREM team selections
 
-Official PREM selected-player team sheets are stored in a separate `prem_lineups` collection by `import_prem_lineups`, keyed by canonical episode ID and linked to `external_ids.prem`. See [PREM_LINEUPS.md](PREM_LINEUPS.md). Match scores and events never enter the score-free episode scheduler or lineup records.
+Official PREM selected-player team sheets are stored in a separate `prem_lineups` collection by `import_rugby_lineups --provider prem`, keyed by canonical episode ID and linked to `external_ids.prem`. See [PREM_LINEUPS.md](PREM_LINEUPS.md). Match scores and events never enter the score-free episode scheduler or lineup records.
+
+## Unified rugby player selections (2026-11-22)
+
+The single `import_rugby_lineups` entry point routes to PWR, PREM and World Rugby RIMS providers, globally selects due matches from MongoDB and writes to their existing `pwr_lineups` and `prem_lineups` collections or new `world_rugby_lineups`. World Rugby uses UUID-backed canonical episode IDs across men's internationals/Nations Championship and women's internationals/WXV; legacy Google-calendar-only UIDs cannot be queried. Results and statistics are deliberately excluded. The older PWR/PREM executable names remain thin compatibility shims. See [RUGBY_LINEUPS.md](RUGBY_LINEUPS.md).
