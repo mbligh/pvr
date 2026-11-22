@@ -165,8 +165,7 @@ def normalize(payload, episode, now=None):
                 continue
             if (type(number) not in (str, int) or
                     not str(number).isdecimal() or
-                    int(number) not in range(1, 26) or
-                    int(number) in numbers):
+                    int(number) not in range(1, 26)):
                 raise ValueError(
                     f"World Rugby {match_id}: duplicate/invalid {side} shirt {number!r}")
             reported_number = int(number)
