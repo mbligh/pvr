@@ -24,7 +24,7 @@ jobs:
       - name: Test rugby schedulers, adapters, and release indexers
         run: python -m unittest discover -s tests -p 'test_*.py'
       - name: Exercise rugby import against published spoiler-free snapshots
-        run: python import_rugby --no-refresh
+        run: python import_rugby --offline --no-refresh
   import:
     # Manual until Atlas secret and network access are configured.
     if: github.event_name == 'workflow_dispatch'

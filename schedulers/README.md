@@ -38,8 +38,12 @@ All fixture import entry points (./import_rugby, ./import_f1,
 ./import_pwr_history, and ./import_nations_history) default to
 preview mode. Explicit --apply is required for Atlas writes. Rugby and
 F1 also accept the redundant --dry-run compatibility flag, but not
-together with --apply. Older rugby cron commands that omitted the flag
-must be updated to include --apply.
+together with --apply. Rugby preview reads current Atlas snapshots and
+assignment history, and performs read-only conflict checks. Explicit
+--offline instead uses the published bootstrap snapshots without connecting
+to Atlas (e.g. for GitHub Actions smoke tests). It cannot be combined
+with --apply and may not reflect current Atlas state. Older rugby cron
+commands that omitted --apply must be updated to include it.
 
 The former
 `calendar_legacy/` files and adapters now live directly in

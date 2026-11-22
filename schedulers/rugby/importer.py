@@ -226,12 +226,12 @@ def build_catalogue(db, config, now, refresh):
     return snapshots, manifest, episodes
 
 
-def persist(db, snapshots, manifest, episodes, now):
-    from pymongo import UpdateOne
+def validate_existing(db, episodes):
+    """Read-only migration/conflict checks shared by preview and apply.
 
-    # Preflight *before any writes*: if recordings exist in the old Intl
-    # directory, we cannot safely reassign them to WXV without moving
-    # their physical files. Keep all old WXV records as disabled history.
+    Existing recordings in the old women's-international library cannot
+    silently move to WXV. Fail before touching Atlas in either mode.
+    """
     targets = [ep for ep in episodes if ep["series_id"] == WXV]
     old_ids = [legacy_id(ep["_id"]) for ep in targets]
     previous = list(db.episodes.find({"_id": {"$in": old_ids}})) if old_ids else []
@@ -239,11 +239,20 @@ def persist(db, snapshots, manifest, episodes, now):
     validate_migration(episodes, previous, files=media)
     new_ids = [ep["_id"] for ep in targets]
     already = list(db.episodes.find({"_id": {"$in": new_ids}})) if new_ids else []
+    target_paths = {ep["_id"]: ep["nfo_path"] for ep in targets}
     for doc in already:
         if (doc.get("series_id") != WXV or
-                doc.get("nfo_path") not in (None,
-                    next(ep["nfo_path"] for ep in targets if ep["_id"] == doc["_id"]))):
+                doc.get("nfo_path") not in (None, target_paths[doc["_id"]])):
             raise ValueError(f"Conflicting existing WXV episode {doc['_id']}")
+    return previous
+
+
+def persist(db, snapshots, manifest, episodes, now):
+    from pymongo import UpdateOne
+
+    # Validate before writes, as in preview. Retain the previous WXV
+    # records for subsequent association migrations.
+    previous = validate_existing(db, episodes)
 
     # Never delete merely missing fixtures or existing acquisition state.
     # In particular, previous imports stored some source recording IDs on
@@ -315,13 +324,17 @@ def main(argv=None):
                       help="Write validated fixtures to Atlas (default: preview only)")
     mode.add_argument("--dry-run", action="store_true",
                       help="Preview only (compatibility alias; now the default)")
+    parser.add_argument("--offline", action="store_true",
+                        help="Preview using published bootstrap snapshots; no Atlas access")
     args = parser.parse_args(argv)
+    if args.offline and args.apply:
+        parser.error("--offline cannot be combined with --apply")
     config = json.loads(args.config.read_text(encoding="utf-8"))
     now = dt.datetime.now(UTC)
 
     client = None
     db = None
-    if args.apply:
+    if not args.offline:
         uri = os.environ.get("MONGODB_URI")
         if not uri:
             uri_file = pathlib.Path.home() / ".mongodb" / "pvr"
@@ -341,14 +354,16 @@ def main(argv=None):
         snapshots, manifest, episodes = build_catalogue(
             db, config, now, refresh=not args.no_refresh
         )
+        if db is not None and not args.apply:
+            validate_existing(db, episodes)
         print(json.dumps({
             "calendars": len(snapshots),
             "episodes": len(episodes),
             "numbered": sum(e["episode"] is not None for e in episodes),
             "preview": not args.apply,
-            "database": args.database if args.apply else None,
+            "database": args.database if db is not None else None,
         }, indent=2))
-        if db is not None:
+        if args.apply:
             persist(db, snapshots, manifest, episodes, now)
             print("MongoDB upsert complete")
     finally:

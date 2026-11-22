@@ -557,8 +557,14 @@ is required to write to Atlas. Both accept --dry-run as an optional
 mutually exclusive preview alias (retained for existing rugby callers).
 The historical importers already followed this convention.
 The rugby GitHub Actions manual import uses --apply and its smoke test
-uses the no-write default. The documented daily slagg cron command also
-uses --apply; any previously installed bare import_rugby cron command
-must be updated separately on the host to avoid silently becoming a
-no-write preview. Rugby previews without Atlas credentials still use
-published bootstrap snapshots rather than reading live Atlas state.
+uses the explicit --offline mode. The documented daily slagg cron
+command uses --apply; any previously installed bare import_rugby
+cron command must be updated separately on the host to avoid silently
+becoming a no-write preview. Ordinary rugby previews now require Atlas
+read access and use its current snapshots and assignment history. The
+explicit --offline flag reads published bootstrap snapshots instead,
+without accessing Atlas; it cannot be combined with --apply. Offline
+preview is for CI diagnostics, not an accurate simulation of an
+Atlas update.
+Both default Atlas preview and --apply perform the same read-only
+conflict checks; only --apply performs writes.

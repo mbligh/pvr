@@ -70,17 +70,32 @@ precedence (for GitHub Actions and other automation).
 
 Both rugby and F1 imports default to preview mode. The --apply flag is
 required to write to MongoDB Atlas; --dry-run is retained as an optional,
-mutually exclusive preview alias. Preview does not require Atlas credentials.
-Rugby previews read the published, spoiler-free bootstrap snapshots rather
-than the current Atlas database, so numbers may differ from live Atlas.
+mutually exclusive preview alias.
 
-Preview the existing snapshots without connecting to Atlas:
+The normal rugby preview connects to Atlas and uses its stored, spoiler-free
+calendar snapshots and previous episode assignments, just like --apply.
+It runs the same read-only conflict checks but never writes. An Atlas URI
+(~/.mongodb/pvr or MONGODB_URI) and read access are therefore required.
+If the Atlas connection fails, preview fails rather than quietly switching
+to outdated data. Source fixtures are refreshed unless --no-refresh is given.
+
+Preview from current Atlas state and live fixture sources:
+
+    ./import_rugby
+
+Preview from Atlas snapshots without refreshing official sources:
 
     ./import_rugby --no-refresh
 
-Preview the latest fixture sources:
+Preview using published GitHub bootstrap snapshots with no Atlas access
+(for CI and explicit offline troubleshooting):
 
-    ./import_rugby
+    ./import_rugby --offline --no-refresh
+
+To combine those published snapshots with current fixture sources, omit
+--no-refresh. --offline is read-only and cannot be combined with --apply.
+Offline preview may differ from Atlas and must not be treated as an exact
+simulation of a live import.
 
 Perform the live import into Atlas:
 
