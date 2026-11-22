@@ -77,7 +77,7 @@ been imported.
 The separate `match_rugbypass` command matches already indexed RugbyPass
 **full-match replays** against the numbered canonical fixtures in Atlas for
 `rugby-mens-intl`, `rugby-womens-intl`, `rugby-nations`, and
-`rugby-womens-wxv` (the WXV series currently needs a metadata import).
+`rugby-womens-wxv` (created on the next live WXV-aware metadata import).
 PWR matching is unchanged.
 
 ```sh
