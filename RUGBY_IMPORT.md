@@ -248,3 +248,32 @@ unnecessary loss of historical associations. Official PREM match IDs are
 updated individually as external_ids.prem rather than replacing external_ids.
 RugbyPass recording IDs and episode associations are managed by release
 indexing and matchers, not the scheduler.
+
+
+## Men's Internationals vs Nations Championship (2026-11-22 cleanup)
+
+The frozen Google calendar for Rugby_Mens_Intl historically contained
+Nations Championship fixtures prefixed `NC:`. The importer
+previously preserved those events indefinitely when merging snapshots,
+creating 24 duplicate 2026 Atlas episodes and NFO assignments.
+
+The importer now removes `NC:` events **only** from Rugby_Mens_Intl
+after every snapshot merge, including `--no-refresh`. The official
+World Rugby Rugby_Mens_Nations series remains authoritative and
+unchanged. Existing episode numbers for non-NC Men's Internationals
+are preserved from the prior manifest; gaps left by removed duplicates
+are not compacted or renumbered.
+
+On `--apply`, after verifying that none of the stale NC episodes
+has related entries in the `files`, `releases` or `jobs`
+collections, the importer removes the duplicate episodes from Atlas.
+Related media history would fail the import before any changes. The
+generated rugby manifest and the accepted Men's Intl calendar snapshot
+also exclude these entries. No downloaded media is moved or deleted.
+
+A one-time backup of the pre-cleanup episode documents, calendar
+snapshot and manifest is stored in Atlas `pvr_cleanup_backups`.
+
+Use `./import_rugby --no-refresh` to preview the stored calendar,
+or `./import_rugby --no-refresh --apply` to persist without
+fetching external fixtures. Normal future imports also filter NC events.

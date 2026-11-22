@@ -714,3 +714,19 @@ Official PREM selected-player team sheets are stored in a separate `prem_lineups
 ## Unified rugby player selections (2026-11-22)
 
 The single `import_rugby_lineups` entry point routes to PWR, PREM and World Rugby RIMS providers, globally selects due matches from MongoDB and writes to their existing `pwr_lineups` and `prem_lineups` collections or new `world_rugby_lineups`. World Rugby uses UUID-backed canonical episode IDs across men's internationals/Nations Championship and women's internationals/WXV; legacy Google-calendar-only UIDs cannot be queried. Results and statistics are deliberately excluded. The older PWR/PREM executable names remain thin compatibility shims. See [RUGBY_LINEUPS.md](RUGBY_LINEUPS.md).
+
+
+## Nations Championship / Men's Intl source disambiguation (2026-11-22)
+
+The archived Google Rugby_Mens_Intl calendar includes 24 2026
+Nations Championship events marked NC:. World Rugby separately
+provides the authoritative Rugby_Mens_Nations fixtures. These are
+duplicates, not separately recordable internationals. The importer
+filters NC: VEVENTs from Rugby_Mens_Intl after calendar reconciliation
+on refresh and no-refresh. It rebuilds the accepted snapshot and
+NFO/numbering manifest without them, preserving episode numbers for
+the remaining men's internationals (no compaction).
+Before removing stale duplicate Atlas episodes, importer.persist
+rejects any that have linked releases, jobs or files. A one-time
+backup is retained in the pvr_cleanup_backups Atlas collection.
+No downloaded media is moved or deleted. See RUGBY_IMPORT.md.

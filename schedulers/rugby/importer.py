@@ -35,6 +35,43 @@ from schedulers.rugby.wxv import (
 
 LEGACY_BASE = "https://raw.githubusercontent.com/mbligh/calendar/main/docs/"
 UTC = dt.timezone.utc
+MENS_INTL = "Rugby_Mens_Intl"
+
+
+def strip_nations_from_intl(calendar):
+    """Exclude legacy NC: fixtures from the Men's Intl calendar."""
+    cleaned = Calendar.from_ical(calendar.to_ical())
+    cleaned.subcomponents = [
+        component for component in cleaned.subcomponents
+        if not (
+            component.name == "VEVENT"
+            and str(component.get("SUMMARY", "")).lstrip().casefold().startswith("nc:")
+        )
+    ]
+    return cleaned
+
+
+def stale_nations_in_intl(db, snapshots, episodes):
+    """Find stale Atlas duplicates, refusing any with related download history."""
+    if MENS_INTL not in snapshots:
+        return []
+    if any(
+        row.get("series_id") == MENS_INTL
+        and str(row.get("title", "")).lstrip().casefold().startswith("nc:")
+        for row in episodes
+    ):
+        raise ValueError("Nations fixtures remain in Men's Intl import")
+    duplicates = list(db.episodes.find({
+        "series_id": MENS_INTL, "title": {"$regex": r"^\s*NC:", "$options": "i"}
+    }))
+    ids = [row["_id"] for row in duplicates]
+    if ids:
+        for name in ("files", "releases", "jobs"):
+            if list(getattr(db, name).find({"episode_id": {"$in": ids}}, {"_id": 1})):
+                raise ValueError(
+                    f"Refusing to remove Men's Intl NC duplicates referenced by {name}"
+                )
+    return ids
 
 
 def legacy_content(filename):
@@ -128,6 +165,10 @@ def build_catalogue(db, config, now, refresh):
                 merged = calendar_filter.merge(source, previous, now, zone, entry["name"])
             else:
                 merged = previous
+            if slug == MENS_INTL:
+                # Prior international snapshots retain NC fixtures that
+                # already have a dedicated Nations Championship series.
+                merged = strip_nations_from_intl(merged)
             data = merged.to_ical()
             if not merged.walk("VEVENT"):
                 raise ValueError("Empty rugby calendar: " + slug)
@@ -253,6 +294,7 @@ def persist(db, snapshots, manifest, episodes, now):
     # Validate before writes, as in preview. Retain the previous WXV
     # records for subsequent association migrations.
     previous = validate_existing(db, episodes)
+    duplicates = stale_nations_in_intl(db, snapshots, episodes)
 
     # Never delete merely missing fixtures or existing acquisition state.
     # In particular, previous imports stored some source recording IDs on
@@ -275,6 +317,11 @@ def persist(db, snapshots, manifest, episodes, now):
             "$setOnInsert": {"created_at": now},
         }, upsert=True))
     db.episodes.bulk_write(operations, ordered=False)
+    if duplicates:
+        db.episodes.delete_many({
+            "_id": {"$in": duplicates}, "series_id": MENS_INTL,
+            "title": {"$regex": r"^\s*NC:", "$options": "i"}
+        })
     for old in previous:
         replaced = WXV + ":" + old["_id"][len(WOMENS) + 1:]
         # Use a tombstone rather than deleting an episode that has appeared
