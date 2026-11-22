@@ -62,6 +62,27 @@ class WXVSplitTests(unittest.TestCase):
         self.assertTrue(all("WXV" in str(e.get("DESCRIPTION"))
                             for e in wxvcal.walk("VEVENT")))
 
+    def test_global_series_snapshot_is_wxv_but_challenger_is_not(self):
+        stored = mixed_snapshot()
+        for match_id, label in (
+            ("global", "WXV Global Series 2026"),
+            ("challenger", "WXV Global Series Challenger 2026"),
+        ):
+            event = Event()
+            event.add("uid", f"world-rugby-{match_id}@mbligh.github.io")
+            event.add("description", label)
+            stored.add_component(event)
+        intl, wxvcal = wxv.split_snapshot(stored)
+        self.assertEqual(
+            {str(e.get("UID")) for e in wxvcal.walk("VEVENT")},
+            {f"world-rugby-{mid}@mbligh.github.io"
+             for mid in ("first", "second", "third", "global")},
+        )
+        # Already-published history is retained in its original snapshot,
+        # never silently deleted or incorrectly migrated into WXV.
+        self.assertIn("world-rugby-challenger@mbligh.github.io",
+                      {str(e.get("UID")) for e in intl.walk("VEVENT")})
+
     def test_historical_wxv_uses_independent_round_and_nfo_paths(self):
         split_intl, split_wxv = wxv.split_snapshot(mixed_snapshot())
         with tempfile.TemporaryDirectory() as d:
