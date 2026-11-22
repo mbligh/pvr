@@ -115,6 +115,19 @@ def build(config, source_dir, now):
                 raise ValueError(f"Missing source snapshot: {path}")
             calendar = Calendar.from_ical(path.read_bytes())
         grouped = defaultdict(list)
+        wxv_week_start = {}
+        if entry["slug"] == "rugby-womens-wxv":
+            # Each WXV tournament year has independent week-based rounds.
+            # Monday anchors keep weekend fixtures together; prior
+            # assignments in the manifest override the recomputed round.
+            for event in calendar.walk("VEVENT"):
+                start = start_time(event, UK)
+                if start is None or not isinstance(event.decoded("DTSTART"), dt.datetime):
+                    continue
+                local = start.astimezone(UK)
+                monday = local.date() - dt.timedelta(days=local.weekday())
+                year = local.year
+                wxv_week_start[year] = min(wxv_week_start.get(year, monday), monday)
         for event in calendar.walk("VEVENT"):
             kickoff = start_time(event, UK)
             if kickoff is None:
@@ -130,8 +143,18 @@ def build(config, source_dir, now):
             round_match = ROUND.search(description)
             if entry.get("type") == "world-rugby":
                 year = kickoff.astimezone(UK).year
-                if entry["slug"] == "rugby-nations":
+                if entry["slug"] == "rugby-womens-wxv":
+                    local = kickoff.astimezone(UK)
+                    monday = local.date() - dt.timedelta(days=local.weekday())
+                    anchor = wxv_week_start[year]
+                    round_no = 1 + (monday - anchor).days // 7
                     assigned = old_assignments.get(f"{entry['slug']}:{event.get('UID', '')}")
+                    if assigned and assigned.get("round") is not None and assigned.get("episode") is not None:
+                        round_no = assigned["round"]
+                    if not 1 <= round_no <= 99:
+                        raise ValueError("WXV round out of supported range")
+                elif entry["slug"] == "rugby-nations":
+                    assigned = old_assignments.get(f"{entry['slug']}:{event.get('UID', '')")
                     replay_round, _ = resolve_round(kickoff, teams[0], teams[1], observations)
                     round_no = (assigned["round"] if assigned and
                                 assigned.get("episode") is not None and
