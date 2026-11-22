@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Local read-only PVR episode / recording quality dashboard for slagg."""
+import argparse
+import os
+import sys
+from http.server import ThreadingHTTPServer
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from dashboard.data import DashboardData
+from dashboard.web import make_handler
+from orchestration.polling import database_connection
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bind", default="127.0.0.1",
+                        help="Listen address; default loopback (use 0.0.0.0 for LAN)")
+    parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--sports-root", default="/data/sports")
+    parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
+    parser.add_argument("--timezone", default="America/New_York")
+    parser.add_argument("--ffprobe", default="ffprobe")
+    args = parser.parse_args(argv)
+    if not 1 <= args.port <= 65535:
+        parser.error("Port must be between 1 and 65535")
+    try:
+        tz = ZoneInfo(args.timezone)
+    except ZoneInfoNotFoundError:
+        parser.error("Unknown timezone")
+    try:
+        with database_connection(args.database) as client:
+            client.admin.command("ping")
+            app = DashboardData(client[args.database], args.sports_root, tz)
+            from dashboard.web import QualityLookup
+            handler = make_handler(app, quality_lookup=QualityLookup(
+                app, ffprobe=args.ffprobe))
+            with ThreadingHTTPServer((args.bind, args.port), handler) as server:
+                server.daemon_threads = True
+                print(f"PVR dashboard listening on http://{args.bind}:{args.port}/",
+                      flush=True)
+                server.serve_forever()
+    except Exception as exc:
+        print(f"PVR dashboard: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

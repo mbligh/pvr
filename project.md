@@ -683,3 +683,26 @@ no longer causes discovery demand, while the unconditional per-source
 daily fallback remains. Per-source error backoff and locking are unchanged.
 orchestration/polling.py implements this without new Atlas fields.
 See POLLING.md.
+
+## Local read-only PVR dashboard (2026-11-22)
+
+pvr_dashboard starts a host-native stdlib ThreadingHTTPServer on
+slagg (default 127.0.0.1:8787, optionally bind to the LAN).
+dashboard/data.py queries Atlas episodes per exact canonical series
+ID, filtering out scheduled events more than seven days ahead and
+sorting newest first, while including unnumbered/date-only history.
+The top tab selector exposes all 13 canonical series. The dark compact
+one-row-per-event table shows schedule, season/episode, title, installed
+status, quality (resolution/FPS/codec), verified file size and source.
+
+Installed status requires a physical nonempty file within the chosen
+/data/sports/<series> directory, resolved from the canonical nfo_path
+or positively linked files inventory record; a stale inventory record
+alone never counts as installed. Atlas files.media quality is trusted only
+when file identity matches; missing media metadata is probed lazily by
+ffprobe through a restricted read-only HTTP endpoint and bounded RAM
+cache. Assets are local CSS/JS with no frontend build process.
+No database writes or media changes. Default listener is localhost;
+LAN access is opt-in and unauthenticated. A user cron @reboot example
+is provided, but neither deployment nor crontab is modified automatically.
+See DASHBOARD.md.
