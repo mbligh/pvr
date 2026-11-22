@@ -156,16 +156,15 @@ def build_catalogue(db, config, now, refresh):
             "venue": fixture["venue"],
             "showtitle": fixture["showtitle"],
             "nfo_path": fixture["nfo"],
-            "external_ids": (
-                {"rugbypass": fixture.get("rugbypass_id")}
-                | ({"prem": prem_metadata[fixture["id"].split(":", 1)[1]]["prem"]}
-                   if fixture["competition"] == "Rugby_Mens_Prem" and
-                   fixture["id"].split(":", 1)[1] in prem_metadata else {})
-            ),
             "metadata_provider": ("prem/official" if fixture["competition"] ==
                                   "Rugby_Mens_Prem" else "calendar/rugby"),
             "status": "scheduled",
         }
+        # Official fixture IDs are scheduler metadata. Recording IDs belong
+        # to releases and matchers, not to episode source ingestion.
+        uid = fixture["id"].split(":", 1)[1]
+        if fixture["competition"] == "Rugby_Mens_Prem" and uid in prem_metadata:
+            record["external_ids"] = {"prem": prem_metadata[uid]["prem"]}
         if fixture["nfo"]:
             record["nfo"] = output_files[fixture["nfo"]].decode("utf-8")
         episodes.append(record)
@@ -247,19 +246,25 @@ def persist(db, snapshots, manifest, episodes, now):
             raise ValueError(f"Conflicting existing WXV episode {doc['_id']}")
 
     # Never delete merely missing fixtures or existing acquisition state.
-    operations = [
-        UpdateOne({"_id": episode["_id"]}, {
-            "$set": {k: v for k, v in episode.items()
-                     if k != "_id" and
-                     not (episode["series_id"] == "Rugby_Mens_Prem" and
-                          ((k == "external_ids" and
-                            "prem" not in episode["external_ids"]) or
-                           (k == "round" and v is None)))}
-                    | {"metadata_updated_at": now},
-            "$setOnInsert": {"created_at": now}
-        }, upsert=True)
-        for episode in episodes
-    ]
+    # In particular, previous imports stored some source recording IDs on
+    # episodes. Avoid replacing the whole external_ids document: the scheduler
+    # only owns official fixture IDs, while the release matcher owns recordings.
+    operations = []
+    for episode in episodes:
+        fields = {
+            k: v for k, v in episode.items()
+            if k not in ("_id", "external_ids") and
+            not (episode["series_id"] == "Rugby_Mens_Prem" and
+                 k == "round" and v is None)
+        }
+        prem_id = (episode.get("external_ids") or {}).get("prem")
+        if prem_id is not None:
+            fields["external_ids.prem"] = prem_id
+        fields["metadata_updated_at"] = now
+        operations.append(UpdateOne({"_id": episode["_id"]}, {
+            "$set": fields,
+            "$setOnInsert": {"created_at": now},
+        }, upsert=True))
     db.episodes.bulk_write(operations, ordered=False)
     for old in previous:
         replaced = WXV + ":" + old["_id"][len(WOMENS) + 1:]

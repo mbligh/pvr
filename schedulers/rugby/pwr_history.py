@@ -116,7 +116,7 @@ def prepare(year, calendar, prior=None, now=None):
             "showtitle": fixture["showtitle"],
             "nfo_path": fixture["nfo"],
             "nfo": nfo_files[fixture["nfo"]].decode("utf-8"),
-            "external_ids": {"rugbypass": fixture.get("rugbypass_id")},
+            "external_ids": {},
             "metadata_provider": "calendar/rugby",
         })
     for event in events:

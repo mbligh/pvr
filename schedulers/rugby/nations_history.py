@@ -95,7 +95,7 @@ def prepare(year, calendar, prior=None, now=None):
             "venue": fixture["venue"], "showtitle": fixture["showtitle"],
             "nfo_path": fixture["nfo"],
             "nfo": files[fixture["nfo"]].decode("utf-8"),
-            "external_ids": {"rugbypass": fixture.get("rugbypass_id")},
+            "external_ids": {},
             "metadata_provider": "world-rugby/history",
             "status": "scheduled",
         })

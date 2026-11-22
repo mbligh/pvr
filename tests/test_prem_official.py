@@ -169,6 +169,41 @@ class OfficialPremTests(unittest.TestCase):
         self.assertNotIn("finalScore", str(eps))
         self.assertNotIn("matchWinner", str(eps))
 
+    def test_scheduler_only_updates_official_prem_id_not_other_source_ids(self):
+        ep = {
+            "_id": "Rugby_Mens_Prem:abc", "series_id": "Rugby_Mens_Prem",
+            "round": 3, "external_ids": {"prem": "294919"},
+            "status": "scheduled", "season": 2026,
+        }
+        db = MagicMock()
+        db.episodes.find.side_effect = [[], []]
+        db.files.find.return_value = []
+        importer.persist(db, {}, {"schema_version": 2, "fixtures": []},
+                         [ep], dt.datetime(2026, 11, 21, tzinfo=UTC))
+        change = db.episodes.bulk_write.call_args.args[0][0]._doc
+        self.assertEqual(change["$set"]["external_ids.prem"], "294919")
+        self.assertNotIn("external_ids", change["$set"])
+        self.assertNotIn("external_ids", change["$setOnInsert"])
+
+    def test_other_existing_episode_source_ids_are_not_overwritten(self):
+        # A legacy RugbyPass recording ID on a stored fixture must remain
+        # untouched during scheduler refresh. The matcher owns that mapping.
+        ep = {
+            "_id": "Rugby_Mens_Nations:abc",
+            "series_id": "Rugby_Mens_Nations",
+            "round": 4, "episode": 401,
+            "external_ids": {},
+            "status": "scheduled", "season": 2026,
+        }
+        db = MagicMock()
+        db.episodes.find.side_effect = [[], []]
+        db.files.find.return_value = []
+        importer.persist(db, {}, {"schema_version": 2, "fixtures": []},
+                         [ep], dt.datetime(2026, 11, 21, tzinfo=UTC))
+        change = db.episodes.bulk_write.call_args.args[0][0]._doc
+        self.assertNotIn("external_ids", change["$set"])
+        self.assertFalse(any(k.startswith("external_ids.") for k in change["$set"]))
+
     def test_historical_external_id_survives_next_season_rollover(self):
         ep = {
             "_id": "Rugby_Mens_Prem:abc", "series_id": "Rugby_Mens_Prem",

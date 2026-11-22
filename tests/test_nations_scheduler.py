@@ -79,11 +79,18 @@ class NationsMetadataTests(unittest.TestCase):
             docs = Path(temp) / "docs"
             docs.mkdir()
             (docs / "Rugby_Mens_Nations.ics").write_bytes(cal.to_ical())
+            # Even an invalid archived recording catalogue must not be read
+            # by the fixture scheduler. RugbyPass is release data only.
+            data_dir = Path(temp) / "data"
+            data_dir.mkdir()
+            (data_dir / "rugbypass.json").write_text(
+                "this is not fixture data", encoding="utf-8")
             (docs / "rugby-metadata-manifest.json").write_text(json.dumps({
                 "schema_version": 2, "fixtures": [{
                     "id": "Rugby_Mens_Nations:world-rugby-fixture-4-0@mbligh.github.io",
                     "competition": "Rugby_Mens_Nations", "round": 4,
                     "episode": 406, "season": 2026,
+                    "rugbypass_id": "old-release-id",
                 }]
             }))
             files, manifest = plex_nfo.build(
@@ -95,6 +102,8 @@ class NationsMetadataTests(unittest.TestCase):
                          set(range(701, 707)))
         prior = next(x for x in manifest["fixtures"] if x["id"].endswith("4-0@mbligh.github.io"))
         self.assertEqual(prior["episode"], 406)
+        self.assertTrue(all("rugbypass_id" not in f for f in manifest["fixtures"]))
+        self.assertEqual({f["round"] for f in manifest["fixtures"]}, {4, 5, 6, 7})
         self.assertTrue(all("Rugby_Mens_Nations/Season_2026/" in k
                             for k in files if "/Season_" in k and k.endswith(".nfo")))
 

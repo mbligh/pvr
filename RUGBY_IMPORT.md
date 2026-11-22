@@ -93,7 +93,7 @@ The workflow runs tests on push, and the importer only on manual workflow_dispat
 
 ## Scope and next steps
 
-The legacy modules are copied as-is to preserve fixture parsing, spoiler avoidance, season assignment, and NFO format. The initial importer is a migration bridge, not a new generalized provider SDK. Move the common logic into cleaner modules after the first Atlas import has been validated. The existing RugbyPass catalogue is not copied; prior episode assignments and Nations Championship replay matches are preserved from the published manifest. New RugbyPass round mappings will come from the future release indexer.
+The fixture adapters, round-numbering logic and NFO builder are native PVR scheduler modules. RugbyPass is not a fixture metadata source: the scheduler neither reads RugbyPass catalogues nor infers rounds from published recordings. Verified Nations Championship competition-week dates supply round assignments, and previously accepted episode numbers remain stable. RugbyPass recording discovery and episode matching happen separately through refresh_releases and match_rugbypass.
 
 After updating both repositories on slagg, preview the Atlas ID conversion with
 ./migrate_series_ids and apply it with ./migrate_series_ids --apply before
@@ -202,3 +202,20 @@ filter.py and plex_nfo.py are removed. Use ./import_rugby,
 The two original adapter tests are now in tests/ and run with CI.
 Canonical Atlas IDs, calendar freezes, NFO paths and CLI arguments
 are unchanged.
+
+
+## RugbyPass is release discovery, not fixture scheduling
+
+The scheduler uses official competition/fixture sources only. In particular
+schedulers/rugby/plex_nfo.py no longer opens data/rugbypass.json or derives
+Nations Championship rounds from replay titles or publication dates. It
+numbers verified 2026 Nations fixtures using the official tournament weeks,
+or preserves an already accepted round/episode number in the saved manifest.
+
+The scheduler does not output RugbyPass recording identifiers in its new
+manifest or new episode metadata. Existing external_ids.rugbypass values
+already stored in Atlas are left untouched by scheduler upserts, avoiding
+unnecessary loss of historical associations. Official PREM match IDs are
+updated individually as external_ids.prem rather than replacing external_ids.
+RugbyPass recording IDs and episode associations are managed by release
+indexing and matchers, not the scheduler.

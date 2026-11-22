@@ -533,3 +533,17 @@ Existing --input JSON/standard-input handling, preview/JSONL modes,
 Atlas persistence, stable session IDs and both root CLIs remain
 unchanged. Errors are caught directly, and tests cover source
 dispatch and key selection.
+
+
+## RugbyPass release-only boundary (2026-11-21)
+
+RugbyPass's catalogue and downloadable video IDs belong solely to release
+indexing, replay matching and media downloading. The rugby scheduler no
+longer parses RugbyPass replay observations or infers Nations Championship
+rounds from recording titles/dates. It uses official competition weeks with
+complete team/fixture validation and preserves prior episode assignments.
+It does not emit new RugbyPass IDs in fixture manifests or episode metadata.
+Existing external_ids.rugbypass values in Atlas remain undisturbed by
+scheduler upserts; official Premiership external_ids.prem is independently
+updated with dotted field writes. This separates fixture scheduling from
+recording discovery without losing historical IDs.

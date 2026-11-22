@@ -40,62 +40,11 @@ def xml_bytes(tag, fields):
 
 
 
-def rugby_observations(path):
-    if not path.exists():
-        return []
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("source") != "rugbypass" or not isinstance(data.get("records"), list):
-        raise ValueError("Invalid RugbyPass catalogue JSON")
-    return data["records"]
-
-
-def normal_team(value):
-    aliases = {"allblacks": "newzealand", "wallabies": "australia",
-               "springboks": "southafrica"}
-    key = re.sub(r"[^a-z0-9]", "", value.casefold())
-    return aliases.get(key, key)
-
-
-def replay_observation(record):
-    if record.get("type") != "VOD":
-        return None
-    parts = [p.strip() for p in record.get("title", "").replace("\xa0", " ").split("|")]
-    if len(parts) < 3 or "full match replay" not in parts[-1].lower():
-        return None
-    teams = VERSUS.split(parts[0], maxsplit=1)
-    round_name = next((ROUND.search(p) for p in parts if ROUND.search(p)), None)
-    comp = next((p for p in parts if "nations championship" in p.casefold()), None)
-    if len(teams) != 2 or round_name is None or not comp:
-        return None
-    pub = record.get("publishedDate")
-    if not isinstance(pub, str):
-        return None
-    try:
-        pub_date = dt.datetime.fromisoformat(pub.replace("Z", "+00:00")).date()
-    except ValueError:
-        return None
-    return (normal_team(teams[0]), normal_team(teams[1]), pub_date,
-            int(round_name.group(1)), str(record["id"]))
-
-
-def resolve_round(kickoff, home, away, observations):
-    # Match replay publication dates to fixtures, allowing a one-day calendar
-    # difference and preserving competition/team identity. Never pick ties.
-    date = kickoff.date()
-    candidates = [r for r in observations if r[0] == normal_team(home) and
-                  r[1] == normal_team(away) and
-                  abs((r[2] - date).days) <= 1]
-    if len({(r[3], r[4]) for r in candidates}) == 1:
-        return candidates[0][3], candidates[0][4]
-    return None, None
-
 
 def build(config, source_dir, now, *, prem_metadata=None):
     prem_metadata = prem_metadata or {}
     output = {}
     manifest = {"schema_version": 2, "generated_at": now.isoformat(), "fixtures": []}
-    observations = [r for record in rugby_observations(source_dir.parent / "data" / "rugbypass.json")
-                    if (r := replay_observation(record)) is not None]
     previous = source_dir / "rugby-metadata-manifest.json"
     old_assignments = {}
     if previous.exists():
@@ -157,7 +106,7 @@ def build(config, source_dir, now, *, prem_metadata=None):
                         "kickoff_utc": kickoff.astimezone(dt.timezone.utc).isoformat(),
                         "home": teams[0].strip(), "away": teams[1].strip(),
                         "venue": str(event.get("LOCATION", "")).strip(),
-                        "rugbypass_id": None, "nfo": None,
+                        "nfo": None,
                     })
                     continue
             elif entry.get("rounds") == "six-nations":
@@ -184,7 +133,7 @@ def build(config, source_dir, now, *, prem_metadata=None):
                         "kickoff_utc": kickoff.astimezone(dt.timezone.utc).isoformat(),
                         "home": teams[0].strip(), "away": teams[1].strip(),
                         "venue": str(event.get("LOCATION", "")).strip(),
-                        "rugbypass_id": None, "nfo": None,
+                        "nfo": None,
                     })
                     continue
             elif entry.get("type") == "world-rugby":
@@ -201,12 +150,10 @@ def build(config, source_dir, now, *, prem_metadata=None):
                         raise ValueError("WXV round out of supported range")
                 elif entry["slug"] == "Rugby_Mens_Nations":
                     assigned = old_assignments.get(f"{entry['slug']}:{event.get('UID', '')}")
-                    replay_round, _ = resolve_round(kickoff, teams[0], teams[1], observations)
                     round_no = (assigned["round"] if assigned and
                                 assigned.get("episode") is not None and
                                 assigned.get("round") is not None else
-                                nations_rounds.get(str(event.get("UID", "")).strip(),
-                                                   replay_round))
+                                nations_rounds.get(str(event.get("UID", "")).strip()))
                     if round_no is None:
                         # Publish the fixture without fabricating a round/episode.
                         manifest["fixtures"].append({
@@ -216,7 +163,7 @@ def build(config, source_dir, now, *, prem_metadata=None):
                             "kickoff_utc": kickoff.astimezone(dt.timezone.utc).isoformat(),
                             "home": teams[0].strip(), "away": teams[1].strip(),
                             "venue": str(event.get("LOCATION", "")).strip(),
-                            "rugbypass_id": None, "nfo": None,
+                            "nfo": None,
                         })
                         continue
                 else:
@@ -284,10 +231,6 @@ def build(config, source_dir, now, *, prem_metadata=None):
                     "kickoff_utc": kickoff.isoformat(),
                     "home": home, "away": away,
                     "venue": venue,
-                    "rugbypass_id": (
-                        resolve_round(kickoff, home, away, observations)[1]
-                        or (prior.get("rugbypass_id") if prior else None)
-                    ) if entry["slug"] == "Rugby_Mens_Nations" else None,
                     "nfo": relative,
                 })
     if not manifest["fixtures"]:
