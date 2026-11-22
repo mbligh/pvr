@@ -16,10 +16,10 @@ NOW = dt.datetime(2026, 11, 21, 12, tzinfo=UTC)
 CONFIG = {
     "timezone": "America/New_York",
     "calendars": [
-        {"slug": "rugby-womens-intl", "name": "Rugby Womens Intl",
+        {"slug": "Rugby_Womens_Intl", "name": "Rugby Womens Intl",
          "nfo_showtitle": "Rugby Womens Intl", "type": "world-rugby",
          "group": "womens-intl", "library_dir": "Rugby_Womens_Intl"},
-        {"slug": "rugby-womens-wxv", "name": "Rugby Womens WXV",
+        {"slug": "Rugby_Womens_WXV", "name": "Rugby Womens WXV",
          "nfo_showtitle": "Rugby Womens WXV", "type": "world-rugby",
          "group": "wxv", "library_dir": "Rugby_Womens_WXV"}
     ]
@@ -88,12 +88,12 @@ class WXVSplitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             docs = pathlib.Path(d) / "docs"
             docs.mkdir()
-            (docs / "rugby-womens-intl.ics").write_bytes(split_intl.to_ical())
-            (docs / "rugby-womens-wxv.ics").write_bytes(split_wxv.to_ical())
+            (docs / "Rugby_Womens_Intl.ics").write_bytes(split_intl.to_ical())
+            (docs / "Rugby_Womens_WXV.ics").write_bytes(split_wxv.to_ical())
             (docs / "rugby-metadata-manifest.json").write_text(json.dumps({
                 "schema_version": 2, "fixtures": [
-                    {"id": "rugby-womens-intl:world-rugby-first@mbligh.github.io",
-                     "competition": "rugby-womens-intl", "season": 2026,
+                    {"id": "Rugby_Womens_Intl:world-rugby-first@mbligh.github.io",
+                     "competition": "Rugby_Womens_Intl", "season": 2026,
                      "round": 1, "episode": 117}
                 ]}))
             output, manifest = importer.plex_nfo.build(CONFIG, docs, NOW)
@@ -119,17 +119,17 @@ class WXVSplitTests(unittest.TestCase):
         self.assertEqual(len(episodes), 4)
         self.assertEqual(len([e for e in episodes if e["series_id"] == wxv.WXV]), 3)
         ids = [e["_id"] for e in episodes]
-        self.assertIn("rugby-womens-wxv:world-rugby-first@mbligh.github.io", ids)
-        self.assertNotIn("rugby-womens-intl:world-rugby-first@mbligh.github.io", ids)
+        self.assertIn("Rugby_Womens_WXV:world-rugby-first@mbligh.github.io", ids)
+        self.assertNotIn("Rugby_Womens_Intl:world-rugby-first@mbligh.github.io", ids)
         self.assertTrue(all("score" not in str(e).lower() for e in episodes))
 
     def test_migration_marks_old_wxv_as_superseded_and_updates_links(self):
         old = {
-            "_id": "rugby-womens-intl:world-rugby-first@mbligh.github.io",
+            "_id": "Rugby_Womens_Intl:world-rugby-first@mbligh.github.io",
             "series_id": wxv.WOMENS, "nfo": "<plot>WXV 2026</plot>"
         }
         newer = {
-            "_id": "rugby-womens-wxv:world-rugby-first@mbligh.github.io",
+            "_id": "Rugby_Womens_WXV:world-rugby-first@mbligh.github.io",
             "series_id": wxv.WXV, "season": 2026, "episode": 101,
             "nfo_path": "Rugby_Womens_WXV/Season_2026/Rugby_Womens_WXV-s2026e101-Canada_v_England_20261016.nfo",
             "nfo": "<episodedetails><showtitle>Rugby Womens WXV</showtitle>"
@@ -154,7 +154,7 @@ class WXVSplitTests(unittest.TestCase):
 
     def test_inventory_conflict_fails_before_writes(self):
         old = {
-            "_id": "rugby-womens-intl:world-rugby-first@mbligh.github.io",
+            "_id": "Rugby_Womens_Intl:world-rugby-first@mbligh.github.io",
             "series_id": wxv.WOMENS, "nfo": "<plot>WXV 2026</plot>"
         }
         new = {"_id": wxv.WXV + ":" + old["_id"].split(":", 1)[1],

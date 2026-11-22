@@ -9,8 +9,8 @@ import re
 
 from icalendar import Calendar
 
-WXV = "rugby-womens-wxv"
-WOMENS = "rugby-womens-intl"
+WXV = "Rugby_Womens_WXV"
+WOMENS = "Rugby_Womens_Intl"
 WXV_DESC = re.compile(r"^\s*WXV(?:\s+20\d{2})?(?:\s|$)", re.IGNORECASE)
 # When splitting historical snapshots, explicitly exclude the separate
 # Challenger competition even if a source previously labelled it under WXV.

@@ -57,7 +57,7 @@ for choosing source candidates.
 
 The same safe PWR worker now supports `--series` for the three other
 **already-numbered** Atlas rugby fixture series, plus the separately
-registered `rugby-womens-wxv` series. For these non-PWR series,
+registered `Rugby_Womens_WXV` series. For these non-PWR series,
 the supported source is **RugbyPass only**; BBC and YouTube remain
 PWR-specific until their international catalogue and matching rules
 are established.
@@ -73,20 +73,20 @@ python3 match_rugbypass --verbose
 python3 match_rugbypass --apply
 
 # Inspect missing men's internationals and Nations Championship recordings:
-python3 acquire_missing --series rugby-mens-intl --limit 5
-python3 acquire_missing --series rugby-nations --limit 5
+python3 acquire_missing --series Rugby_Mens_Intl --limit 5
+python3 acquire_missing --series Rugby_Mens_Nations --limit 5
 
 # Inspect women's internationals:
-python3 acquire_missing --series rugby-womens-intl --limit 5
+python3 acquire_missing --series Rugby_Womens_Intl --limit 5
 
 # WXV has its own scheduler fixture identities after import_rugby is applied:
-python3 acquire_missing --series rugby-womens-wxv --limit 5
+python3 acquire_missing --series Rugby_Womens_WXV --limit 5
 
 # Safely trial exactly one Nations Championship RugbyPass recording:
-python3 acquire_missing --series rugby-nations --limit 1 --apply
+python3 acquire_missing --series Rugby_Mens_Nations --limit 1 --apply
 
 # Later: refresh RugbyPass listings, match and acquire in one bounded run:
-python3 acquire_missing --series rugby-womens-intl --refresh --limit 1 --apply
+python3 acquire_missing --series Rugby_Womens_Intl --refresh --limit 1 --apply
 ```
 
 These commands use the existing `pvr.episodes` IDs, numbered
@@ -98,13 +98,13 @@ recordings are retained. The RugbyPass adapter reuses
 
 **Nations Championship routing:** These matches also appear in the men's
 international calendar, but an explicitly labelled `Nations Championship`
-RugbyPass recording links only to `rugby-nations`; it is not acquired
-a second time into `rugby-mens-intl`. This prevents duplicate videos
+RugbyPass recording links only to `Rugby_Mens_Nations`; it is not acquired
+a second time into `Rugby_Mens_Intl`. This prevents duplicate videos
 between those two libraries.
 
 **WXV directory separation:** The updated scheduler partitions
 already-accepted WXV fixtures from the women's-international series,
-creates distinct `rugby-womens-wxv` IDs and week-based round numbering,
+creates distinct `Rugby_Womens_WXV` IDs and week-based round numbering,
 and keeps the original WXV records as superseded history. This takes
 effect after `import_rugby` is run on slagg with the new code. The
 RugbyPass matcher then links replays to WXV's dedicated series. No

@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Explicit, backed-up conversion of PVR series IDs to media-directory names.
+
+Run on slagg after stopping all PVR/calendar cron jobs and pulling both repos:
+    ./migrate_series_ids
+    ./migrate_series_ids --apply
+
+The default is a read-only preview. --apply creates a 0600 JSONL.gz backup
+of every affected source document before writing anything. The operation is
+idempotent after successful completion. If interrupted, rerun it; conflicting
+records fail closed. This does not move or rename media on disk, and never
+changes published calendar event UIDs.
+"""
+import argparse
+import datetime as dt
+import fcntl
+import gzip
+import json
+import os
+import pathlib
+import sys
+
+from schedulers.series_ids import canonicalize
+
+LOCK = "/tmp/pvr-series-ids-migration.lock"
+
+
+def plan(db):
+    """Read every collection; catch references in jobs and source observations."""
+    changes = []
+    for name in sorted(db.list_collection_names()):
+        if name.startswith("system."):
+            continue
+        docs = list(db[name].find({}))
+        by_id = {d["_id"]: d for d in docs}
+        if len(by_id) != len(docs):
+            raise ValueError("Duplicate _id in " + name)
+        destinations = {}
+        for old in docs:
+            new = canonicalize(old)
+            if new == old:
+                continue
+            target = new["_id"]
+            if target in destinations and destinations[target] != old["_id"]:
+                raise ValueError(f"Collision in {name}: {target}")
+            destinations[target] = old["_id"]
+            existing = by_id.get(target)
+            if target != old["_id"] and existing is not None and existing != new:
+                raise ValueError(f"Existing conflicting target {name}/{target}")
+            changes.append((name, old, new))
+    return changes
+
+
+def backup_changes(changes, directory):
+    from bson.json_util import dumps
+    directory = pathlib.Path(directory).expanduser()
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(directory, 0o700)
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    target = directory / ("series-id-backup-" + stamp + ".jsonl.gz")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    fd = os.open(target, flags, 0o600)
+    with os.fdopen(fd, "wb") as raw:
+        with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as stream:
+            for name, old, _ in changes:
+                stream.write((dumps({"collection": name, "document": old}) + "\n").encode())
+        raw.flush()
+        os.fsync(raw.fileno())
+    return target
+
+
+def migrate(db, changes):
+    stats = {}
+    # Upsert canonical IDs first, then update all cross-document references.
+    # On rerun, an identical already-created target may be safely reused.
+    for name, old, new in changes:
+        collection = db[name]
+        if new["_id"] != old["_id"]:
+            target = collection.find_one({"_id": new["_id"]})
+            if target is None:
+                collection.insert_one(new)
+            elif target != new:
+                raise ValueError(f"Concurrent conflict for {name}/{new['_id']}")
+            collection.delete_one({"_id": old["_id"]})
+        else:
+            collection.replace_one({"_id": old["_id"]}, new)
+        stats[name] = stats.get(name, 0) + 1
+    return stats
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    parser.add_argument("--backup-dir", type=pathlib.Path,
+                        default=pathlib.Path.home() / "pvr-series-id-backups")
+    args = parser.parse_args()
+    # A lock protects against overlapping migrations on the same host.
+    with open(LOCK, "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        uri = os.environ.get("MONGODB_URI")
+        if not uri:
+            uri = (pathlib.Path.home() / ".mongodb" / "pvr").read_text().strip()
+        from pymongo import MongoClient
+        with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+            client.admin.command("ping")
+            db = client[args.database]
+            changes = plan(db)
+            counts = {}
+            for name, old, _ in changes:
+                counts[name] = counts.get(name, 0) + 1
+            summary = {"preview": not args.apply, "changes": counts,
+                       "total": len(changes)}
+            if args.apply and changes:
+                backup = backup_changes(changes, args.backup_dir)
+                print(json.dumps({**summary, "backup": str(backup)}, sort_keys=True),
+                      flush=True)
+                summary["applied"] = migrate(db, changes)
+            print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (ValueError, OSError) as exc:
+        print("Series ID migration: " + str(exc), file=sys.stderr)
+        sys.exit(1)

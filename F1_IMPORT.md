@@ -7,7 +7,7 @@ not modify media files, releases, or existing calendars.
 
 ## Episode identity and numbering
 
-- One series: formula-1 (display title "Formula 1"), seasons are calendar years.
+- One series: Formula_1 (display title "Formula 1"), seasons are calendar years.
 - Exclude pre-season testing entirely.
 - Episode number = championship round times 10 + fixed session offset.
 - Offsets: FP1=1, FP2=2, FP3=3, Sprint Qualifying=4, Sprint=5,
@@ -17,7 +17,7 @@ not modify media files, releases, or existing calendars.
 - Only actual sessions become episodes; sparse numbers are intentional.
   Normal Round 12: 121, 122, 123, 126, 127.
   Sprint Round 12: 121, 124, 125, 126, 127.
-- Stable ID is f1:<meetingSessionKey>. External IDs preserve meetingKey
+- Stable ID is Formula_1:<meetingSessionKey>. External IDs preserve meetingKey
   and meetingSessionKey. Rescheduling does not change the primary ID.
 
 The upstream US/Central legacy timezone label is normalized to America/Chicago,

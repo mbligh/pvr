@@ -2,10 +2,10 @@
 
 Two commands:
 
-- ./acquire_f1: preview or explicitly acquire and file F1 sessions from
+- ./acquire_Formula_1: preview or explicitly acquire and file F1 sessions from
   already indexed teletz releases. No discovery or source URLs accessed in
   preview mode.
-- ./run_f1: one-shot cron wrapper. With --apply it discovers current teletz
+- ./run_Formula_1: one-shot cron wrapper. With --apply it discovers current teletz
   posts, imports new/edited releases, then calls acquire_f1 --apply.
   Discovery or importer failure aborts acquisition.
 

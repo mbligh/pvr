@@ -23,7 +23,7 @@ def minimum_duration(episode):
 
 
 def select_f1_episode(database, episode, hostname):
-    if episode.get("series_id") != "formula-1":
+    if episode.get("series_id") != "Formula_1":
         raise ValueError("F1 file selection requires a Formula 1 episode")
     episode_id = episode["_id"]
     records = list(database.files.find({"episode_id": episode_id, "host": hostname}))

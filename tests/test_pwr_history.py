@@ -65,7 +65,7 @@ class PWRHistoryTests(unittest.TestCase):
         self.assertTrue(all("score" not in r["nfo"].lower() for r in records))
 
     def test_reimport_keeps_historical_episode_numbers(self):
-        previous = [{"id": "rugby-womens-pwr:pwr-289126@mbligh.github.io",
+        previous = [{"id": "Rugby_Womens_PWR:pwr-289126@mbligh.github.io",
                      "round": 1, "episode": 104, "season": 2025,
                      "competition": MODULE.SERIES}]
         records = MODULE.prepare(2025, calendar_from_fixtures(), prior=previous)
@@ -105,7 +105,8 @@ class PWRHistoryTests(unittest.TestCase):
         db.episodes.bulk_write.return_value.matched_count = 0
         db.episodes.bulk_write.return_value.modified_count = 0
         db.episodes.bulk_write.return_value.upserted_count = len(records)
-        report = MODULE.persist(db, records)
+        with patch("schedulers.series_ids.assert_migrated", return_value=None):
+            report = MODULE.persist(db, records)
         self.assertEqual(report["upserted"], 5)
         operations = db.episodes.bulk_write.call_args.args[0]
         self.assertEqual(len(operations), 5)
@@ -113,8 +114,9 @@ class PWRHistoryTests(unittest.TestCase):
         self.assertTrue(all("download_status" not in op._doc["$set"]
                             for op in operations))
         db.episodes.find.return_value = [{"_id": records[0]["_id"]}]
-        with self.assertRaisesRegex(ValueError, "already used"):
-            MODULE.persist(db, records)
+        with patch("schedulers.series_ids.assert_migrated", return_value=None):
+            with self.assertRaisesRegex(ValueError, "already used"):
+                MODULE.persist(db, records)
         self.assertEqual(db.episodes.bulk_write.call_count, 1)
 
 

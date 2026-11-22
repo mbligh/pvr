@@ -8,7 +8,7 @@ import re
 import unicodedata
 from zoneinfo import ZoneInfo
 
-SERIES_ID = "rugby-womens-pwr"
+SERIES_ID = "Rugby_Womens_PWR"
 UK = ZoneInfo("Europe/London")
 
 # Canonical names supplied for the PWR competition.

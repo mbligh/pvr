@@ -203,26 +203,24 @@ of already-published files, broader RugbyPass discovery and cleanup.
 
 The PVR canonical filer now registers the full eleven existing rugby
 library names verbatim: `Rugby_Mens_6N`, `Rugby_Mens_Intl`,
-`Rugby_Mens_Lions`, `Rugby_Mens_World_Cup`, `Rugby_Nations`,
+`Rugby_Mens_Lions`, `Rugby_Mens_World_Cup`, `Rugby_Mens_Nations`,
 `Rugby_Womens_6N`, `Rugby_Womens_Intl`, `Rugby_Womens_Lions`,
 `Rugby_Womens_PWR`, `Rugby_Womens_World_Cup`, and
-`Rugby_Womens_WXV`. Stable series IDs remain lowercase hyphenated
-slugs, and the canonical Atlas NFO path plus XML showtitle must match
-the mapped directory/series. Importer calendar entries with existing
-folders explicitly pin their `library_dir` values. This does not
-create new fixtures, rename existing recordings, or rewrite Atlas history.
+`Rugby_Womens_WXV`. Series IDs now equal the exact, case-sensitive media directory names. Atlas,
+calendar and NFO paths share a single namespace. Importer calendar slug values now equal the matching directory names, so
+there is no separate library_dir namespace. This does not by itself create
+fixtures or move existing recordings.
 See [FILING.md](FILING.md).
 
-WXV has a distinct `rugby-womens-wxv` directory and a dedicated
+WXV has a distinct `Rugby_Womens_WXV` directory and a dedicated
 World Rugby fixture source. The scheduler accepts both historic `WXV`
 and current `WXV Global Series` provider labels, while excluding
 `WXV Global Series Challenger`. New accepted fixture descriptions are
-normalized to the canonical `WXV` name. All existing series IDs,
-calendar identities, directory names and numbering rules remain unchanged.
+normalized to the canonical `WXV` name. Calendar event UIDs and episode numbering remain unchanged; existing database series IDs need migration.
 The migration is implemented in the
 scheduler: `import_rugby` creates new WXV episode IDs, independent
 tournament-week numbering and canonical NFOs, preserving original
-calendar UIDs. Old WXV entries in `rugby-womens-intl` become
+calendar UIDs. Old WXV entries in `Rugby_Womens_Intl` become
 superseded history; association migration is preflight-validated.
 The live Atlas migration requires running the updated importer on slagg.
 
@@ -230,11 +228,11 @@ The live Atlas migration requires running the updated importer on slagg.
 
 The new `matchers/rugbypass.py` and preview-first `match_rugbypass`
 link RugbyPass **full-match replays** to the existing numbered
-`rugby-mens-intl`, `rugby-womens-intl`, `rugby-nations`, and
-eventually the dedicated `rugby-womens-wxv` fixture series in Atlas. Titles must explicitly identify
+`Rugby_Mens_Intl`, `Rugby_Womens_Intl`, `Rugby_Mens_Nations`, and
+eventually the dedicated `Rugby_Womens_WXV` fixture series in Atlas. Titles must explicitly identify
 competition/gender, home and away countries in order, and fall within a
 bounded publication time after scheduled kickoff. Explicit Nations
-Championship replay titles route to `rugby-nations`, not the duplicated
+Championship replay titles route to `Rugby_Mens_Nations`, not the duplicated
 `NC:` men's-international calendar records. Ties and unnumbered fixtures
 remain unmatched, as do unlabelled or unavailable replays. Existing
 manual and PWR links are never rewritten.
@@ -294,12 +292,12 @@ development environment.
 ## Formula 1 episode import (2026-11-21)
 
 The preview-first executable import_f1 converts official f1_data season
-snapshots into spoiler-free PVR episodes for series formula-1. Pre-season
+snapshots into spoiler-free PVR episodes for series Formula_1. Pre-season
 testing is deliberately excluded. Numbering is round*10 + session offset:
 FP1=1, FP2=2, FP3=3, Sprint Qualifying=4, Sprint=5, Qualifying=6,
 Race=7. The official session code, not the inconsistent sessionType label,
 is authoritative. Only actual sessions are created, leaving sparse numbers.
-Stable IDs use f1:<meetingSessionKey>, independent of round and rescheduling.
+Stable IDs use Formula_1:<meetingSessionKey>, independent of round and rescheduling.
 
 The importer stores UTC times, circuit, official meeting/session IDs, NFO
 XML and suggested paths under Formula_1/Season_YYYY. It previews by default;
@@ -375,7 +373,7 @@ See TRANSFERNOW.md.
 ## Formula 1 canonical filing (2026-11-21)
 
 The existing preview-first file_recording command now also files verified
-Formula 1 recordings (formula-1 series) using the Atlas episode nfo_path
+Formula 1 recordings (Formula_1 series) using the Atlas episode nfo_path
 and stored NFO XML. The canonical root is Formula_1/Season_YYYY.
 filing/publish.py selects the permitted directory and NFO showtitle from
 the verified episode series; path traversal, symlinked subdirectories, and
@@ -453,5 +451,12 @@ are implemented and tested, but must be applied to the production Atlas
 database by running the updated rugby scheduler on slagg. The publishing
 handoff is deliberately not activated without the allowlisted host's
 first fully verified Atlas-derived ICS commit. No remote slagg cron
-changes were made by these Git commits. Keep
-`Rugby_Nations` unchanged pending the user's folder rename.
+changes were made by these Git commits. The user has already renamed the Nations directory to Rugby_Mens_Nations, which is now its canonical series ID.
+
+## Single directory-based series identifier (2026-11-21)
+
+All PVR series IDs and calendar slugs now equal the exact case-sensitive media
+folder name. Former hyphenated series IDs and F1 episode prefix f1: are
+legacy migration inputs only. See SERIES_ID_MIGRATION.md. New code must not
+write old-schema data before the migration; no live Atlas changes were made
+by these Git commits.

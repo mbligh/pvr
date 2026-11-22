@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 UTC = dt.timezone.utc
-SERIES_ID = "formula-1"
+SERIES_ID = "Formula_1"
 SHOWTITLE = "Formula 1"
 LIBRARY_DIR = "Formula_1"
 # Offsets are fixed, independent of chronological order or sprint-weekend format.
@@ -128,7 +128,7 @@ def build_episodes(payload):
             session_key = session.get("meetingSessionKey")
             if type(session_key) is not int or session_key <= 0:
                 raise ValueError(f"Meeting {key}: invalid meetingSessionKey {session_key!r}")
-            stable_id = f"f1:{session_key}"
+            stable_id = f"Formula_1:{session_key}"
             number = round_no * 10 + SESSION_OFFSETS[code]
             if stable_id in seen_ids or (year, number) in seen_episodes:
                 raise ValueError(f"Duplicate session ID or episode: {stable_id}, {year}E{number}")
@@ -176,6 +176,8 @@ def build_episodes(payload):
 
 def persist(db, episodes, now):
     """Retain other PVR state; refuse accidental F1 episode renumbering."""
+    from schedulers.series_ids import assert_migrated
+    assert_migrated(db)
     from pymongo import UpdateOne
 
     year = episodes[0]["season"]
@@ -262,7 +264,7 @@ def main(argv=None):
         print(json.dumps(report, indent=2))
         return 0
     except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError) as exc:
-        print(f"import_f1: {exc}", file=sys.stderr)
+        print(f"import_Formula_1: {exc}", file=sys.stderr)
         return 1
 
 

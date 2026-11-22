@@ -7,7 +7,7 @@ module NEVER verifies TransferNow availability, downloads, or alters state.
 import datetime as dt
 import re
 
-SERIES_ID = "formula-1"
+SERIES_ID = "Formula_1"
 SOURCE = "reddit-teletz"
 URL = re.compile(r"^https://www\.transfernow\.net/dl/[A-Za-z0-9]{8,64}$")
 TIERS = (

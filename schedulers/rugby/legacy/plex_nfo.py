@@ -116,7 +116,7 @@ def build(config, source_dir, now):
             calendar = Calendar.from_ical(path.read_bytes())
         grouped = defaultdict(list)
         wxv_week_start = {}
-        if entry["slug"] == "rugby-womens-wxv":
+        if entry["slug"] == "Rugby_Womens_WXV":
             # Each WXV tournament year has independent week-based rounds.
             # Monday anchors keep weekend fixtures together; prior
             # assignments in the manifest override the recomputed round.
@@ -143,7 +143,7 @@ def build(config, source_dir, now):
             round_match = ROUND.search(description)
             if entry.get("type") == "world-rugby":
                 year = kickoff.astimezone(UK).year
-                if entry["slug"] == "rugby-womens-wxv":
+                if entry["slug"] == "Rugby_Womens_WXV":
                     local = kickoff.astimezone(UK)
                     monday = local.date() - dt.timedelta(days=local.weekday())
                     anchor = wxv_week_start[year]
@@ -153,7 +153,7 @@ def build(config, source_dir, now):
                         round_no = assigned["round"]
                     if not 1 <= round_no <= 99:
                         raise ValueError("WXV round out of supported range")
-                elif entry["slug"] == "rugby-nations":
+                elif entry["slug"] == "Rugby_Mens_Nations":
                     assigned = old_assignments.get(f"{entry['slug']}:{event.get('UID', '')}")
                     replay_round, _ = resolve_round(kickoff, teams[0], teams[1], observations)
                     round_no = (assigned["round"] if assigned and
@@ -184,7 +184,7 @@ def build(config, source_dir, now):
         for (year, round_no), matches in sorted(grouped.items()):
             # The published library uses display-name case, not the lowercase calendar slug.
             # Allow an explicit per-series directory override where needed.
-            show = entry.get("library_dir", slug(entry["name"]))
+            show = entry["slug"]
             # Keep show identifiers stable and filesystem-safe.
             show_dir = f"{show}/"
             output[show_dir + "tvshow.nfo"] = xml_bytes("tvshow", [
@@ -237,7 +237,7 @@ def build(config, source_dir, now):
                     "rugbypass_id": (
                         resolve_round(kickoff, home, away, observations)[1]
                         or (prior.get("rugbypass_id") if prior else None)
-                    ) if entry["slug"] == "rugby-nations" else None,
+                    ) if entry["slug"] == "Rugby_Mens_Nations" else None,
                     "nfo": relative,
                 })
     if not manifest["fixtures"]:

@@ -28,7 +28,7 @@ def release(uri, title, published, **kwargs):
             "published": published, **kwargs}
 
 
-GAME = fixture("rugby-womens-pwr:pwr-295034@mbligh.github.io",
+GAME = fixture("Rugby_Womens_PWR:pwr-295034@mbligh.github.io",
                dt.datetime(2026, 11, 20, 19, 30, tzinfo=UTC))
 YOUTUBE = release(
     "youtube:bdxiq73pR-I",

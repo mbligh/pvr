@@ -16,8 +16,8 @@ CLI = importlib.machinery.SourceFileLoader(
 
 URI = "reddit-teletz:20261121rg0NQzAH"
 URL = "https://www.transfernow.net/dl/20261121rg0NQzAH"
-EP_ID = "f1:11416"
-EPISODE = {"_id": EP_ID, "series_id": "formula-1", "season": 2026, "episode": 216}
+EP_ID = "Formula_1:11416"
+EPISODE = {"_id": EP_ID, "series_id": "Formula_1", "season": 2026, "episode": 216}
 RELEASE = {"_id": URI, "uri": URI, "source": "reddit-teletz",
            "id": "20261121rg0NQzAH", "episode_id": EP_ID,
            "title": "Las Vegas Grand Prix - Qualifying - Sky 1080p",
@@ -276,13 +276,13 @@ class TransferNowAtlasTests(unittest.TestCase):
         self.assertEqual(plan["status"], "ready")
         self.assertEqual(plan["adapter"], "transfernow")
         self.assertEqual(plan["source_url"], URL)
-        self.assertEqual(plan["series_id"], "formula-1")
+        self.assertEqual(plan["series_id"], "Formula_1")
         self.db.jobs.insert_one.assert_not_called()
         self.db.files.update_one.assert_not_called()
         self.assertFalse(self.dest.exists())
 
     def test_rejects_wrong_series_wrong_url_and_existing_destination(self):
-        self.db.episodes.find_one.return_value = dict(EPISODE, series_id="rugby-womens-pwr")
+        self.db.episodes.find_one.return_value = dict(EPISODE, series_id="Rugby_Womens_PWR")
         with self.assertRaises(ValueError):
             self.run_cli()
         self.db.episodes.find_one.return_value = EPISODE
@@ -306,7 +306,7 @@ class TransferNowAtlasTests(unittest.TestCase):
         job = self.db.jobs.insert_one.call_args.args[0]
         self.assertEqual(job["adapter"], "transfernow")
         file_record = self.db.files.update_one.call_args.args[1]["$set"]
-        self.assertEqual(file_record["series_id"], "formula-1")
+        self.assertEqual(file_record["series_id"], "Formula_1")
         self.assertEqual(file_record["release_uri"], URI)
         self.assertEqual(self.db.jobs.update_one.call_args.args[1]["$set"]["status"],
                          "succeeded")

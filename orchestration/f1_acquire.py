@@ -8,7 +8,7 @@ from orchestration.acquire import aware, host_name, local_published
 from selection.f1_files import select_f1_episode
 from selection.f1_releases import rank_releases
 
-SERIES = "formula-1"
+SERIES = "Formula_1"
 SOURCE = "reddit-teletz"
 
 

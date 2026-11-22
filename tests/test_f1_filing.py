@@ -14,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CLI = importlib.machinery.SourceFileLoader(
     "pvr_file_recording_f1", str(ROOT / "file_recording")).load_module()
 
-EP_ID = "f1:11416"
+EP_ID = "Formula_1:11416"
 RELEASE_URI = "reddit-teletz:20261121rg0NQzAH"
 RELATIVE = ("Formula_1/Season_2026/"
             "Formula_1-s2026e216-Las_Vegas_Grand_Prix_Qualifying_20261120")
@@ -29,7 +29,7 @@ NFO = """<?xml version='1.0' encoding='utf-8'?>
 </episodedetails>
 """
 EPISODE = {
-    "_id": EP_ID, "series_id": "formula-1",
+    "_id": EP_ID, "series_id": "Formula_1",
     "season": 2026, "episode": 216, "duration": 3600,
     "title": "Las Vegas Grand Prix - Qualifying",
     "nfo_path": RELATIVE + ".nfo", "nfo": NFO,
@@ -90,7 +90,7 @@ class Formula1FilingTests(unittest.TestCase):
         self.source_id = "slagg:" + str(self.source)
         self.original = {
             "_id": self.source_id, "host": "slagg", "path": str(self.source),
-            "series_id": "formula-1", "episode_id": EP_ID,
+            "series_id": "Formula_1", "episode_id": EP_ID,
             "season": 2026, "episode": 216,
             "release_uri": RELEASE_URI,
             "size_bytes": self.source.stat().st_size,
@@ -119,7 +119,7 @@ class Formula1FilingTests(unittest.TestCase):
     def test_preview_is_read_only_and_uses_f1_naming(self):
         plan = self.run_cli()
         self.assertEqual(plan["status"], "ready")
-        self.assertEqual(plan["series_id"], "formula-1")
+        self.assertEqual(plan["series_id"], "Formula_1")
         self.assertEqual(plan["destination"], str(self.target))
         self.assertEqual(plan["nfo_path"], str(self.sidecar))
         self.assertEqual(plan["preferred_file_id"], self.source_id)
@@ -137,7 +137,7 @@ class Formula1FilingTests(unittest.TestCase):
         self.assertFalse(self.source.exists())
         doc = self.db.files.insert_one.call_args.args[0]
         self.assertEqual(doc["_id"], "slagg:" + str(self.target))
-        self.assertEqual(doc["series_id"], "formula-1")
+        self.assertEqual(doc["series_id"], "Formula_1")
         self.assertEqual(doc["episode_id"], EP_ID)
         self.assertEqual(doc["release_uri"], RELEASE_URI)
         self.assertEqual(doc["previous_file_id"], self.source_id)
@@ -184,7 +184,7 @@ class Formula1FilingTests(unittest.TestCase):
         self.db.jobs.insert_one.assert_not_called()
 
     def test_wrong_series_or_stale_file_is_rejected(self):
-        self.db.episodes.find_one.return_value = dict(EPISODE, series_id="rugby-womens-pwr")
+        self.db.episodes.find_one.return_value = dict(EPISODE, series_id="Rugby_Womens_PWR")
         with self.assertRaisesRegex(ValueError, "disagree"):
             self.run_cli()
         self.db.episodes.find_one.return_value = dict(EPISODE)
@@ -215,7 +215,7 @@ class Formula1FilingTests(unittest.TestCase):
         already.write_bytes(b"published")
         self.db.files.find.return_value = [self.original, {
             "_id": "slagg:" + str(already), "host": "slagg", "path": str(already),
-            "series_id": "formula-1", "season": 2026, "episode": 216,
+            "series_id": "Formula_1", "season": 2026, "episode": 216,
             "episode_id": EP_ID, "size_bytes": already.stat().st_size,
             "mtime_ns": already.stat().st_mtime_ns,
             "release_uri": RELEASE_URI, "media": MEDIA,

@@ -19,26 +19,26 @@ from inventory.scan import probe_video
 # Tuple: (library directory and filename prefix, normalized NFO showtitle,
 #         earliest accepted season).
 RUGBY_SERIES_PATHS = {
-    "rugby-mens-6n": ("Rugby_Mens_6N", "rugbymens6n", 1900),
-    "rugby-mens-intl": ("Rugby_Mens_Intl", "rugbymensintl", 2026),
-    "rugby-mens-lions": ("Rugby_Mens_Lions", "rugbymenslions", 1900),
-    "rugby-mens-world-cup": ("Rugby_Mens_World_Cup", "rugbymensworldcup", 1900),
-    "rugby-nations": ("Rugby_Nations", "rugbynationschampionships", 2026),
-    "rugby-womens-6n": ("Rugby_Womens_6N", "rugbywomens6n", 1900),
-    "rugby-womens-intl": ("Rugby_Womens_Intl", "rugbywomensintl", 2026),
-    "rugby-womens-lions": ("Rugby_Womens_Lions", "rugbywomenslions", 1900),
-    "rugby-womens-pwr": ("Rugby_Womens_PWR", "rugbywomenspwr", 2025),
-    "rugby-womens-world-cup": ("Rugby_Womens_World_Cup", "rugbywomensworldcup", 1900),
-    "rugby-womens-wxv": ("Rugby_Womens_WXV", "rugbywomenswxv", 1900),
+    "Rugby_Mens_6N": ("rugbymens6n", 1900),
+    "Rugby_Mens_Intl": ("rugbymensintl", 2026),
+    "Rugby_Mens_Lions": ("rugbymenslions", 1900),
+    "Rugby_Mens_World_Cup": ("rugbymensworldcup", 1900),
+    "Rugby_Mens_Nations": ("rugbynationschampionships", 2026),
+    "Rugby_Womens_6N": ("rugbywomens6n", 1900),
+    "Rugby_Womens_Intl": ("rugbywomensintl", 2026),
+    "Rugby_Womens_Lions": ("rugbywomenslions", 1900),
+    "Rugby_Womens_PWR": ("rugbywomenspwr", 2025),
+    "Rugby_Womens_World_Cup": ("rugbywomensworldcup", 1900),
+    "Rugby_Womens_WXV": ("rugbywomenswxv", 1900),
 }
-SERIES_PATHS = {**RUGBY_SERIES_PATHS, "formula-1": ("Formula_1", "formula1", 1950)}
+SERIES_PATHS = {**RUGBY_SERIES_PATHS, "Formula_1": ("formula1", 1950)}
 
 
 def series_config(episode):
     config = SERIES_PATHS.get(episode.get("series_id"))
     if config is None:
         raise ValueError("Unsupported canonical filing series")
-    return config
+    return episode["series_id"], *config
 
 
 def canonical_paths(episode, sports_root):

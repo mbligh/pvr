@@ -22,19 +22,19 @@ class LibraryPathTests(unittest.TestCase):
             event.add("dtstart", dt.datetime(2026, 11, 20, 19, 30, tzinfo=dt.timezone.utc))
             event.add("description", "Premiership Women's Rugby — Round 1")
             cal.add_component(event)
-            (docs / "rugby-womens-pwr.ics").write_bytes(cal.to_ical())
-            fixture_id = "rugby-womens-pwr:pwr-295034@mbligh.github.io"
+            (docs / "Rugby_Womens_PWR.ics").write_bytes(cal.to_ical())
+            fixture_id = "Rugby_Womens_PWR:pwr-295034@mbligh.github.io"
             # Existing lowercase manifest paths must not affect the stable episode.
             (docs / "rugby-metadata-manifest.json").write_text(json.dumps({
                 "schema_version": 2,
                 "fixtures": [{
-                    "id": fixture_id, "competition": "rugby-womens-pwr",
+                    "id": fixture_id, "competition": "Rugby_Womens_PWR",
                     "season": 2026, "episode": 101, "round": 1,
                     "nfo": "rugby_womens_pwr/Season_2026/old.nfo"
                 }]
             }))
             config = {"calendars": [{
-                "slug": "rugby-womens-pwr",
+                "slug": "Rugby_Womens_PWR",
                 "name": "Rugby Womens PWR",
                 "type": "pwr",
             }]}

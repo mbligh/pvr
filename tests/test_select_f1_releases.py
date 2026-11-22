@@ -17,7 +17,7 @@ TODAY = dt.date(2026, 11, 21)
 
 
 def release(identifier, commentary, height, *, sky=False, available=None,
-            published="2026-11-21", audio=None, url=True, episode_id="f1:race"):
+            published="2026-11-21", audio=None, url=True, episode_id="Formula_1:race"):
     record = {
         "_id": "reddit-teletz:" + identifier,
         "uri": "reddit-teletz:" + identifier, "source": "reddit-teletz",
@@ -65,13 +65,13 @@ class FakeDB:
 
 def data():
     return FakeDB([
-        {"_id": "f1:race", "series_id": "formula-1", "season": 2026,
+        {"_id": "Formula_1:race", "series_id": "Formula_1", "season": 2026,
          "episode": 217, "round": 21, "title": "Las Vegas Grand Prix - Race"},
-        {"_id": "f1:qualifying", "series_id": "formula-1", "season": 2026,
+        {"_id": "Formula_1:qualifying", "series_id": "Formula_1", "season": 2026,
          "episode": 216, "round": 21, "title": "Las Vegas Grand Prix - Qualifying"},
-        {"_id": "f1:practice", "series_id": "formula-1", "season": 2026,
+        {"_id": "Formula_1:practice", "series_id": "Formula_1", "season": 2026,
          "episode": 211, "round": 21, "title": "Las Vegas Grand Prix - Practice 1"},
-        {"_id": "rugby:fixture", "series_id": "rugby-womens-pwr", "season": 2026,
+        {"_id": "rugby:fixture", "series_id": "Rugby_Womens_PWR", "season": 2026,
          "episode": 217, "round": 21, "title": "Rugby"}], [
         release("sky1080aa", "sky", 1080),
         release("multi4kaaa", "multi", 2160, sky=True),
@@ -80,7 +80,7 @@ def data():
         release("dutch1080", "dutch", 1080),
         release("nourlaaaaa", "sky", 2160, url=False),
         release("blockedaaa", "sky", 2160, available=False),
-        release("quali1080a", "f1tv", 1080, episode_id="f1:qualifying"),
+        release("quali1080a", "f1tv", 1080, episode_id="Formula_1:qualifying"),
         release("rugby1080a", "sky", 1080, episode_id="rugby:fixture"),
     ])
 
@@ -144,7 +144,7 @@ class F1ReleaseSelectorTests(unittest.TestCase):
         self.assertNotIn("write", str(db.episodes.calls))
         self.assertEqual(db.releases.calls[0][0]["source"], "reddit-teletz")
         self.assertEqual(db.releases.calls[0][0]["episode_id"]["$in"],
-                         ["f1:practice", "f1:qualifying", "f1:race"])
+                         ["Formula_1:practice", "Formula_1:qualifying", "Formula_1:race"])
 
     def test_filter_and_include_missing(self):
         db = data()

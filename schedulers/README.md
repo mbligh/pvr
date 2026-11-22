@@ -54,15 +54,15 @@ historical snapshots only when no Atlas state exists.
 The separate Challenger competition is excluded, while historic WXV fixtures
 are still recognized; no series, folder or calendar renaming is required.
 The scheduler now partitions previously accepted, spoiler-free
-World Rugby women's fixtures into a distinct `rugby-womens-wxv` feed,
+World Rugby women's fixtures into a distinct `Rugby_Womens_WXV` feed,
 with independent WXV week-based episode numbering. On its first live
 `import_rugby` run, Atlas receives canonical WXV episodes and NFOs;
-legacy WXV records in `rugby-womens-intl` become `status=superseded`,
+legacy WXV records in `Rugby_Womens_Intl` become `status=superseded`,
 while any associated release/job IDs migrate. Media-inventory conflicts
 abort the migration rather than silently moving recordings. The calendar
 publisher `mbligh/calendar/build_rugby_calendars` moves frozen WXV
 calendar events to the new feed with their original UIDs.
 
-The named `Rugby_Nations` directory and stable `rugby-nations`
-series identifier remain unchanged pending a separately coordinated
-rename to `Rugby_Mens_Nations`.
+The Nations directory has already been renamed to Rugby_Mens_Nations.
+That exact spelling is the series ID. All rugby slugs equal media folder names;
+old lowercase spellings survive only as migration inputs and URL aliases.

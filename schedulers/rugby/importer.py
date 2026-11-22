@@ -27,6 +27,7 @@ import filter as calendar_filter  # noqa: E402
 import plex_nfo  # noqa: E402
 from pwr import fetch_pwr  # noqa: E402
 from world_rugby import fetch_world_rugby  # noqa: E402
+from schedulers.series_ids import assert_migrated, canonicalize, CANONICAL_TO_LEGACY
 from schedulers.rugby.wxv import (
     WOMENS, WXV, split_snapshot, legacy_id, validate_migration,
 )
@@ -48,17 +49,20 @@ def read_snapshot(db, slug):
     record = db.calendar_snapshots.find_one({"_id": slug}) if db is not None else None
     if record:
         return Calendar.from_ical(record["ics"].encode("utf-8"))
-    return Calendar.from_ical(legacy_content(slug + ".ics"))
+    # Published historical snapshots predate the canonical directory slugs.
+    # Fetch the old public URL for first bootstrap, retaining original UIDs.
+    legacy = CANONICAL_TO_LEGACY.get(slug, slug)
+    return Calendar.from_ical(legacy_content(legacy + ".ics"))
 
 
 def old_manifest(db):
     record = db.metadata_state.find_one({"_id": "rugby_manifest"}) if db is not None else None
     if record:
-        return record["value"]
+        return canonicalize(record["value"])
     data = json.loads(legacy_content("rugby-metadata-manifest.json"))
     if data.get("schema_version") != 2:
         raise ValueError("Legacy manifest schema is not version 2")
-    return data
+    return canonicalize(data)
 
 
 def fetch_calendar(entry, now):
@@ -294,6 +298,8 @@ def main():
         client.admin.command("ping")
         db = client[args.database]
     try:
+        if db is not None:
+            assert_migrated(db)
         snapshots, manifest, episodes = build_catalogue(
             db, config, now, refresh=not args.no_refresh
         )

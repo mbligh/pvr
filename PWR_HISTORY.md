@@ -19,7 +19,7 @@ existing season, round-based episode numbering and XML NFO conventions as
 The first season's regular games have numbers `s2025e101` onward, the
 semifinals are `s2025e1901`/`s2025e1902`, and the final is
 `s2025e2001`. Identifiers retain the source fixture ID, e.g.
-`rugby-womens-pwr:pwr-289126@mbligh.github.io`. NFOs are stored in MongoDB,
+`Rugby_Womens_PWR:pwr-289126@mbligh.github.io`. NFOs are stored in MongoDB,
 with intended filesystem paths under
 `Rugby_Womens_PWR/Season_2025/`.
 

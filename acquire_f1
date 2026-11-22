@@ -226,7 +226,7 @@ def run(database, *, apply=False, year=2026, round_no=None, episode_number=None,
                 # operator reconciliation; don't run another download.
                 break
         report = {
-            "mode": "apply" if apply else "preview", "series": "formula-1",
+            "mode": "apply" if apply else "preview", "series": "Formula_1",
             "year": year, "host": hostname, "limit": limit, "max_checks": max_checks,
             "episodes": counts["episodes"], "due": counts["due"],
             "actionable": len(actionable), **counters,

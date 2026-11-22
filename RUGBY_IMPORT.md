@@ -8,7 +8,7 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers copied from `mb
   For WXV, accept the historic `WXV` and current `WXV Global Series` API
   competition labels, but **exclude the separate Challenger competition**.
   Normalize all accepted fixture descriptions to `WXV` (not the API branding).
-  The series slug `rugby-womens-wxv`, folder `Rugby_Womens_WXV`, canonical
+  The series slug `Rugby_Womens_WXV`, folder `Rugby_Womens_WXV`, canonical
   showtitle and original match/calendar UIDs remain unchanged.
 - PWR: pwr.py
 - Gallagher PREM direct feed: prem.py (requires existing PREM_APP_ID and PREM_API_KEY credentials)
@@ -21,21 +21,20 @@ All supported fixture calendars are imported, including fixtures without a trust
 
 Episode NFO paths use the case of the series display name, e.g.
 `Rugby_Womens_PWR/Season_2026/Rugby_Womens_PWR-s2026e101-....nfo`.
-The calendar slug (`rugby-womens-pwr`) remains lowercase for stable IDs.
-If a series directory differs from the display name, set `library_dir` in its
-`schedulers/rugby/legacy/calendars.json` entry. This only changes PVR metadata paths;
-no existing video files or the original calendar repository are renamed.
+The calendar slug is the exact media directory name (e.g. Rugby_Womens_PWR).
+The slug in schedulers/rugby/legacy/calendars.json determines both the
+series ID and directory. Display names do not affect canonical identity.
 
-The PVR calendar configuration now explicitly pins `library_dir` for
-every currently imported rugby series that has one of the existing folders.
+The PVR scheduler now uses directory names as canonical series slugs
+and has no redundant library_dir overrides.
 The canonical filer registers the full eleven-directory list in
 [FILING.md](FILING.md). A directory mapping does not create fixtures.
 
 **WXV migration is implemented and takes effect on the next live import.**
 The scheduler partitions accepted historical WXV fixtures out of the
-women's-international snapshot, creates `rugby-womens-wxv` episodes in
+women's-international snapshot, creates `Rugby_Womens_WXV` episodes in
 `Rugby_Womens_WXV`, and numbers WXV tournament weeks independently.
-Old `rugby-womens-intl` WXV records are preserved as `superseded` history
+Old `Rugby_Womens_Intl` WXV records are preserved as `superseded` history
 and release/job associations are remapped to the new episode IDs. Existing
 media inventory under the old series is a preflight blocker, not moved
 or overwritten automatically. The legacy UID suffix remains unchanged.
@@ -91,3 +90,7 @@ The workflow runs tests on push, and the importer only on manual workflow_dispat
 ## Scope and next steps
 
 The legacy modules are copied as-is to preserve fixture parsing, spoiler avoidance, season assignment, and NFO format. The initial importer is a migration bridge, not a new generalized provider SDK. Move the common logic into cleaner modules after the first Atlas import has been validated. The existing RugbyPass catalogue is not copied; prior episode assignments and Nations Championship replay matches are preserved from the published manifest. New RugbyPass round mappings will come from the future release indexer.
+
+After updating both repositories on slagg, preview the Atlas ID conversion with
+./migrate_series_ids and apply it with ./migrate_series_ids --apply before
+running import_rugby. See SERIES_ID_MIGRATION.md.

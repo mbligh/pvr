@@ -21,7 +21,7 @@ sys.path.insert(0, str(LEGACY))
 import plex_nfo  # noqa: E402
 from pwr import fetch_pwr  # noqa: E402
 
-SERIES = "rugby-womens-pwr"
+SERIES = "Rugby_Womens_PWR"
 SHOW = "Rugby Womens PWR"
 UTC = dt.timezone.utc
 UK = ZoneInfo("Europe/London")
@@ -126,6 +126,8 @@ def prepare(year, calendar, prior=None, now=None):
 def persist(db, records, now=None):
     """Upsert historical fixtures only, preserving existing operational state."""
     from pymongo import UpdateOne
+    from schedulers.series_ids import assert_migrated
+    assert_migrated(db)
 
     if not records:
         raise ValueError("Refusing empty historical import")

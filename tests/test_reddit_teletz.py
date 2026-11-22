@@ -107,15 +107,15 @@ class RedditTeletzTests(unittest.TestCase):
 
     def test_thread_matches_only_unambiguous_episode(self):
         episodes = [
-            {"_id": "f1:11416", "season": 2026, "session_code": "q",
+            {"_id": "Formula_1:11416", "season": 2026, "session_code": "q",
              "meeting_name": "Las Vegas Grand Prix"},
-            {"_id": "f1:999", "season": 2026, "session_code": "ss",
+            {"_id": "Formula_1:999", "season": 2026, "session_code": "ss",
              "meeting_name": "British Grand Prix"},
         ]
         self.assertEqual(parser.match_episode(comment()["post_title"], episodes),
-                         "f1:11416")
+                         "Formula_1:11416")
         self.assertEqual(parser.match_episode(
-            "2026 F1 - Great Britain Grand Prix - Sprint Qualifying", episodes), "f1:999")
+            "2026 F1 - Great Britain Grand Prix - Sprint Qualifying", episodes), "Formula_1:999")
         self.assertIsNone(parser.match_episode(
             "2026 F1 - Las Vegas Grand Prix - Pre-Race Show", episodes))
         self.assertIsNone(parser.match_episode(

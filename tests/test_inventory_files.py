@@ -16,7 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 cli = importlib.machinery.SourceFileLoader(
     "pvr_inventory_files", str(ROOT / "inventory_files")
 ).load_module()
-SERIES = "rugby-womens-pwr"
+SERIES = "Rugby_Womens_PWR"
 EP = {"_id": SERIES + ":pwr-289126@mbligh.github.io",
       "series_id": SERIES, "season": 2025, "episode": 101,
       "scheduled": dt.datetime(2025, 10, 24, 18, 30, tzinfo=dt.timezone.utc),

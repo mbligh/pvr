@@ -21,7 +21,7 @@ from matchers.pwr import SERIES_ID
 from selection.quality import select_episode
 from selection.f1_files import select_f1_episode
 
-F1_SERIES = "formula-1"
+F1_SERIES = "Formula_1"
 
 
 def existing_published_files(database, episode_id, hostname, sports_root):

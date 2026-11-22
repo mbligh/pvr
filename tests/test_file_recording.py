@@ -19,7 +19,7 @@ CLI = importlib.machinery.SourceFileLoader(
 ).load_module()
 
 SOURCE_URI = "youtube:8CFBWPSG3vc"
-EP_ID = "rugby-womens-pwr:pwr-289127@mbligh.github.io"
+EP_ID = "Rugby_Womens_PWR:pwr-289127@mbligh.github.io"
 PREFIX = "Rugby_Womens_PWR/Season_2025/"
 STEM = "Rugby_Womens_PWR-s2025e102-Trailfinders_Women_v_Exeter_Chiefs_20251025"
 NFO = """<?xml version='1.0' encoding='utf-8'?>
@@ -34,7 +34,7 @@ NFO = """<?xml version='1.0' encoding='utf-8'?>
 """
 EPISODE = {
     "_id": EP_ID, "season": 2025, "episode": 102,
-    "series_id": "rugby-womens-pwr",
+    "series_id": "Rugby_Womens_PWR",
     "nfo_path": PREFIX + STEM + ".nfo", "nfo": NFO,
 }
 MEDIA = {
@@ -196,7 +196,7 @@ class FilingCLITests(unittest.TestCase):
         self.file_id = "slagg:" + str(self.source)
         self.original = {
             "_id": self.file_id, "host": "slagg", "path": str(self.source),
-            "series_id": "rugby-womens-pwr", "season": 2025, "episode": 102,
+            "series_id": "Rugby_Womens_PWR", "season": 2025, "episode": 102,
             "episode_id": EP_ID, "release_uri": SOURCE_URI,
             "size_bytes": self.source.stat().st_size,
             "mtime_ns": self.source.stat().st_mtime_ns,
@@ -227,9 +227,9 @@ class FilingCLITests(unittest.TestCase):
 
     def test_international_and_nations_series_use_canonical_quality_filing(self):
         cases = [
-            ("rugby-mens-intl", "Rugby_Mens_Intl", "Rugby Mens Intl"),
-            ("rugby-womens-intl", "Rugby_Womens_Intl", "Rugby Womens Intl"),
-            ("rugby-nations", "Rugby_Nations", "Rugby Nations Championships"),
+            ("Rugby_Mens_Intl", "Rugby_Mens_Intl", "Rugby Mens Intl"),
+            ("Rugby_Womens_Intl", "Rugby_Womens_Intl", "Rugby Womens Intl"),
+            ("Rugby_Mens_Nations", "Rugby_Mens_Nations", "Rugby Nations Championships"),
         ]
         for series_id, dirname, showtitle in cases:
             with self.subTest(series=series_id):
@@ -254,9 +254,9 @@ class FilingCLITests(unittest.TestCase):
         # Actually publish one of the new series to exercise Atlas mutation.
         completed = self.run_cli(apply=True)
         self.assertEqual(completed["status"], "filed")
-        self.assertEqual(completed["series_id"], "rugby-nations")
+        self.assertEqual(completed["series_id"], "Rugby_Mens_Nations")
         self.assertEqual(self.db.files.insert_one.call_args.args[0]["series_id"],
-                         "rugby-nations")
+                         "Rugby_Mens_Nations")
         self.assertFalse(self.source.exists())
 
     def test_new_existing_rugby_directories_can_be_planned_without_creation(self):
@@ -264,13 +264,13 @@ class FilingCLITests(unittest.TestCase):
         # established Six Nations, Lions, World Cup or WXV series when
         # numbered/NFO-backed episodes become available.
         for series_id, dirname, title in (
-                ("rugby-mens-6n", "Rugby_Mens_6N", "Rugby Mens 6N"),
-                ("rugby-mens-lions", "Rugby_Mens_Lions", "Rugby Mens Lions"),
-                ("rugby-mens-world-cup", "Rugby_Mens_World_Cup", "Rugby Mens World Cup"),
-                ("rugby-womens-6n", "Rugby_Womens_6N", "Rugby Womens 6N"),
-                ("rugby-womens-lions", "Rugby_Womens_Lions", "Rugby Womens Lions"),
-                ("rugby-womens-world-cup", "Rugby_Womens_World_Cup", "Rugby Womens World Cup"),
-                ("rugby-womens-wxv", "Rugby_Womens_WXV", "Rugby Womens WXV"),
+                ("Rugby_Mens_6N", "Rugby_Mens_6N", "Rugby Mens 6N"),
+                ("Rugby_Mens_Lions", "Rugby_Mens_Lions", "Rugby Mens Lions"),
+                ("Rugby_Mens_World_Cup", "Rugby_Mens_World_Cup", "Rugby Mens World Cup"),
+                ("Rugby_Womens_6N", "Rugby_Womens_6N", "Rugby Womens 6N"),
+                ("Rugby_Womens_Lions", "Rugby_Womens_Lions", "Rugby Womens Lions"),
+                ("Rugby_Womens_World_Cup", "Rugby_Womens_World_Cup", "Rugby Womens World Cup"),
+                ("Rugby_Womens_WXV", "Rugby_Womens_WXV", "Rugby Womens WXV"),
         ):
             with self.subTest(series_id=series_id):
                 episode_id = f"{series_id}:test"

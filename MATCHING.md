@@ -76,8 +76,8 @@ been imported.
 
 The separate `match_rugbypass` command matches already indexed RugbyPass
 **full-match replays** against the numbered canonical fixtures in Atlas for
-`rugby-mens-intl`, `rugby-womens-intl`, `rugby-nations`, and
-`rugby-womens-wxv` (created on the next live WXV-aware metadata import).
+`Rugby_Mens_Intl`, `Rugby_Womens_Intl`, `Rugby_Mens_Nations`, and
+`Rugby_Womens_WXV` (created on the next live WXV-aware metadata import).
 PWR matching is unchanged.
 
 ```sh
@@ -94,23 +94,23 @@ python3 match_rugbypass --verbose
 python3 match_rugbypass --apply
 
 # Restrict to one series:
-python3 match_rugbypass --series rugby-nations
+python3 match_rugbypass --series Rugby_Mens_Nations
 ```
 
 Rules for automatic matches:
 
 - **Competition labels determine the canonical destination series.** The
   RugbyPass label `Nations Championship` maps **only** to
-  `rugby-nations`, even though the same matches are present in the
+  `Rugby_Mens_Nations`, even though the same matches are present in the
   men's-international calendar (usually with `NC:` prefixes).
-  `Women's International` maps to `rugby-womens-intl`, while `WXV`
-  maps to `rugby-womens-wxv`, matching the separate
+  `Women's International` maps to `Rugby_Womens_Intl`, while `WXV`
+  maps to `Rugby_Womens_WXV`, matching the separate
   `Rugby_Womens_WXV` directory. Existing WXV fixtures in Atlas still
-  belong to `rugby-womens-intl`; the matcher now leaves those replays
+  belong to `Rugby_Womens_Intl`; the matcher now leaves those replays
   unmatched rather than publishing them under the wrong directory.
   Their dedicated numbered fixture/NFO records must be imported separately.
   Explicit men's-international, Nations Cup, Pacific Nations Cup and
-  Rugby's Greatest Rivalry labels map to `rugby-mens-intl`.
+  Rugby's Greatest Rivalry labels map to `Rugby_Mens_Intl`.
   Unlabelled content is ignored; a missing gender label is not assumed
   to mean men. `Nations Cup` is not `Nations Championship`.
 - Require a title whose last component is `Full Match Replay` and whose

@@ -28,7 +28,7 @@ class F1ImportTests(unittest.TestCase):
         result = f1.build_episodes(self.payload())
         self.assertEqual(len(result), 7)
         self.assertEqual([e["episode"] for e in result], list(range(121, 128)))
-        self.assertEqual(result[4]["_id"], "f1:1004")
+        self.assertEqual(result[4]["_id"], "Formula_1:1004")
         self.assertEqual(result[4]["session_name"], "Sprint")
         self.assertEqual(result[4]["metadata_provider"], "formula1/official")
         self.assertEqual(result[-1]["title"], "Dutch Grand Prix - Race")

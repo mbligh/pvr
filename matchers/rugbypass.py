@@ -10,10 +10,10 @@ import datetime as dt
 import re
 import unicodedata
 
-MENS = "rugby-mens-intl"
-WOMENS = "rugby-womens-intl"
-WXV = "rugby-womens-wxv"
-NATIONS = "rugby-nations"
+MENS = "Rugby_Mens_Intl"
+WOMENS = "Rugby_Womens_Intl"
+WXV = "Rugby_Womens_WXV"
+NATIONS = "Rugby_Mens_Nations"
 SERIES = (MENS, WOMENS, NATIONS, WXV)
 METHOD = "rugbypass-national-teams-date-v1"
 

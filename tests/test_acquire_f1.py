@@ -31,7 +31,7 @@ worker = load("pvr_acquire_f1_tests", "acquire_f1")
 runner = load("pvr_run_f1_tests", "run_f1")
 NOW = dt.datetime(2026, 11, 21, 16, 0, tzinfo=dt.timezone.utc)
 EPISODE = {
-    "_id": "f1:11416", "series_id": "formula-1",
+    "_id": "Formula_1:11416", "series_id": "Formula_1",
     "season": 2026, "episode": 216, "round": 21,
     "title": "Las Vegas Grand Prix - Qualifying",
     "scheduled": NOW - dt.timedelta(hours=7),
@@ -264,7 +264,7 @@ class F1AcquisitionTests(unittest.TestCase):
             "_id": "slagg:" + str(source), "host": "slagg",
             "path": str(source), "episode_id": EPISODE["_id"],
             "season": 2026, "episode": 216,
-            "series_id": "formula-1", "release_uri": RELEASES[0]["_id"],
+            "series_id": "Formula_1", "release_uri": RELEASES[0]["_id"],
             "size_bytes": source.stat().st_size,
             "mtime_ns": source.stat().st_mtime_ns,
             "media": MEDIA,
@@ -292,7 +292,7 @@ class F1AcquisitionTests(unittest.TestCase):
         self.assertEqual(self.plans(backfill=True)[1]["due"], 1)
 
     def test_expired_newest_does_not_starve_older_due_episode(self):
-        older = dict(EPISODE, _id="f1:11417", episode=217,
+        older = dict(EPISODE, _id="Formula_1:11417", episode=217,
                      scheduled_end=NOW - dt.timedelta(hours=8),
                      nfo_path=EPISODE["nfo_path"].replace(
                          "s2026e216", "s2026e217"),
@@ -320,7 +320,7 @@ class F1AcquisitionTests(unittest.TestCase):
         self.assertIn(("download", alternate["_id"]), self.calls)
 
     def test_availability_budget_stops_before_checking_next_episode(self):
-        older = dict(EPISODE, _id="f1:11417", episode=217,
+        older = dict(EPISODE, _id="Formula_1:11417", episode=217,
                      scheduled_end=NOW - dt.timedelta(hours=8),
                      nfo_path=EPISODE["nfo_path"].replace(
                          "s2026e216", "s2026e217"),

@@ -12,17 +12,17 @@ numbered yet.
 
 | Atlas series ID | Canonical library directory |
 |---|---|
-| `rugby-mens-6n` | `Rugby_Mens_6N` |
-| `rugby-mens-intl` | `Rugby_Mens_Intl` |
-| `rugby-mens-lions` | `Rugby_Mens_Lions` |
-| `rugby-mens-world-cup` | `Rugby_Mens_World_Cup` |
-| `rugby-nations` | `Rugby_Nations` |
-| `rugby-womens-6n` | `Rugby_Womens_6N` |
-| `rugby-womens-intl` | `Rugby_Womens_Intl` |
-| `rugby-womens-lions` | `Rugby_Womens_Lions` |
-| `rugby-womens-pwr` | `Rugby_Womens_PWR` |
-| `rugby-womens-world-cup` | `Rugby_Womens_World_Cup` |
-| `rugby-womens-wxv` | `Rugby_Womens_WXV` |
+| `Rugby_Mens_6N` | `Rugby_Mens_6N` |
+| `Rugby_Mens_Intl` | `Rugby_Mens_Intl` |
+| `Rugby_Mens_Lions` | `Rugby_Mens_Lions` |
+| `Rugby_Mens_World_Cup` | `Rugby_Mens_World_Cup` |
+| `Rugby_Mens_Nations` | `Rugby_Mens_Nations` |
+| `Rugby_Womens_6N` | `Rugby_Womens_6N` |
+| `Rugby_Womens_Intl` | `Rugby_Womens_Intl` |
+| `Rugby_Womens_Lions` | `Rugby_Womens_Lions` |
+| `Rugby_Womens_PWR` | `Rugby_Womens_PWR` |
+| `Rugby_Womens_World_Cup` | `Rugby_Womens_World_Cup` |
+| `Rugby_Womens_WXV` | `Rugby_Womens_WXV` |
 
 The Formula 1 series remains at `Formula_1`, outside the rugby registry.
 Every source needs a numbered Atlas episode, an NFO whose showtitle matches
@@ -31,7 +31,7 @@ The filer never infers, renames or creates fixtures and will reject a path
 that disagrees with the registered series.
 
 **Existing WXV metadata:** imported WXV events are currently stored as
-`rugby-womens-intl`, with NFO paths beneath `Rugby_Womens_Intl`.
+`Rugby_Womens_Intl`, with NFO paths beneath `Rugby_Womens_Intl`.
 Those records are unchanged. Routing new WXV media to
 `Rugby_Womens_WXV` requires a separate fixture/NFO migration before
 automatic matching/acquisition can file it. No existing media files were moved.
@@ -107,10 +107,10 @@ BBC preference, 60fps preference, video-codec preference or bitrate weighting.
 
 ```sh
 # Explain which S2025E102 file is preferred, without modifying anything:
-python3 select_recording 'rugby-womens-pwr:pwr-289127@mbligh.github.io'
+python3 select_recording 'Rugby_Womens_PWR:pwr-289127@mbligh.github.io'
 
 # Compare BBC and YouTube copies of S2026E101:
-python3 select_recording 'rugby-womens-pwr:pwr-295034@mbligh.github.io'
+python3 select_recording 'Rugby_Womens_PWR:pwr-295034@mbligh.github.io'
 ```
 
 If an incoming source loses the quality comparison, `file_recording`
@@ -192,3 +192,10 @@ Support identical-file recovery from interrupted jobs, multiple source
 adapters, source quality selection/replacement, and automatic dispatch by the
 scheduler. These should be independent operations from the safe, explicit
 single-file publisher.
+
+## Canonical series identifiers
+
+A series ID is exactly its media directory name; registry keys no longer
+require a separate slug-to-folder mapping. Rugby_Mens_Nations replaces the
+former Rugby_Nations path, which the user has already renamed on disk.
+Existing Atlas identities must be converted with ./migrate_series_ids --apply.

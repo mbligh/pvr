@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CLI = importlib.machinery.SourceFileLoader(
     "pvr_select_recording", str(ROOT / "select_recording")
 ).load_module()
-EP_ID = "rugby-womens-pwr:pwr-295034@mbligh.github.io"
+EP_ID = "Rugby_Womens_PWR:pwr-295034@mbligh.github.io"
 
 
 class QualityTests(unittest.TestCase):
@@ -139,7 +139,7 @@ class QualityTests(unittest.TestCase):
         database = MagicMock()
         database.files.find.return_value = [item]
         database.episodes.find_one.return_value = {
-            "_id": EP_ID, "series_id": "rugby-womens-pwr",
+            "_id": EP_ID, "series_id": "Rugby_Womens_PWR",
             "season": 2026, "episode": 101,
         }
         summary = CLI.run(database, EP_ID, hostname="slagg", stream=io.StringIO())

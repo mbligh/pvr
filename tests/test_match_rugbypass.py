@@ -21,7 +21,7 @@ def fixture(series, home, away, scheduled, *, number=501, season=2026,
         rb.MENS: ("Rugby_Mens_Intl", "Rugby Mens Intl"),
         rb.WOMENS: ("Rugby_Womens_Intl", "Rugby Womens Intl"),
         rb.WXV: ("Rugby_Womens_WXV", "Rugby Womens WXV"),
-        rb.NATIONS: ("Rugby_Nations", "Rugby Nations Championships"),
+        rb.NATIONS: ("Rugby_Mens_Nations", "Rugby Nations Championships"),
     }[series]
     root, title = show
     filename = f"{root}-s{season}e{number:03d}-{home.replace(' ', '_')}_v_{away.replace(' ', '_')}_20261113.nfo"
@@ -144,7 +144,7 @@ class MatchNationalReplays(unittest.TestCase):
             (rb.MENS, "Rugby Mens Intl", "Rugby_Mens_Intl"),
             (rb.WOMENS, "Rugby Womens Intl", "Rugby_Womens_Intl"),
             (rb.WXV, "Rugby Womens WXV", "Rugby_Womens_WXV"),
-            (rb.NATIONS, "Rugby Nations Championships", "Rugby_Nations")]:
+            (rb.NATIONS, "Rugby Nations Championships", "Rugby_Mens_Nations")]:
             item = fixture(series, "Canada", "England",
                            dt.datetime(2026, 11, 1, tzinfo=UTC))
             self.assertTrue(validate_nfo(item))

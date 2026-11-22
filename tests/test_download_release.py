@@ -16,7 +16,7 @@ CLI = importlib.machinery.SourceFileLoader(
 ).load_module()
 
 URI = "youtube:8CFBWPSG3vc"
-EP_ID = "rugby-womens-pwr:pwr-289127@mbligh.github.io"
+EP_ID = "Rugby_Womens_PWR:pwr-289127@mbligh.github.io"
 RELEASE = {
     "_id": URI, "source": "youtube", "id": "8CFBWPSG3vc",
     "title": "Trailfinders Women vs Exeter Chiefs",
@@ -24,7 +24,7 @@ RELEASE = {
     "metadata": {"live_status": "was_live"},
 }
 EPISODE = {
-    "_id": EP_ID, "series_id": "rugby-womens-pwr",
+    "_id": EP_ID, "series_id": "Rugby_Womens_PWR",
     "season": 2025, "episode": 102,
 }
 MEDIA = {
@@ -241,7 +241,7 @@ class AtlasDownloaderTests(unittest.TestCase):
                                  ["$set"]["release_uri"], uri)
 
     def test_rugbypass_accepts_linked_numbered_international_series(self):
-        for series in ("rugby-mens-intl", "rugby-womens-intl", "rugby-nations"):
+        for series in ("Rugby_Mens_Intl", "Rugby_Womens_Intl", "Rugby_Mens_Nations"):
             with self.subTest(series=series):
                 self.db.releases.find_one.return_value = dict(
                     RELEASE, _id="rugbypass:1051364", source="rugbypass",
@@ -262,7 +262,7 @@ class AtlasDownloaderTests(unittest.TestCase):
         # Unknown series cannot be used as a way around the PWR restriction.
         self.db.releases.find_one.return_value = dict(
             RELEASE, _id="rugbypass:1051364", source="rugbypass",
-            id="1051364", episode_id="rugby-nations:fixture")
+            id="1051364", episode_id="Rugby_Mens_Nations:fixture")
         self.db.episodes.find_one.return_value["series_id"] = "not-approved"
         with self.assertRaisesRegex(ValueError, "Only matched"):
             CLI.plan(self.db, "rugbypass:1051364",

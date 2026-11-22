@@ -15,12 +15,12 @@ loader = importlib.machinery.SourceFileLoader("pvr_acquire_missing", str(ROOT / 
 spec = importlib.util.spec_from_loader("pvr_acquire_missing", loader)
 CLI = importlib.util.module_from_spec(spec)
 loader.exec_module(CLI)
-EPID = "rugby-womens-pwr:pwr-289126@mbligh.github.io"
+EPID = "Rugby_Womens_PWR:pwr-289126@mbligh.github.io"
 URI = "youtube:A1BcD2EfG3H"
 NOW = dt.datetime(2026, 11, 21, 14, tzinfo=dt.timezone.utc)
 STEM = "Rugby_Womens_PWR-s2025e101-Harlequins_v_Loughborough_Lightning_20251024"
 EP = {
-    "_id": EPID, "season": 2025, "episode": 101, "series_id": "rugby-womens-pwr",
+    "_id": EPID, "season": 2025, "episode": 101, "series_id": "Rugby_Womens_PWR",
     "scheduled": dt.datetime(2025, 10, 24, 18, 30, tzinfo=dt.timezone.utc),
     "nfo": "<episodedetails><showtitle>Rugby Womens PWR</showtitle><season>2025</season><episode>101</episode></episodedetails>",
     "nfo_path": "Rugby_Womens_PWR/Season_2025/" + STEM + ".nfo",
@@ -294,9 +294,9 @@ class AcquisitionTests(unittest.TestCase):
 
     def test_national_rugby_series_only_acquires_rugbypass(self):
         for series_id, root, name in (
-                ("rugby-mens-intl", "Rugby_Mens_Intl", "Rugby Mens Intl"),
-                ("rugby-womens-intl", "Rugby_Womens_Intl", "Rugby Womens Intl"),
-                ("rugby-nations", "Rugby_Nations", "Rugby Nations Championships")):
+                ("Rugby_Mens_Intl", "Rugby_Mens_Intl", "Rugby Mens Intl"),
+                ("Rugby_Womens_Intl", "Rugby_Womens_Intl", "Rugby Womens Intl"),
+                ("Rugby_Mens_Nations", "Rugby_Mens_Nations", "Rugby Nations Championships")):
             with self.subTest(series=series_id):
                 episode_id = f"{series_id}:fixture-123"
                 self.episodes[:] = [dict(
