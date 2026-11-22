@@ -660,3 +660,7 @@ Jobs must share the same incoming root/host for this coordination.
 There is no download watchdog yet, so a genuinely stuck download
 continues to hold only its provider and episode locks while all
 indexers remain eligible.
+
+## PWR team selections
+
+Official match-day player selections are ingested separately with `import_pwr_lineups` into the `pwr_lineups` collection, keyed by the canonical PWR episode ID. The fixture calendar and NFO remain score-free. See [PWR_LINEUPS.md](PWR_LINEUPS.md) for schema and polling guidance.
