@@ -26,14 +26,17 @@ every currently imported rugby series that has one of the existing folders.
 The canonical filer registers the full eleven-directory list in
 [FILING.md](FILING.md). A directory mapping does not create fixtures.
 
-**WXV requires a separate fixture migration.** Existing WXV entries
-currently use the `rugby-womens-intl` series ID, showtitle and
-`Rugby_Womens_Intl` NFO paths; they are not automatically moved into
-`Rugby_Womens_WXV` merely because that physical directory exists.
-The RugbyPass matcher targets the distinct `rugby-womens-wxv` series
-for newly encountered WXV replay titles, so it will not automatically
-file them into the international directory before a dedicated fixture
-import exists.
+**WXV migration is implemented and takes effect on the next live import.**
+The scheduler partitions accepted historical WXV fixtures out of the
+women's-international snapshot, creates `rugby-womens-wxv` episodes in
+`Rugby_Womens_WXV`, and numbers WXV tournament weeks independently.
+Old `rugby-womens-intl` WXV records are preserved as `superseded` history
+and release/job associations are remapped to the new episode IDs. Existing
+media inventory under the old series is a preflight blocker, not moved
+or overwritten automatically. The legacy UID suffix remains unchanged.
+Source filtering now keeps World Rugby WXV events separate. Explicit
+World Rugby cancellations are retained in merged scheduler snapshots
+and marked in Atlas.
 
 ## Data and historical safety
 
