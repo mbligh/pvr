@@ -23,14 +23,17 @@ result in one provider check, not one check per fixture.
 
 ## Eligibility and polling
 
-Only finished, numbered, non-cancelled, unfiled fixtures with valid filing
-metadata cause event-specific discovery. Already linked, usable releases
-from a source remove discovery demand for that source (but not other
-sources that might offer competing recordings). Existing published
-files or moved/inconsistent publication history prevent futile polling.
-F1 uses explicit scheduled_end; rugby uses scheduled_end or kickoff plus
-two hours (or known duration). This is an estimate, not confirmation
-that a video is ready.
+Only finished, numbered, non-cancelled fixtures with valid canonical filing
+metadata can cause event-specific discovery. F1 uses the explicit
+scheduled_end; rugby uses scheduled_end or kickoff plus two hours (or
+known duration). These are expected end times, not proof the recording
+has been published.
+
+There are two distinct phases:
+
+**Phase A — Find the first usable release.** While no compatible source has
+a usable release and no recording is published, missing fixtures use age-based
+backoff:
 
 | Age after expected finish | Polling interval if still missing |
 | --- | --- |
@@ -41,12 +44,28 @@ that a video is ready.
 | 7–30 days | 24 hours |
 | 30+ days | 7 days |
 
-Every source has a **24-hour successful-check fallback**, even when
-nothing is missing. Whichever is sooner (event demand or daily fallback)
-governs the next check. An event missing for two weeks therefore requires
-only daily polling, not five-minute polling. A newly finished event can
-immediately shorten the interval even when older events were on the daily
-fallback cadence.
+**Phase B — Look for improvements.** As soon as **any** compatible indexer
+has a usable matched release, or a valid recorded video has already been
+published to the library, all relevant indexers switch to **hourly checks**.
+Phase B is limited to **24 hours after the expected event finish**, not
+24 hours after finding the first release. This is a maximum event-driven
+polling rate per indexer: another episode still in Phase A may cause
+a shared indexer to run sooner. An indexer run for Phase B is never
+triggered less than an hour after that source's last successful check
+by Phase B alone.
+
+Published videos still get Phase B searches, but are never acquisition
+candidates. Existing canonical media cannot be overwritten by these runs;
+an improved release may be discovered and indexed but **will not be
+downloaded or replace a published recording automatically**. Abnormal
+partial publications (e.g. an NFO without its video) require reconciliation
+instead of causing improvement checks.
+
+After Phase B expires, the event no longer causes event-driven polling.
+Each indexer still has a **24-hour successful-check fallback**, even if
+there are no missing fixtures at all. The earlier of event demand and this
+fallback determines the next check. A two-week-old missing event never
+causes five-minute polling by itself.
 
 After failed discovery/indexing, retries back off 5, 10, 20, 40,
 then at most 60 minutes until success. A successful scan with zero new
@@ -107,8 +126,10 @@ git pull --ff-only
 
 --force-discovery and --skip-discovery are incompatible. Without --apply,
 runners never index, update poll state, or download media. Their JSON
-type=polling output shows sources, next check times and missing-event
-counts. Atlas access is required in both preview and apply mode.
+type=polling output shows sources, next check times, and separate
+missing (Phase A) and improving (Phase B) event counts. The runner's
+acquisition candidate list still includes missing files with usable
+linked releases, even when the indexer is in Phase B. Atlas access is required in both preview and apply mode.
 
 run_rugby checks all five currently supported rugby series by default,
 rather than PWR only. --series limits manual work to one series.

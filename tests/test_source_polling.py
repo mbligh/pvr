@@ -155,13 +155,24 @@ class PollingTests(unittest.TestCase):
         dest = self.sports / recent["nfo_path"].replace(".nfo", ".mkv")
         dest.parent.mkdir(parents=True)
         dest.write_bytes(b"video")
-        db.states["rugbypass"]["last_success"] = NOW - dt.timedelta(hours=1)
+        db.states["rugbypass"]["last_success"] = NOW - dt.timedelta(minutes=30)
         decisions, missing = self.check(db, sources=("rugbypass",))
         self.assertEqual(len(missing), 1)
         self.assertFalse(decisions["rugbypass"]["due"])
+        self.assertEqual(decisions["rugbypass"]["missing"], 1)
+        self.assertEqual(decisions["rugbypass"]["improving"], 1)
+        self.assertEqual(decisions["rugbypass"]["interval_minutes"], 60)
+        # After the 24h upgrade window, the published PWR episode stops
+        # adding any demand; only the three-day-old international remains.
+        db.states["rugbypass"]["last_success"] = NOW + dt.timedelta(hours=24)
+        decisions, missing = self.check(
+            db, sources=("rugbypass",), now=NOW + dt.timedelta(hours=25))
+        self.assertEqual(len(missing), 1)
+        self.assertFalse(decisions["rugbypass"]["due"])
+        self.assertEqual(decisions["rugbypass"]["improving"], 0)
         self.assertEqual(decisions["rugbypass"]["interval_minutes"], 360)
 
-    def test_existing_indexed_release_suppresses_only_its_source(self):
+    def test_first_usable_release_moves_every_compatible_source_to_hourly(self):
         ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(minutes=20))
         db = Database([ep])
         db.releases.find.return_value = [{
@@ -172,11 +183,133 @@ class PollingTests(unittest.TestCase):
             db.states[source] = {"last_success": NOW - dt.timedelta(minutes=6)}
         decisions, missing = self.check(db)
         self.assertEqual(len(missing), 1)  # Acquisition is still needed.
-        self.assertEqual(decisions["bbc"]["missing"], 0)
+        for source in ("bbc", "youtube", "rugbypass"):
+            with self.subTest(source=source):
+                self.assertEqual(decisions[source]["missing"], 0)
+                self.assertEqual(decisions[source]["improving"], 1)
+                self.assertEqual(decisions[source]["interval_minutes"], 60)
+                self.assertFalse(decisions[source]["due"])
+                self.assertEqual(decisions[source]["next_at"],
+                                 NOW + dt.timedelta(minutes=54))
+        # A single source filter must still recognize the BBC release.
+        only_youtube, _ = self.check(db, sources=("youtube",))
+        self.assertEqual(only_youtube["youtube"]["improving"], 1)
+        self.assertFalse(only_youtube["youtube"]["due"])
+
+    def test_phase_b_hourly_for_published_canonical_recording(self):
+        ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(hours=3))
+        dest = self.sports / ep["nfo_path"].replace(".nfo", ".mkv")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"low quality complete video")
+        db = Database([ep])
+        for source in ("bbc", "youtube", "rugbypass"):
+            db.states[source] = {"last_success": NOW - dt.timedelta(minutes=59)}
+        decisions, missing = self.check(db)
+        self.assertEqual(missing, [])  # Published files remain non-upgradeable.
+        for source in ("bbc", "youtube", "rugbypass"):
+            self.assertEqual(decisions[source]["improving"], 1)
+            self.assertEqual(decisions[source]["interval_minutes"], 60)
+            self.assertFalse(decisions[source]["due"])
+        decisions, _ = self.check(db, now=NOW + dt.timedelta(minutes=2))
+        self.assertTrue(all(value["due"] for value in decisions.values()))
+
+    def test_phase_b_hourly_for_registered_published_recording(self):
+        ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(hours=4))
+        path = self.sports / "archive.mkv"
+        path.write_bytes(b"registered canonical library video")
+        db = Database([ep], files=[{"episode_id": ep["_id"],
+                                   "path": str(path), "file_state": "published"}])
+        db.states["bbc"] = {"last_success": NOW - dt.timedelta(hours=2)}
+        decisions, missing = self.check(db, sources=("bbc",))
+        self.assertEqual(missing, [])
+        self.assertTrue(decisions["bbc"]["due"])
+        self.assertEqual(decisions["bbc"]["improving"], 1)
+
+    def test_phase_b_keeps_hourly_checks_until_window_end(self):
+        ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(hours=23, minutes=59))
+        db = Database([ep])
+        db.releases.find.return_value = [
+            {"_id": "bbc:m0034hxp", "source": "bbc",
+             "episode_id": ep["_id"], "duration": 7200}]
+        db.states["bbc"] = {"last_success": NOW - dt.timedelta(hours=2)}
+        decisions, missing = self.check(db, sources=("bbc",))
+        self.assertEqual(len(missing), 1)
+        self.assertEqual(decisions["bbc"]["improving"], 1)
+        self.assertEqual(decisions["bbc"]["interval_minutes"], 60)
+        self.assertTrue(decisions["bbc"]["due"])
+
+    def test_phase_b_expires_at_24_hours_then_daily_fallback(self):
+        ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(hours=24))
+        dest = self.sports / ep["nfo_path"].replace(".nfo", ".mkv")
+        dest.parent.mkdir(parents=True)
+        dest.write_bytes(b"complete")
+        db = Database([ep])
+        db.states["bbc"] = {"last_success": NOW - dt.timedelta(hours=3)}
+        decisions, missing = self.check(db, sources=("bbc",))
+        self.assertEqual(missing, [])
         self.assertFalse(decisions["bbc"]["due"])
-        self.assertEqual(decisions["youtube"]["missing"], 1)
-        self.assertTrue(decisions["youtube"]["due"])
-        self.assertTrue(decisions["rugbypass"]["due"])
+        self.assertEqual(decisions["bbc"]["improving"], 0)
+        self.assertEqual(decisions["bbc"]["interval_minutes"], 1440)
+        self.assertEqual(decisions["bbc"]["next_at"], NOW + dt.timedelta(hours=21))
+        decisions, _ = self.check(db, sources=("bbc",),
+                                  now=NOW + dt.timedelta(hours=22))
+        self.assertTrue(decisions["bbc"]["due"])
+
+    def test_usable_release_after_24_hours_stays_on_daily_fallback(self):
+        ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(days=3))
+        db = Database([ep])
+        db.releases.find.return_value = [
+            {"_id": "youtube:validvideo", "source": "youtube",
+             "episode_id": ep["_id"], "available": True, "duration": 7200}]
+        for source in ("bbc", "youtube", "rugbypass"):
+            db.states[source] = {"last_success": NOW - dt.timedelta(hours=2)}
+        decisions, missing = self.check(db)
+        self.assertEqual(len(missing), 1)
+        self.assertTrue(all(d["improving"] == 0 for d in decisions.values()))
+        self.assertTrue(all(d["missing"] == 0 for d in decisions.values()))
+        self.assertTrue(all(not d["due"] for d in decisions.values()))
+        self.assertTrue(all(d["interval_minutes"] == 1440
+                            for d in decisions.values()))
+
+    def test_partial_publication_does_not_trigger_hourly_phase_b(self):
+        ep = episode("Rugby_Womens_PWR", NOW - dt.timedelta(minutes=20))
+        nfo = self.sports / ep["nfo_path"]
+        nfo.parent.mkdir(parents=True)
+        nfo.write_text("partial")
+        db = Database([ep])
+        db.states["bbc"] = {"last_success": NOW - dt.timedelta(minutes=15)}
+        decisions, missing = self.check(db, sources=("bbc",))
+        self.assertEqual(missing, [])
+        self.assertEqual(decisions["bbc"]["improving"], 0)
+        self.assertFalse(decisions["bbc"]["due"])
+
+    def test_phase_b_f1_uses_explicit_session_end_and_reddit_only(self):
+        ep = episode("Formula_1", NOW - dt.timedelta(hours=2))
+        db = Database([ep])
+        db.releases.find.return_value = [
+            {"_id": "reddit-teletz:verified", "source": "reddit-teletz",
+             "episode_id": ep["_id"], "available": True}]
+        db.states["reddit-teletz"] = {"last_success": NOW - dt.timedelta(minutes=15)}
+        decisions, missing = self.check(db, sources=("reddit-teletz",))
+        self.assertEqual(len(missing), 1)
+        self.assertEqual(decisions["reddit-teletz"]["improving"], 1)
+        self.assertFalse(decisions["reddit-teletz"]["due"])
+        self.assertEqual(decisions["reddit-teletz"]["interval_minutes"], 60)
+
+    def test_phase_a_new_event_can_poll_while_another_event_is_in_phase_b(self):
+        improving = episode("Rugby_Womens_PWR", NOW - dt.timedelta(hours=4), 103)
+        no_release = episode("Rugby_Womens_PWR", NOW - dt.timedelta(minutes=10), 104)
+        db = Database([improving, no_release])
+        db.releases.find.return_value = [
+            {"_id": "bbc:m0034hxp", "source": "bbc",
+             "episode_id": improving["_id"], "duration": 7200}]
+        db.states["bbc"] = {"last_success": NOW - dt.timedelta(minutes=10)}
+        decisions, missing = self.check(db, sources=("bbc",))
+        self.assertEqual(len(missing), 2)
+        self.assertEqual(decisions["bbc"]["missing"], 1)
+        self.assertEqual(decisions["bbc"]["improving"], 1)
+        self.assertEqual(decisions["bbc"]["interval_minutes"], 5)
+        self.assertTrue(decisions["bbc"]["due"])
 
     def test_known_short_or_expired_release_does_not_block_discovery(self):
         ep = episode("Formula_1", NOW - dt.timedelta(minutes=30))
@@ -188,6 +321,10 @@ class PollingTests(unittest.TestCase):
              "duration": 30},
             {"source": "reddit-teletz", "episode_id": ep["_id"],
              "duration": 5400, "availability_check": {"status": "unavailable"}},
+            {"source": "reddit-teletz", "episode_id": ep["_id"],
+             "duration": 5400, "availability_check": {"status": "transient"}},
+            {"source": "reddit-teletz", "episode_id": ep["_id"],
+             "metadata": {"duration": 12}},
         ):
             with self.subTest(release=release):
                 db.releases.find.return_value = [release]

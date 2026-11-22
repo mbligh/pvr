@@ -664,3 +664,22 @@ indexers remain eligible.
 ## PWR team selections
 
 Official match-day player selections are ingested separately with `import_pwr_lineups` into the `pwr_lineups` collection, keyed by the canonical PWR episode ID. The fixture calendar and NFO remain score-free. See [PWR_LINEUPS.md](PWR_LINEUPS.md) for schema and polling guidance.
+
+
+
+## Hourly 24-hour improvement discovery (2026-11-22)
+
+Recording indexers now have explicit Phase A (find first usable release)
+and Phase B (look for later higher-quality releases). Phase A retains
+age-based adaptive polling for genuinely missing recordings. The first
+usable release from any compatible source, or a valid already published
+video, moves the event to Phase B. For 24 hours after the event's
+expected finish, all compatible sources can be queried at most hourly
+due to that event. This includes events whose recordings have already
+been filed; a missing fixture with a usable release still remains an
+acquisition candidate. Phase B searches never themselves download or
+replace canonical recordings. Once 24 hours have elapsed, the event
+no longer causes discovery demand, while the unconditional per-source
+daily fallback remains. Per-source error backoff and locking are unchanged.
+orchestration/polling.py implements this without new Atlas fields.
+See POLLING.md.
