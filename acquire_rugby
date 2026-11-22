@@ -12,7 +12,6 @@ supports per-episode candidate comparison.
 """
 import argparse
 import contextlib
-import fcntl
 import importlib.machinery
 import importlib.util
 import io
@@ -25,6 +24,7 @@ from orchestration.acquire import SOURCES, host_name, planning_rows
 from matchers.pwr import SERIES_ID
 from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
 from selection.quality import select_episode
+from orchestration.locks import LockBusy, episode_lock
 
 
 def _load_cli(name, filename):
@@ -39,21 +39,6 @@ def _load_cli(name, filename):
 download_release = _load_cli("pvr_acquire_downloader", "download_release")
 file_recording = _load_cli("pvr_acquire_filer", "file_recording")
 
-
-@contextlib.contextmanager
-def acquire_lock(incoming_root):
-    """Prevent overlapping host-local acquisition workers."""
-    lock_path = pathlib.Path(incoming_root) / ".pvr-acquire.lock"
-    flags = os.O_CREAT | os.O_RDWR
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(lock_path, flags, 0o600)
-    with os.fdopen(fd, "r+") as lockfile:
-        try:
-            fcntl.flock(lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RuntimeError("Another PVR acquisition worker is running") from exc
-        yield
 
 
 def run(database, *, apply=False, limit=1, season=None, round_no=None,
@@ -98,72 +83,109 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
                 continue
             if count >= limit:
                 continue
-            count += 1
             if not apply:
+                count += 1
                 print(json.dumps(dict(row, mode="preview"), sort_keys=True), file=stream)
                 continue
             try:
-                downloads = (
-                    row["downloads"] if row["action"] == "download_candidates_then_file"
-                    else [{"source_uri": row["source_uri"], "incoming": row["incoming"]}]
-                    if row["action"] == "download_then_file" else []
-                )
-                incomplete = False
-                for candidate in downloads:
-                    result = downloader(
-                        database, candidate["source_uri"], candidate["incoming"],
-                        hostname=hostname, yt_dlp=yt_dlp,
-                        get_iplayer=get_iplayer, rugbypass=rugbypass,
-                        ffmpeg=ffmpeg, ffprobe=ffprobe,
-                        allow_existing_episode=True,
-                        apply=True, output=io.StringIO())
-                    if result["status"] != "downloaded":
+                with episode_lock(incoming_root, row["episode_id"]):
+                    # Two overlapping cron runs may plan the same fixture.
+                    # Re-check it *under* the episode reservation before
+                    # starting downloads, comparing, or filing.
+                    fresh_rows, _ = planning_rows(
+                        database, sports_root=sports_root, incoming_root=incoming_root,
+                        season=row["season"], round_no=round_no,
+                        episode_number=row["episode"], series_id=series_id,
+                        hostname=hostname, min_age_hours=min_age_hours,
+                        retry_after_hours=retry_after_hours,
+                        max_candidates=max_candidates, sources=sources, now=now)
+                    latest = next((item for item in fresh_rows
+                                   if item["episode_id"] == row["episode_id"]), None)
+                    if latest is None or latest["action"] == "skip":
                         totals["skipped_on_apply"] += 1
-                        totals["failed"] += 1  # incomplete source comparison must exit nonzero
-                        print(json.dumps(dict(row, mode="apply",
-                                              status="download_skipped",
-                                              source_uri=candidate["source_uri"],
-                                              detail=result["status"]),
-                                         sort_keys=True), file=stream)
-                        incomplete = True
-                        break
-                    totals["downloaded"] += 1
-                if incomplete:
-                    # Do not file based on only some of the remote candidates.
-                    break
-                if downloads:
-                    # Re-read all media candidates after downloads and rank
-                    # their actual sizes/FPS rather than expected source quality.
-                    choice = selector(database, row["episode_id"], hostname)
-                    source = choice["preferred_path"]
-                    if not source:
-                        totals["skipped_on_apply"] += 1
-                        print(json.dumps(dict(row, mode="apply",
-                                              status="no_eligible_recording"),
+                        print(json.dumps(dict(row, mode="apply", status="deferred",
+                                              reason="episode_no_longer_actionable"),
                                          sort_keys=True), file=stream)
                         continue
-                else:
-                    source = row["source"]
-                result = filer(database, source, sports_root=sports_root,
-                               hostname=hostname, ffprobe=ffprobe, apply=True,
-                               stream=io.StringIO())
-                if result["status"] == "filed":
-                    totals["filed"] += 1
-                else:
-                    totals["skipped_on_apply"] += 1
-                print(json.dumps(dict(row, mode="apply",
-                                      status=result["status"],
-                                      selected_source=source,
-                                      download_count=len(downloads)),
+                    row = latest
+                    count += 1
+                    try:
+                        downloads = (
+                            row["downloads"] if row["action"] == "download_candidates_then_file"
+                            else [{"source_uri": row["source_uri"], "incoming": row["incoming"]}]
+                            if row["action"] == "download_then_file" else []
+                        )
+                        incomplete = False
+                        for candidate in downloads:
+                            result = downloader(
+                                database, candidate["source_uri"], candidate["incoming"],
+                                hostname=hostname, yt_dlp=yt_dlp,
+                                get_iplayer=get_iplayer, rugbypass=rugbypass,
+                                ffmpeg=ffmpeg, ffprobe=ffprobe,
+                                allow_existing_episode=True,
+                                apply=True, output=io.StringIO())
+                            if result["status"] != "downloaded":
+                                totals["skipped_on_apply"] += 1
+                                totals["failed"] += 1  # incomplete source comparison must exit nonzero
+                                print(json.dumps(dict(row, mode="apply",
+                                                      status="download_skipped",
+                                                      source_uri=candidate["source_uri"],
+                                                      detail=result["status"]),
+                                                 sort_keys=True), file=stream)
+                                incomplete = True
+                                break
+                            totals["downloaded"] += 1
+                        if incomplete:
+                            # Do not file based on only some of the remote candidates.
+                            break
+                        if downloads:
+                            # Re-read all media candidates after downloads and rank
+                            # their actual sizes/FPS rather than expected source quality.
+                            choice = selector(database, row["episode_id"], hostname)
+                            source = choice["preferred_path"]
+                            if not source:
+                                totals["skipped_on_apply"] += 1
+                                print(json.dumps(dict(row, mode="apply",
+                                                      status="no_eligible_recording"),
+                                                 sort_keys=True), file=stream)
+                                continue
+                        else:
+                            source = row["source"]
+                        result = filer(database, source, sports_root=sports_root,
+                                       hostname=hostname, ffprobe=ffprobe, apply=True,
+                                       stream=io.StringIO())
+                        if result["status"] == "filed":
+                            totals["filed"] += 1
+                        else:
+                            totals["skipped_on_apply"] += 1
+                        print(json.dumps(dict(row, mode="apply",
+                                              status=result["status"],
+                                              selected_source=source,
+                                              download_count=len(downloads)),
+                                         sort_keys=True), file=stream)
+                    except LockBusy:
+                        totals["skipped_on_apply"] += 1
+                        print(json.dumps(dict(row, mode="apply",
+                                              status="deferred",
+                                              reason="download_site_busy"),
+                                         sort_keys=True), file=stream)
+                        continue
+                    except Exception as exc:
+                        totals["failed"] += 1
+                        print(json.dumps(dict(row, mode="apply", status="failed",
+                                              error=str(exc)[:1000]), sort_keys=True),
+                              file=stream)
+                        # A failure may have left local candidates that need
+                        # reconciliation. Do not promote a partial comparison.
+                        break
+            except LockBusy:
+                # Another episode worker may be waiting on this download.
+                # Do not increment failures or consume the episode budget.
+                totals["skipped_on_apply"] += 1
+                print(json.dumps(dict(row, mode="apply", status="deferred",
+                                      reason="episode_busy"),
                                  sort_keys=True), file=stream)
-            except Exception as exc:
-                totals["failed"] += 1
-                print(json.dumps(dict(row, mode="apply", status="failed",
-                                      error=str(exc)[:1000]), sort_keys=True),
-                      file=stream)
-                # A failure may have left local candidates that need
-                # reconciliation. Do not promote a partial comparison.
-                break
+                continue
         report = {
             "mode": "apply" if apply else "preview", "series": series_id,
             "host": hostname, "season": season, "limit": limit,
@@ -176,9 +198,8 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
         print(json.dumps(report, sort_keys=True), file=summary_stream)
         return report
 
-    if apply:
-        with acquire_lock(incoming_root):
-            return execute()
+    # A blocked provider download only owns its provider's download lock
+    # and this episode reservation. Indexers remain free to run.
     return execute()
 
 

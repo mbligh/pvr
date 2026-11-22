@@ -635,3 +635,28 @@ for manual checks and --skip-discovery for acquisition without indexing.
 Preview never fetches or writes. Existing acquisition minimum-age,
 source-quality, no-overwrite and F1 historical backfill limits remain.
 No cron jobs installed; see POLLING.md for suggested five-minute entries.
+
+
+## Per-site indexer and download locks (2026-11-22)
+
+orchestration/locks.py provides host-local, nonblocking flock locks.
+The per-site indexer lock serializes each provider's discovery and
+Atlas import; the per-site download lock serializes physical transfers,
+source revalidation and file inventory registration. For reddit-teletz
+the actual download site is TransferNow. Indexer and downloader locks
+do not conflict even for the same source. Separate providers can index
+or download independently.
+
+Both run_rugby and run_f1 no longer hold a runner-wide lock across
+the download stage. refresh_releases locks each selected source through
+discovery and matching (the CLI returns temporary-contention status 75).
+run_rugby treats that status as a skip, not a failed indexer check.
+run_f1 locks reddit-teletz across discovery and import, rechecking its
+polling decision under the lock. Each worker instead holds a hashed
+per-episode lock while revalidating plans, acquiring recordings, comparing
+candidates and filing. Contention is deferred rather than counted as
+a failed download. Lock files are retained and released on process exit.
+Jobs must share the same incoming root/host for this coordination.
+There is no download watchdog yet, so a genuinely stuck download
+continues to hold only its provider and episode locks while all
+indexers remain eligible.

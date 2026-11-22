@@ -11,7 +11,6 @@ Like acquire_rugby, use --season (or --year), --round, --episode,
 import argparse
 import contextlib
 import datetime as dt
-import fcntl
 import importlib.machinery
 import importlib.util
 import io
@@ -23,6 +22,7 @@ import sys
 from orchestration.acquire import host_name
 from orchestration.f1_acquire import rows
 from orchestration.f1_checks import cached_status, check_release
+from orchestration.locks import LockBusy, episode_lock
 
 ROOT = Path(__file__).resolve().parent
 
@@ -38,22 +38,6 @@ def load_script(label, filename):
 download_release = load_script("pvr_f1_download", "download_release")
 file_recording = load_script("pvr_f1_file", "file_recording")
 
-
-@contextlib.contextmanager
-def acquire_lock(incoming_root):
-    """Use the same host-wide lock as acquire_rugby."""
-    lock_path = Path(incoming_root) / ".pvr-acquire.lock"
-    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(lock_path, flags, 0o600)
-    try:
-        with os.fdopen(fd, "r+") as handle:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise RuntimeError("Another PVR acquisition worker is running") from exc
-            yield
-    finally:
-        pass
 
 
 def recent_failed_jobs(database, hostname, now, hours):
@@ -117,116 +101,145 @@ def run(database, *, apply=False, year=2026, round_no=None, episode_number=None,
                 counters["planned"] += 1
                 emit(dict(plan, mode="preview"))
                 continue
-            # Limit actual acquisitions, not unavailable-only checks.
-            if counters["filed"] >= limit:
-                break
-            if plan["action"] == "download_then_file" and counters["checked"] >= max_checks:
-                break
-            counters["planned"] += 1
-            if plan["action"] == "file":
-                try:
-                    result = filer(
-                        database, plan["source"], sports_root=sports_root,
-                        hostname=hostname, ffprobe=ffprobe, apply=True,
-                        stream=io.StringIO())
-                    if result["status"] != "filed":
-                        raise RuntimeError("Filing refused: " + result["status"])
-                    counters["filed"] += 1
-                    emit(dict(plan, mode="apply", status="filed",
-                              download_completed=False))
-                except Exception as exc:
-                    counters["failed"] += 1
-                    emit(dict(plan, mode="apply", status="failed",
-                              error=str(exc)[:500]))
-                    break
-                continue
-
-            status = None
-            for idx, candidate in enumerate(plan["candidates"]):
-                uri = candidate["source_uri"]
-                document = by_uri.get(uri)
-                if document is None or document.get("episode_id") != plan["episode_id"]:
-                    status = "failed"
-                    counters["failed"] += 1
-                    emit(dict(plan, mode="apply", status="failed",
-                              source_uri=uri, error="Release changed during planning"))
-                    break
-                cache = cached_status(
-                    document, now,
-                    unavailable_recheck_hours=unavailable_recheck_hours,
-                    retry_after_hours=retry_after_hours)
-                if cache in ("unavailable", "unsupported"):
-                    counters["fallbacks"] += 1
-                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
-                          "status": cache, "cached": True, "action": "fallback"})
-                    continue
-                # For ambiguous failures or interrupted downloads, never
-                # switch to a lower-ranked source; wait, then resume instead.
-                if cache == "transient" or uri in failed_downloads:
-                    status = "deferred"
-                    counters["deferred"] += 1
-                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
-                          "status": "deferred", "reason": "retry_cooldown"})
-                    break
-                if counters["checked"] >= max_checks:
-                    status = "deferred"
-                    counters["deferred"] += 1
-                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
-                          "status": "deferred", "reason": "check_budget_exhausted"})
-                    break
-                try:
-                    kwargs = {"inspector": inspector} if inspector else {}
-                    checked_status, detail = check_release(
-                        database, plan["episode_id"], candidate, now=now, **kwargs)
-                    counters["checked"] += 1
-                    document["availability_check"] = detail
-                    if checked_status in ("unavailable", "unsupported"):
-                        counters["fallbacks"] += 1
-                        emit({"episode_id": plan["episode_id"], "source_uri": uri,
-                              "status": checked_status, "action": "fallback",
-                              "error": detail.get("error")})
-                        continue
-                    if checked_status == "transient":
-                        status = "deferred"
+            try:
+                with episode_lock(incoming_root, plan["episode_id"]):
+                    # Another overlapping worker may have just filed this.
+                    refreshed, _ = rows(
+                        database, year=year, round_no=round_no,
+                        episode_number=plan["episode"], sports_root=sports_root,
+                        incoming_root=incoming_root, hostname=hostname,
+                        min_age_hours=min_age_hours, recent_hours=recent_hours,
+                        backfill=backfill, now=now)
+                    latest = next((item for item in refreshed
+                                   if item["episode_id"] == plan["episode_id"]), None)
+                    if latest is None or latest["action"] == "skip":
                         counters["deferred"] += 1
-                        emit({"episode_id": plan["episode_id"], "source_uri": uri,
-                              "status": "deferred", "reason": "availability_uncertain",
-                              "error": detail.get("error")})
+                        emit({"episode_id": plan["episode_id"], "status": "deferred",
+                              "reason": "episode_no_longer_actionable"})
+                        continue
+                    plan = latest
+                    # Limit actual acquisitions, not unavailable-only checks.
+                    if counters["filed"] >= limit:
                         break
-                    downloaded = downloader(
-                        database, uri, candidate["incoming"], apply=True,
-                        hostname=hostname, ffprobe=ffprobe, ffmpeg=ffmpeg,
-                        output=io.StringIO())
-                    if downloaded["status"] != "downloaded":
-                        raise RuntimeError("Download refused: " + downloaded["status"])
-                    counters["downloaded"] += 1
-                    filed = filer(
-                        database, candidate["incoming"], apply=True,
-                        sports_root=sports_root, hostname=hostname, ffprobe=ffprobe,
-                        stream=io.StringIO())
-                    if filed["status"] != "filed":
-                        raise RuntimeError("Filing refused: " + filed["status"])
-                    counters["filed"] += 1
-                    status = "filed"
-                    emit({"episode_id": plan["episode_id"], "season": plan["season"],
-                          "episode": plan["episode"], "source_uri": uri,
-                          "status": "filed", "destination": plan["destination"],
-                          "alternatives_skipped": idx,
-                          "download_completed": True})
-                    break
-                except Exception as exc:
-                    status = "failed"
-                    counters["failed"] += 1
-                    emit({"episode_id": plan["episode_id"], "source_uri": uri,
-                          "status": "failed", "error": str(exc)[:500]})
-                    break
-            if status is None:
-                counters["unavailable"] += 1
-                emit({"episode_id": plan["episode_id"], "status": "no_available_release"})
-            if counters["failed"]:
-                # Stop on error: jobs/files or partial downloads may need
-                # operator reconciliation; don't run another download.
-                break
+                    if plan["action"] == "download_then_file" and counters["checked"] >= max_checks:
+                        break
+                    counters["planned"] += 1
+                    if plan["action"] == "file":
+                        try:
+                            result = filer(
+                                database, plan["source"], sports_root=sports_root,
+                                hostname=hostname, ffprobe=ffprobe, apply=True,
+                                stream=io.StringIO())
+                            if result["status"] != "filed":
+                                raise RuntimeError("Filing refused: " + result["status"])
+                            counters["filed"] += 1
+                            emit(dict(plan, mode="apply", status="filed",
+                                      download_completed=False))
+                        except Exception as exc:
+                            counters["failed"] += 1
+                            emit(dict(plan, mode="apply", status="failed",
+                                      error=str(exc)[:500]))
+                            break
+                        continue
+
+                    status = None
+                    for idx, candidate in enumerate(plan["candidates"]):
+                        uri = candidate["source_uri"]
+                        document = by_uri.get(uri)
+                        if document is None or document.get("episode_id") != plan["episode_id"]:
+                            status = "failed"
+                            counters["failed"] += 1
+                            emit(dict(plan, mode="apply", status="failed",
+                                      source_uri=uri, error="Release changed during planning"))
+                            break
+                        cache = cached_status(
+                            document, now,
+                            unavailable_recheck_hours=unavailable_recheck_hours,
+                            retry_after_hours=retry_after_hours)
+                        if cache in ("unavailable", "unsupported"):
+                            counters["fallbacks"] += 1
+                            emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                                  "status": cache, "cached": True, "action": "fallback"})
+                            continue
+                        # For ambiguous failures or interrupted downloads, never
+                        # switch to a lower-ranked source; wait, then resume instead.
+                        if cache == "transient" or uri in failed_downloads:
+                            status = "deferred"
+                            counters["deferred"] += 1
+                            emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                                  "status": "deferred", "reason": "retry_cooldown"})
+                            break
+                        if counters["checked"] >= max_checks:
+                            status = "deferred"
+                            counters["deferred"] += 1
+                            emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                                  "status": "deferred", "reason": "check_budget_exhausted"})
+                            break
+                        try:
+                            kwargs = {"inspector": inspector} if inspector else {}
+                            checked_status, detail = check_release(
+                                database, plan["episode_id"], candidate, now=now, **kwargs)
+                            counters["checked"] += 1
+                            document["availability_check"] = detail
+                            if checked_status in ("unavailable", "unsupported"):
+                                counters["fallbacks"] += 1
+                                emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                                      "status": checked_status, "action": "fallback",
+                                      "error": detail.get("error")})
+                                continue
+                            if checked_status == "transient":
+                                status = "deferred"
+                                counters["deferred"] += 1
+                                emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                                      "status": "deferred", "reason": "availability_uncertain",
+                                      "error": detail.get("error")})
+                                break
+                            downloaded = downloader(
+                                database, uri, candidate["incoming"], apply=True,
+                                hostname=hostname, ffprobe=ffprobe, ffmpeg=ffmpeg,
+                                output=io.StringIO())
+                            if downloaded["status"] != "downloaded":
+                                raise RuntimeError("Download refused: " + downloaded["status"])
+                            counters["downloaded"] += 1
+                            filed = filer(
+                                database, candidate["incoming"], apply=True,
+                                sports_root=sports_root, hostname=hostname, ffprobe=ffprobe,
+                                stream=io.StringIO())
+                            if filed["status"] != "filed":
+                                raise RuntimeError("Filing refused: " + filed["status"])
+                            counters["filed"] += 1
+                            status = "filed"
+                            emit({"episode_id": plan["episode_id"], "season": plan["season"],
+                                  "episode": plan["episode"], "source_uri": uri,
+                                  "status": "filed", "destination": plan["destination"],
+                                  "alternatives_skipped": idx,
+                                  "download_completed": True})
+                            break
+                        except LockBusy:
+                            status = "deferred"
+                            counters["deferred"] += 1
+                            emit({"episode_id": plan["episode_id"],
+                                  "source_uri": uri, "status": "deferred",
+                                  "reason": "download_site_busy"})
+                            break
+                        except Exception as exc:
+                            status = "failed"
+                            counters["failed"] += 1
+                            emit({"episode_id": plan["episode_id"], "source_uri": uri,
+                                  "status": "failed", "error": str(exc)[:500]})
+                            break
+                    if status is None:
+                        counters["unavailable"] += 1
+                        emit({"episode_id": plan["episode_id"], "status": "no_available_release"})
+                    if counters["failed"]:
+                        # Stop on error: jobs/files or partial downloads may need
+                        # operator reconciliation; don't run another download.
+                        break
+            except LockBusy:
+                counters["deferred"] += 1
+                emit({"episode_id": plan["episode_id"], "status": "deferred",
+                      "reason": "episode_busy"})
+                continue
         report = {
             "mode": "apply" if apply else "preview", "series": "Formula_1",
             "year": year, "host": hostname, "limit": limit, "max_checks": max_checks,
@@ -236,9 +249,8 @@ def run(database, *, apply=False, year=2026, round_no=None, episode_number=None,
         print(json.dumps(report, sort_keys=True), file=summary_stream)
         return report
 
-    if apply:
-        with acquire_lock(incoming_root):
-            return execute()
+    # Only the current episode and physical provider download are locked;
+    # indexer cron runs continue while a transfer is in progress.
     return execute()
 
 

@@ -23,6 +23,7 @@ from downloaders.transfernow_pvr import (download as download_transfernow,
                                         share_from_release, source_id as transfernow_id)
 from matchers.pwr import SERIES_ID
 from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
+from orchestration.locks import site_lock
 
 
 def plan(database, uri, destination, *, hostname=None, allow_existing_episode=False):
@@ -144,7 +145,7 @@ def register(database, checked, media, *, now=None):
     return file_id
 
 
-def run(database, uri, destination, *, apply=False, allow_existing_episode=False,
+def _run_unlocked(database, uri, destination, *, apply=False, allow_existing_episode=False,
         yt_dlp="yt-dlp", get_iplayer="get_iplayer",
         rugbypass="~/tools/video/rugbypass", ffprobe="ffprobe", ffmpeg="ffmpeg",
         hostname=None, downloader=download_youtube,
@@ -206,6 +207,37 @@ def run(database, uri, destination, *, apply=False, allow_existing_episode=False
         except Exception:
             pass
         raise
+
+
+def run(database, uri, destination, *, apply=False, allow_existing_episode=False,
+        yt_dlp="yt-dlp", get_iplayer="get_iplayer",
+        rugbypass="~/tools/video/rugbypass", ffprobe="ffprobe", ffmpeg="ffmpeg",
+        hostname=None, downloader=download_youtube,
+        bbc_downloader=download_bbc, rugbypass_downloader=download_rugbypass,
+        transfernow_downloader=download_transfernow, output=sys.stdout):
+    """Serialize physical downloads per provider, independently of indexing.
+
+    Protect the revalidation/planning step inside the lock as well as the
+    downloader and inventory writes. Busy locks never create download jobs.
+    """
+    kwargs = dict(
+        apply=apply, allow_existing_episode=allow_existing_episode,
+        yt_dlp=yt_dlp, get_iplayer=get_iplayer, rugbypass=rugbypass,
+        ffprobe=ffprobe, ffmpeg=ffmpeg, hostname=hostname,
+        downloader=downloader, bbc_downloader=bbc_downloader,
+        rugbypass_downloader=rugbypass_downloader,
+        transfernow_downloader=transfernow_downloader, output=output,
+    )
+    if not apply:
+        return _run_unlocked(database, uri, destination, **kwargs)
+    site = uri.split(":", 1)[0]
+    if site == "reddit-teletz":
+        site = "transfernow"  # Actual physical download host, not Reddit.
+    path = pathlib.Path(destination)
+    if not path.is_absolute() or path.suffix.lower() != ".mkv":
+        raise ValueError("Download destination must be an absolute .mkv filename")
+    with site_lock(path.parent, "download", site):
+        return _run_unlocked(database, uri, destination, **kwargs)
 
 
 def main(argv=None):

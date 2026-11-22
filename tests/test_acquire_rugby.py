@@ -272,6 +272,18 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(summary["skipped_on_apply"], 1)
         self.assertEqual(summary["failed"], 1)
 
+    def test_busy_download_site_is_deferred_not_failed(self):
+        from orchestration.locks import LockBusy
+        def busy(*args, **kwargs):
+            raise LockBusy("download provider busy")
+        report = self.run_cli(apply=True, downloader=busy)
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(report["filed"], 0)
+        self.assertEqual(report["skipped_on_apply"], 1)
+        report = self.run_cli(apply=True, downloader=lambda *a, **k: {
+            "status": "downloaded"}, filer=lambda *a, **k: {"status": "filed"})
+        self.assertEqual(report["filed"], 1)
+
     def test_worker_has_no_discovery_side_effects_or_refresh_argument(self):
         # Source discovery is owned by run_rugby, not this Atlas-only worker.
         self.assertEqual(self.run_cli()["planned"], 1)
@@ -308,12 +320,15 @@ class AcquisitionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "RugbyPass only"):
                     self.rows(series_id=series_id, sources=("youtube",))
 
-    def test_worker_lock_refuses_overlap(self):
-        with CLI.acquire_lock(self.incoming):
-            with self.assertRaisesRegex(RuntimeError, "Another PVR acquisition"):
-                with CLI.acquire_lock(self.incoming):
+    def test_episode_lock_refuses_duplicate_episode_only(self):
+        from orchestration.locks import episode_lock, LockBusy
+        with episode_lock(self.incoming, EPID):
+            with self.assertRaises(LockBusy):
+                with episode_lock(self.incoming, EPID):
                     pass
-        with CLI.acquire_lock(self.incoming):
+            with episode_lock(self.incoming, EPID + "-another"):
+                pass
+        with episode_lock(self.incoming, EPID):
             pass
 
 

@@ -6,6 +6,7 @@ With --apply: validate all source responses before upserting and matching.
 This command NEVER downloads or changes any media files.
 """
 import argparse
+import contextlib
 import importlib.machinery
 import importlib.util
 import io
@@ -17,6 +18,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
 from orchestration.source_registry import RUGBY_SOURCES
+from orchestration.locks import LockBusy, site_lock
 
 SOURCES = RUGBY_SOURCES
 
@@ -71,7 +73,7 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
     return output
 
 
-def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
+def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
         bbc_pages=10, rugbypass_pages=5,
         rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
         discover=discover_sources, output=sys.stdout):
@@ -120,6 +122,29 @@ def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
     return outcome
 
 
+def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
+        bbc_pages=10, rugbypass_pages=5,
+        rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
+        discover=discover_sources, output=sys.stdout, lock_root=None):
+    """Hold each provider's indexer lock through discovery and Atlas matching.
+
+    CLI always supplies lock_root. Library tests can leave it None to inject
+    fake provider results without touching the host filesystem.
+    """
+    sources = tuple(dict.fromkeys(sources))
+    with contextlib.ExitStack() as stack:
+        if lock_root is not None:
+            # Preview also fetches providers; protect every source request.
+            # Stable ordering prevents deadlocks for multi-source manual runs.
+            for source in sorted(sources):
+                stack.enter_context(site_lock(lock_root, "indexer", source))
+        return _run_unlocked(
+            database, apply=apply, sources=sources,
+            youtube_limit=youtube_limit, bbc_pages=bbc_pages,
+            rugbypass_pages=rugbypass_pages, rugbypass=rugbypass,
+            yt_dlp=yt_dlp, discover=discover, output=output)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", action="append", choices=SOURCES,
@@ -131,6 +156,8 @@ def main(argv=None):
     parser.add_argument("--yt-dlp", default="yt-dlp")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    parser.add_argument("--lock-root", default="/data/incoming",
+                        help="Shared local directory for per-site indexer locks")
     args = parser.parse_args(argv)
     uri = os.environ.get("MONGODB_URI")
     if not uri:
@@ -147,7 +174,10 @@ def main(argv=None):
             run(client[args.database], sources=args.source or SOURCES,
                 youtube_limit=args.youtube_limit, bbc_pages=args.bbc_pages,
                 rugbypass_pages=args.rugbypass_pages, rugbypass=args.rugbypass,
-                yt_dlp=args.yt_dlp, apply=args.apply)
+                yt_dlp=args.yt_dlp, apply=args.apply, lock_root=args.lock_root)
+    except LockBusy as exc:
+        print(f"PVR source refresh busy: {exc}", file=sys.stderr)
+        return 75  # Temporary lock contention, not a provider failure.
     except Exception as exc:
         print(f"PVR source refresh: {exc}", file=sys.stderr)
         return 1

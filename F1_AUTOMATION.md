@@ -71,9 +71,11 @@ mark releases available=false based on these checks.
 
 An availability-only attempt does not consume the one-success download
 limit, so an expired newest session cannot starve older missing sessions.
-The separate eight-check network budget bounds work. The acquisition lock
-is shared with PWR; the runner also locks the full discovery/import
-pipeline to avoid overlapping cron invocations.
+The separate eight-check network budget bounds work. Indexer and downloader locks are separate and scoped by source/site.
+The reddit-teletz indexer lock spans discovery and Atlas import;
+the TransferNow download lock never prevents another Reddit indexer
+check. An additional per-episode reservation prevents duplicate
+filing across overlapping runs. See POLLING.md.
 
 ## Optional cron on slagg
 

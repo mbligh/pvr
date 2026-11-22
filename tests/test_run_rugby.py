@@ -109,7 +109,7 @@ class RugbyRunTests(unittest.TestCase):
         self.assertIn("--apply", acquisition)
         self.assertEqual(acquisition[acquisition.index("--limit") + 1], "2")
         self.assertEqual(acquisition.count("--source"), 2)
-        self.assertTrue((self.incoming / ".pvr-rugby-run.lock").is_file())
+        self.assertFalse((self.incoming / ".pvr-rugby-run.lock").exists())
 
     def test_skip_discovery_uses_existing_release_links(self):
         self.assertEqual(self.invoke(apply=True, skip_discovery=True), 0)
@@ -171,13 +171,15 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual(self.invoke(), 2)
         self.assertEqual(self.invoke(apply=True, skip_discovery=True), 2)
 
-    def test_run_lock_refuses_overlap(self):
-        with runner.lock_run(self.incoming):
-            with self.assertRaisesRegex(RuntimeError, "Another rugby"):
-                with runner.lock_run(self.incoming):
+    def test_indexer_and_downloader_site_locks_are_independent(self):
+        from orchestration.locks import LockBusy, site_lock
+        with site_lock(self.incoming, "indexer", "bbc"):
+            with self.assertRaises(LockBusy):
+                with site_lock(self.incoming, "indexer", "bbc"):
                     pass
-        with runner.lock_run(self.incoming):
-            pass
+            with site_lock(self.incoming, "indexer", "youtube"):
+                with site_lock(self.incoming, "download", "bbc"):
+                    pass
 
     def test_per_indexer_cooldown_skips_only_unneeded_providers(self):
         self.due_by_source = {"bbc": False, "youtube": False, "rugbypass": True}
@@ -187,6 +189,29 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual(self.calls[0][0][self.calls[0][0].index("--source") + 1],
                          "rugbypass")
         self.assertEqual(self.db.indexer_poll_state.update_one.call_count, 1)
+
+    def test_busy_indexer_does_not_delay_other_sources_or_acquisition(self):
+        def occupied(cmd, **kwargs):
+            self.calls.append((cmd, kwargs))
+            if Path(cmd[1]).name == "refresh_releases" and (
+                    cmd[cmd.index("--source") + 1] == "bbc"):
+                return Result(code=75, stderr="PVR source refresh busy\n")
+            if Path(cmd[1]).name == "refresh_releases":
+                src = cmd[cmd.index("--source") + 1]
+                return Result(stdout=json.dumps({"mode": "apply",
+                                                   "sources": [src],
+                                                   "total_releases": 0}))
+            return Result(stderr='{"planned":1}\n')
+        self.execute = occupied
+        self.assertEqual(self.invoke(apply=True), 0)
+        self.assertEqual(
+            [Path(call[0][1]).name for call in self.calls],
+            ["refresh_releases", "refresh_releases", "refresh_releases",
+             "acquire_rugby"])
+        self.assertEqual(
+            [call.args[0]["_id"] for call in
+             self.db.indexer_poll_state.update_one.call_args_list],
+            ["youtube", "rugbypass"])
 
     def test_no_missing_and_all_sources_fresh_exits_without_work(self):
         self.missing = []

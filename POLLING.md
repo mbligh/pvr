@@ -56,10 +56,31 @@ source with last_success, last_attempt, failures and (for failures)
 retry_not_before. The first successful check creates its state; no
 schema migration is necessary.
 
-Both runners use their existing local flock locks; acquisition workers
-additionally use the existing .pvr-acquire.lock for downloaded media.
-Scheduling the same runner every five minutes cannot overlap its
-own discovery/acquisition pipeline on the same host.
+Provider operations use distinct host-local advisory locks under
+/data/incoming (or the configured incoming root):
+
+- .pvr-indexer-<source>.lock serializes an individual provider's discovery
+  and matching. BBC, YouTube, RugbyPass and reddit-teletz have independent
+  locks; F1's Reddit lock spans both discovery and Atlas import.
+- .pvr-download-<site>.lock serializes physical transfers and inventory
+  registration by website. BBC/YouTube/RugbyPass use their source names;
+  reddit-teletz recordings download from TransferNow and use its lock.
+- .pvr-episode-<hash>.lock reserves a canonical episode across download,
+  quality comparison and filing. Different providers cannot independently
+  publish the same episode; once locked, the worker refreshes its plan.
+
+There is **no global runner/acquisition lock**: a stalled download never
+blocks indexers, and unrelated providers or episodes can continue.
+Contention is nonblocking: a busy indexer is skipped without recording
+a provider failure, and busy acquisition is deferred rather than marked
+failed. Indexer and downloader locks for the *same* provider do not block
+one another.
+
+These are host-local flock locks: they coordinate jobs using the same local
+incoming filesystem, not processes on separate hosts. Lock files remain
+on disk after unlocking to avoid inode-replacement races. A stuck process
+retains its individual lock until it exits, so a separate download watchdog
+may still be desirable.
 
 ## Commands
 

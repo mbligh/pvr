@@ -10,7 +10,6 @@ Official fixture scheduling remains the separate import_rugby command.
 """
 import argparse
 import contextlib
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -18,6 +17,7 @@ import subprocess
 import sys
 
 from orchestration import polling
+from orchestration.locks import LockBusy
 from orchestration.source_registry import RUGBY_SERIES, RUGBY_SOURCES, sources_for
 from matchers.pwr import SERIES_ID
 
@@ -27,19 +27,6 @@ ROOT = Path(__file__).resolve().parent
 def command(script, *args):
     return [sys.executable, str(ROOT / script), *[str(arg) for arg in args]]
 
-
-@contextlib.contextmanager
-def lock_run(incoming_root):
-    """Serialize full discovery/acquisition pipelines on this host."""
-    path = Path(incoming_root) / ".pvr-rugby-run.lock"
-    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
-    with os.fdopen(fd, "r+") as lock:
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RuntimeError("Another rugby discovery/acquisition run is active") from exc
-        yield
 
 
 def source_set(series, sources):
@@ -176,9 +163,15 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                             "--youtube-limit", youtube_limit, "--bbc-pages", bbc_pages,
                             "--rugbypass-pages", rugbypass_pages,
                             "--yt-dlp", yt_dlp, "--rugbypass", rugbypass,
-                            "--database", database]
+                            "--database", database, "--lock-root", incoming_root]
                     try:
                         result = invoke("refresh_releases", *args)
+                        if result.returncode == 75:
+                            # A separate cron invocation is already indexing
+                            # this site. It will update its successful check.
+                            print(json.dumps({"type": "indexer_busy", "source": source}),
+                                  file=output)
+                            continue
                         if result.returncode:
                             raise RuntimeError("Discovery failed for " + source + "; refusing acquisition")
                         report = json.loads(result.stdout)
@@ -195,11 +188,9 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                 return 0
             return run_acquisitions(missing, apply=apply)
 
-    if apply:
-        # Acquire_rugby retains its own shared download lock. This outer
-        # lock covers preflight, indexing and cross-series selection.
-        with lock_run(incoming_root):
-            return work()
+    # Never hold an indexer lock while acquisition is running.
+    # acquire_rugby obtains episode locks and download_release owns
+    # per-site download locks. Another cron invocation can continue indexing.
     return work()
 
 

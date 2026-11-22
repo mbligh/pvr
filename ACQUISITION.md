@@ -239,8 +239,10 @@ without replacing the published copy.
 ## Safety and recovery
 
 - **Preview first**; `--apply` is required for Atlas updates and media.
-- The `/data/incoming/.pvr-acquire.lock` host-local flock prevents
-  overlapping worker invocations.
+- Provider indexers and physical downloads use **separate per-site flock
+  locks**, and each acquisition additionally reserves its episode.
+  A hung download cannot block unrelated indexers. See [POLLING.md](POLLING.md)
+  for lock names and contention behavior.
 - A recent failed or running download prevents immediate provider retries
   for six hours by default (`--retry-after-hours`). Explicitly set the
   value to 0 only after diagnosing a failure.

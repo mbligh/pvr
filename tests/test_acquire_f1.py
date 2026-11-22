@@ -249,6 +249,15 @@ class F1AcquisitionTests(unittest.TestCase):
         self.assertEqual(result["unavailable"], 1)
         self.assertEqual(result["failed"], 0)
 
+    def test_busy_download_provider_is_deferred_not_failed(self):
+        from orchestration.locks import LockBusy
+        def busy(*args, **kwargs):
+            raise LockBusy("TransferNow download busy")
+        report = self.run_worker(apply=True, downloader=busy)
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(report["deferred"], 1)
+        self.assertEqual(report["filed"], 0)
+
     def test_already_filed_is_not_downloaded_again(self):
         video = self.sports / EPISODE["nfo_path"].replace(".nfo", ".mkv")
         video.parent.mkdir(parents=True)
@@ -346,11 +355,14 @@ class F1AcquisitionTests(unittest.TestCase):
         self.assertEqual(self.plans()[1]["due"], 0)
         self.assertEqual(self.plans(min_age_hours=0)[1]["due"], 1)
 
-    def test_shared_acquisition_lock_refuses_second_worker(self):
-        with worker.acquire_lock(self.incoming):
-            with self.assertRaisesRegex(RuntimeError, "Another PVR"):
-                with worker.acquire_lock(self.incoming):
+    def test_episode_lock_refuses_same_episode_only(self):
+        from orchestration.locks import episode_lock, LockBusy
+        with episode_lock(self.incoming, "Formula_1:one"):
+            with self.assertRaises(LockBusy):
+                with episode_lock(self.incoming, "Formula_1:one"):
                     pass
+            with episode_lock(self.incoming, "Formula_1:two"):
+                pass
 
     def test_transient_cache_has_bounded_cooldown(self):
         row = {"availability_check": {
@@ -440,6 +452,16 @@ class F1RunWrapperTests(unittest.TestCase):
             runner.run(apply=True, incoming_root=self.path, poll_db=self.db, execute=fail_import)
         self.assertEqual(len(self.calls), 2)
 
+    def test_busy_reddit_indexer_still_allows_acquisition(self):
+        from orchestration.locks import site_lock
+        with site_lock(self.path, "indexer", "reddit-teletz"):
+            self.assertEqual(runner.run(
+                apply=True, incoming_root=self.path, poll_db=self.db,
+                execute=self.fake, output=io.StringIO()), 0)
+        self.assertEqual([Path(c[0][1]).name for c in self.calls],
+                         ["acquire_f1"])
+        self.db.indexer_poll_state.update_one.assert_not_called()
+
     def test_f1_not_due_still_acquires_previously_indexed_releases(self):
         self.plan_patch.stop()
         def ready_plan(db, **kwargs):
@@ -476,11 +498,14 @@ class F1RunWrapperTests(unittest.TestCase):
         self.assertEqual(mocked.call_args.kwargs["year"], 2026)
         self.assertFalse(mocked.call_args.kwargs["apply"])
 
-    def test_run_lock_blocks_overlap(self):
-        with runner.lock_run(self.path):
-            with self.assertRaisesRegex(RuntimeError, "Another F1"):
-                with runner.lock_run(self.path):
+    def test_indexer_lock_is_independent_of_download_lock(self):
+        from orchestration.locks import site_lock, LockBusy
+        with site_lock(self.path, "indexer", "reddit-teletz"):
+            with self.assertRaises(LockBusy):
+                with site_lock(self.path, "indexer", "reddit-teletz"):
                     pass
+            with site_lock(self.path, "download", "transfernow"):
+                pass
 
 
 if __name__ == "__main__":
