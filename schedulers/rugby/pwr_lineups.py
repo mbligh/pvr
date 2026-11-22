@@ -9,6 +9,16 @@ FIXTURE_ID = re.compile(r"^Rugby_Womens_PWR:pwr-(\d+)@mbligh\.github\.io$")
 UTC = dt.timezone.utc
 
 
+def utc(value):
+    """Normalize MongoDB naive UTC datetimes and aware datetime values."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+
 def fixture_id(episode):
     match = FIXTURE_ID.fullmatch(episode["_id"])
     if episode.get("series_id") != SERIES or not match:
@@ -28,7 +38,7 @@ def fetch(fixture):
 
 
 def normalize(data, episode, now=None):
-    now = now or dt.datetime.now(UTC)
+    now = utc(now or dt.datetime.now(UTC))
     fixture = fixture_id(episode)
     teams = {"home": [], "away": []}
     shirts = set()
@@ -65,9 +75,7 @@ def normalize(data, episode, now=None):
               "home": teams["home"], "away": teams["away"],
               "status": status, "source": "thepwr.com", "checked_at": now}
     if status != "complete":
-        kickoff = episode.get("scheduled")
-        if isinstance(kickoff, dt.datetime) and kickoff.tzinfo is None:
-            kickoff = kickoff.replace(tzinfo=UTC)
+        kickoff = utc(episode.get("scheduled"))
         if kickoff and now < kickoff + dt.timedelta(days=2):
             interval = dt.timedelta(hours=3)
         elif kickoff and now < kickoff + dt.timedelta(days=14):
@@ -79,7 +87,7 @@ def normalize(data, episode, now=None):
 
 
 def candidates(db, season=None, fixture=None, force=False, limit=50, now=None):
-    now = now or dt.datetime.now(UTC)
+    now = utc(now or dt.datetime.now(UTC))
     query = {"series_id": SERIES}
     if season is not None:
         query["season"] = season
@@ -95,18 +103,16 @@ def candidates(db, season=None, fixture=None, force=False, limit=50, now=None):
         fixture_id(episode)
         old = existing.get(episode["_id"], {})
         if not force:
-            scheduled = episode.get("scheduled")
-            if scheduled and scheduled.tzinfo is None:
-                scheduled = scheduled.replace(tzinfo=UTC)
+            scheduled = utc(episode.get("scheduled"))
             if scheduled and scheduled > now + dt.timedelta(days=3):
                 continue
             if old.get("status") == "complete":
                 continue
-            due = old.get("next_check_at")
-            if due and due.replace(tzinfo=due.tzinfo or UTC) > now:
+            due = utc(old.get("next_check_at"))
+            if due and due > now:
                 continue
         chosen.append(episode)
-    chosen.sort(key=lambda ep: ep.get("scheduled") or dt.datetime.min.replace(tzinfo=UTC),
+    chosen.sort(key=lambda ep: utc(ep.get("scheduled")) or dt.datetime.min.replace(tzinfo=UTC),
                 reverse=True)
     return chosen[:limit] if limit else chosen
 

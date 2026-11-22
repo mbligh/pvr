@@ -40,6 +40,39 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.normalize(data, EP, NOW)
 
+    def test_candidates_sort_mongodb_naive_and_aware_utc(self):
+        db = MagicMock()
+        older_naive = {**EP, "_id": "Rugby_Womens_PWR:pwr-200001@mbligh.github.io",
+                       "scheduled": dt.datetime(2026, 11, 21, 12)}
+        newer_aware = {**EP, "_id": "Rugby_Womens_PWR:pwr-200002@mbligh.github.io",
+                       "scheduled": dt.datetime(2026, 11, 22, 13,
+                                                tzinfo=dt.timezone(dt.timedelta(hours=1)))}
+        no_kickoff = {**EP, "_id": "Rugby_Womens_PWR:pwr-200003@mbligh.github.io",
+                      "scheduled": None}
+        db.episodes.find.return_value = [older_naive, no_kickoff, newer_aware]
+        db.pwr_lineups.find.return_value = []
+        result = mod.candidates(db, now=NOW)
+        self.assertEqual([mod.fixture_id(row) for row in result],
+                         [200002, 200001, 200003])
+
+    def test_candidates_naive_mongodb_next_check(self):
+        db = MagicMock()
+        db.episodes.find.return_value = [EP]
+        db.pwr_lineups.find.return_value = [
+            {"_id": EP["_id"], "status": "unavailable",
+             "next_check_at": dt.datetime(2026, 11, 23)}
+        ]
+        self.assertEqual(mod.candidates(db, now=NOW), [])
+        later = dt.datetime(2026, 11, 24, tzinfo=dt.timezone.utc)
+        self.assertEqual(len(mod.candidates(db, now=later)), 1)
+
+    def test_normalize_naive_schedule(self):
+        episode = {**EP, "scheduled": dt.datetime(2026, 11, 22)}
+        document = mod.normalize({"forwards": [], "backs": [], "subs": []},
+                                 episode, now=NOW)
+        self.assertEqual(document["status"], "unavailable")
+        self.assertGreater(document["next_check_at"], NOW)
+
     def test_candidates_do_not_poll_complete(self):
         db = MagicMock()
         db.episodes.find.return_value = [EP]
