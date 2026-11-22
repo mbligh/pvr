@@ -57,7 +57,7 @@ class WorldRugbyTests(unittest.TestCase):
 
     @patch("world_rugby.months", return_value=[(dt.date(2026, 10, 1), dt.date(2026, 10, 31))])
     @patch("world_rugby.request_page")
-    def test_women_includes_wxv_but_excludes_bledisloe(self, request, _months):
+    def test_women_and_wxv_are_independent_feeds(self, request, _months):
         request.return_value = {
             "pageInfo": {"numPages": 1},
             "content": [
@@ -67,7 +67,12 @@ class WorldRugbyTests(unittest.TestCase):
             ],
         }
         cal = fetch_world_rugby("womens-intl")
-        self.assertEqual(len(cal.walk("VEVENT")), 2)
+        self.assertEqual(len(cal.walk("VEVENT")), 1)
+        self.assertEqual(str(cal.walk("VEVENT")[0].get("DESCRIPTION")),
+                         "Women's Internationals 2026")
+        wxv = fetch_world_rugby("wxv")
+        self.assertEqual(len(wxv.walk("VEVENT")), 1)
+        self.assertEqual(str(wxv.walk("VEVENT")[0].get("DESCRIPTION")), "WXV 2026")
 
 
 if __name__ == "__main__":
