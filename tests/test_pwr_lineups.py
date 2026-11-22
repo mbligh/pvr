@@ -40,6 +40,51 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.normalize(data, EP, NOW)
 
+    def test_extra_shirt_24_or_25_is_preserved_not_counted(self):
+        data = sheet()
+        data["subs"].extend([
+            {"shirtNumber": 24, "position": "sub 9",
+             "homePlayer": {"id": 3024, "name": "Home extra"},
+             "awayPlayer": None},
+            {"shirtNumber": 25, "position": "sub 10",
+             "homePlayer": None,
+             "awayPlayer": {"id": 4025, "name": "Away extra"}},
+        ])
+        document = mod.normalize(data, EP, NOW)
+        self.assertEqual(document["status"], "complete")
+        self.assertEqual(len(document["home"]), 23)
+        self.assertEqual(len(document["away"]), 23)
+        self.assertEqual(document["additional_players"]["home"][0]["shirt_number"], 24)
+        self.assertEqual(document["additional_players"]["home"][0]["id"], 3024)
+        self.assertEqual(document["additional_players"]["away"][0]["shirt_number"], 25)
+        self.assertEqual(document["additional_players"]["away"][0]["id"], 4025)
+
+    def test_extra_player_does_not_make_incomplete_lineup_complete(self):
+        data = sheet()
+        data["subs"] = data["subs"][:6]
+        data["subs"].append({
+            "shirtNumber": 24, "position": "second row",
+            "homePlayer": {"id": 3024, "name": "Extra"},
+            "awayPlayer": None,
+        })
+        document = mod.normalize(data, EP, NOW)
+        self.assertEqual(document["status"], "partial")
+        self.assertEqual(len(document["home"]), 21)
+        self.assertEqual(len(document["additional_players"]["home"]), 1)
+
+    def test_duplicate_shirt_24_is_rejected(self):
+        data = sheet()
+        data["subs"].extend([
+            {"shirtNumber": 24, "position": "sub 9",
+             "homePlayer": {"id": 3024, "name": "Extra"},
+             "awayPlayer": None},
+            {"shirtNumber": 24, "position": "sub 9",
+             "homePlayer": None,
+             "awayPlayer": {"id": 4024, "name": "Duplicate"}},
+        ])
+        with self.assertRaisesRegex(ValueError, "number 24"):
+            mod.normalize(data, EP, NOW)
+
     def test_candidates_sort_mongodb_naive_and_aware_utc(self):
         db = MagicMock()
         older_naive = {**EP, "_id": "Rugby_Womens_PWR:pwr-200001@mbligh.github.io",

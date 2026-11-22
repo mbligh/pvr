@@ -25,7 +25,12 @@ Reruns do not discard previously collected complete sheets.
 
 The provider sometimes supplies extra rows with `shirtNumber: 0` alongside
 the valid numbered starters and substitutes. Those unselected/unnumbered rows
-are ignored, not treated as match failures. The provider also returns
+are ignored, not treated as match failures. Historical data also includes
+numbered extras `24` and `25`, typically labelled `sub 9` or `sub 10`.
+Those player records are preserved in `additional_players.home` or
+`additional_players.away` (with source shirt numbers and positions); they do
+not count toward matchday 1–23 completeness. Truly duplicated or otherwise
+invalid shirt numbers still produce errors. The provider also returns
 `{"message":"Could not fetch match data","status":404}` for some historical
 matches and unconfirmed playoffs; this known missing-data response is saved as
 `unavailable` and rechecked under the normal backoff policy. Unexpected

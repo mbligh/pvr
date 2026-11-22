@@ -46,6 +46,10 @@ def normalize(data, episode, now=None):
     now = utc(now or dt.datetime.now(UTC))
     fixture = fixture_id(episode)
     teams = {"home": [], "away": []}
+    # Some historical match feeds carry numbered players 24/25 ("sub 9/10"),
+    # beyond the standard matchday 23. Retain them without treating them as
+    # a selected shirt 1-23 or counting them toward lineup completeness.
+    additional_players = {"home": [], "away": []}
     shirts = set()
     for group in ("forwards", "backs", "subs"):
         rows = data.get(group)
@@ -59,8 +63,8 @@ def normalize(data, episode, now=None):
             # selected numbered 1-23 and must not invalidate the team sheet.
             if number == 0:
                 continue
-            if type(number) is not int or not 1 <= number <= 23 or number in shirts:
-                raise ValueError(f"Duplicate/invalid shirt number in fixture {fixture}")
+            if type(number) is not int or not 1 <= number <= 25 or number in shirts:
+                raise ValueError(f"Duplicate/invalid shirt number {number!r} in fixture {fixture}")
             shirts.add(number)
             for side in ("home", "away"):
                 player = row.get(side + "Player")
@@ -76,7 +80,8 @@ def normalize(data, episode, now=None):
                         item[target] = player[source]
                 if player.get("captain") in (True, "true"):
                     item["captain"] = True
-                teams[side].append(item)
+                target = teams if number <= 23 else additional_players
+                target[side].append(item)
     complete = all(len(players) >= 22 and set(range(1, 16)).issubset(
         {p["shirt_number"] for p in players}) for players in teams.values())
     status = "complete" if complete else "partial" if any(teams.values()) else "unavailable"
@@ -84,6 +89,7 @@ def normalize(data, episode, now=None):
               "series_id": SERIES, "season": episode["season"],
               "home_team": episode.get("home"), "away_team": episode.get("away"),
               "home": teams["home"], "away": teams["away"],
+              "additional_players": additional_players,
               "status": status, "source": "thepwr.com", "checked_at": now}
     if status != "complete":
         kickoff = utc(episode.get("scheduled"))
