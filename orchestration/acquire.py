@@ -94,10 +94,11 @@ def local_published(records, sports_root):
 
 def planning_rows(database, *, sports_root="/data/sports",
                   incoming_root="/data/incoming", season=None,
+                  round_no=None, episode_number=None,
                   min_age_hours=3, retry_after_hours=6, hostname=None,
                   max_candidates=3, sources=SOURCES, series_id=SERIES_ID,
                   now=None):
-    """Return (rows, counts) for due PWR episodes; no writes/downloads.
+    """Return (rows, counts) for due rugby episodes; no writes/downloads.
 
     Rows may request 'file', 'download_then_file',
     'download_candidates_then_file', or 'skip'.
@@ -123,8 +124,16 @@ def planning_rows(database, *, sports_root="/data/sports",
     query = {"series_id": series_id, "season": {"$gte": 2025}}
     if season is not None:
         if season < 2025:
-            raise ValueError("PWR season must be 2025 or later")
+            raise ValueError("Rugby season must be 2025 or later")
         query["season"] = season
+    if round_no is not None:
+        if not 1 <= round_no <= 99:
+            raise ValueError("Rugby round must be between 1 and 99")
+        query["round"] = round_no
+    if episode_number is not None:
+        if episode_number < 1:
+            raise ValueError("Rugby episode must be positive")
+        query["episode"] = episode_number
     episodes = list(database.episodes.find(query))
     episodes.sort(key=lambda ep: (
         aware(ep.get("scheduled")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc),

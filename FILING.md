@@ -38,7 +38,7 @@ Those records are unchanged. Routing new WXV media to
 automatic matching/acquisition can file it. No existing media files were moved.
 
 This command is separate from `download_release`; the quality-selector
-and preview-first `acquire_missing` worker reuse it. Canonical NFO
+and preview-first `acquire_rugby` worker reuse it. Canonical NFO
 validation and no-overwrite checks apply to every registered series.
 
 ## Trial on slagg

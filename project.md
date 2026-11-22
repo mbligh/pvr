@@ -121,7 +121,7 @@ on disk for inventory recovery. See [DOWNLOADING.md](DOWNLOADING.md).
 
 This paragraph describes the initial YouTube trial. The subsequent
 quality selector, canonical filer, multi-provider download adapters,
-refresh_releases importer/matcher, and bounded acquire_missing worker are
+refresh_releases importer/matcher, and bounded acquire_rugby worker are
 documented below. Source selection uses measured local media properties;
 explicit published-file upgrades and remote quality prediction remain future
 work.
@@ -179,7 +179,7 @@ using no-clobber semantics. BBC uses an isolated get_iplayer profile
 so personal postprocessing hooks and download history are untouched.
 The central filer remains the only producer of canonical NFO sidecars.
 
-`acquire_missing` remains a one-shot, preview-first PWR batch worker:
+`acquire_rugby` remains a one-shot, preview-first PWR batch worker:
 `--refresh` optionally invokes the source refresh first; `--apply`
 makes Atlas/media changes; `--limit N` caps episodes (default 1).
 A source filter and `--max-candidates` (default 3, maximum 5) bound the
@@ -242,7 +242,7 @@ catalogue import, leaving the original PWR matcher in place.
 `download_release`, `filing/publish.py`, and `file_recording`
 allow all three series with the same staged downloads, exact canonical
 stored NFO XML, quality ranking, no-clobber publication and Atlas history.
-`acquire_missing --series <id>` selects a single series; international
+`acquire_rugby --series <id>` selects a single series; international
 series are deliberately RugbyPass-only while the original PWR multi-source
 default is unchanged. Worker default remains preview/one episode and
 host-local locking prevents duplicate workers. No cron job or live media
@@ -568,3 +568,21 @@ preview is for CI diagnostics, not an accurate simulation of an
 Atlas update.
 Both default Atlas preview and --apply perform the same read-only
 conflict checks; only --apply performs writes.
+
+
+## Acquisition CLI naming and shared argument conventions (2026-11-21)
+
+acquire_rugby is the primary rugby acquisition worker (formerly
+acquire_missing). The original executable is retained as a
+compatibility shim, so existing host cron jobs keep running. Both
+acquire_rugby and acquire_f1 expose --season / --year
+interchangeably; rugby additionally supports F1-style --round and
+--episode filters in its read-only Atlas planner. Both expose
+--dry-run for preview (already the default) and --apply for writes,
+and share the common output roots, host, retry, minimum-age,
+per-run limit and ffmpeg/ffprobe options. Sport-specific options remain
+different where the underlying behavior differs: Rugby supports
+multi-provider refresh and a maximum number of video candidates;
+F1 supports a recent-session window, backfill and an availability
+check budget. No Atlas schemas, downloader behavior, acquired
+filenames or cron schedules were changed.

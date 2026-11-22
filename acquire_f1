@@ -5,6 +5,8 @@ Default: read-only plan for recent finished F1 sessions.
 --apply: check options in Sky-first order; fall back only when positively
 unavailable/unsupported, download the selected URI and canonically file it.
 Transient failures stop; incomplete transfers retain resume data.
+Like acquire_rugby, use --season (or --year), --round, --episode,
+--limit, and preview-by-default with explicit --apply.
 """
 import argparse
 import contextlib
@@ -39,7 +41,7 @@ file_recording = load_script("pvr_f1_file", "file_recording")
 
 @contextlib.contextmanager
 def acquire_lock(incoming_root):
-    """Use the same host-wide lock as PWR's acquire_missing."""
+    """Use the same host-wide lock as acquire_rugby."""
     lock_path = Path(incoming_root) / ".pvr-acquire.lock"
     flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(lock_path, flags, 0o600)
@@ -242,7 +244,9 @@ def run(database, *, apply=False, year=2026, round_no=None, episode_number=None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--year", type=int, default=dt.datetime.now(dt.timezone.utc).year)
+    parser.add_argument("--season", "--year", type=int, dest="year",
+                        default=dt.datetime.now(dt.timezone.utc).year,
+                        help="Season to acquire (alias --year; default current year)")
     parser.add_argument("--round", type=int, dest="round_no")
     parser.add_argument("--episode", type=int, dest="episode_number")
     parser.add_argument("--limit", type=int, default=1,
@@ -263,12 +267,17 @@ def main(argv=None):
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--show-skipped", action="store_true")
-    parser.add_argument("--apply", action="store_true",
-                        help="Check sources, download and file; default read-only")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true",
+                      help="Check sources, download and file; default read-only")
+    mode.add_argument("--dry-run", action="store_true",
+                      help="Preview only (already the default)")
     parser.add_argument("--database", default=os.getenv("MONGODB_DATABASE", "pvr"))
     args = parser.parse_args(argv)
-    if not 1 <= args.limit <= 25 or args.year < 1950:
-        parser.error("Invalid limit or season")
+    if (not 1 <= args.limit <= 25 or args.year < 1950 or
+            (args.round_no is not None and not 1 <= args.round_no <= 99) or
+            (args.episode_number is not None and args.episode_number < 1)):
+        parser.error("Invalid limit, season, round or episode")
     uri = os.getenv("MONGODB_URI")
     if not uri:
         try:

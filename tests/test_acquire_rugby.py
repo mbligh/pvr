@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 from orchestration.acquire import planning_rows
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-loader = importlib.machinery.SourceFileLoader("pvr_acquire_missing", str(ROOT / "acquire_missing"))
-spec = importlib.util.spec_from_loader("pvr_acquire_missing", loader)
+loader = importlib.machinery.SourceFileLoader("pvr_acquire_rugby", str(ROOT / "acquire_rugby"))
+spec = importlib.util.spec_from_loader("pvr_acquire_rugby", loader)
 CLI = importlib.util.module_from_spec(spec)
 loader.exec_module(CLI)
 EPID = "Rugby_Womens_PWR:pwr-289126@mbligh.github.io"
@@ -88,6 +88,13 @@ class AcquisitionTests(unittest.TestCase):
             selector=lambda db, eid, host: {
                 "preferred_path": str(self.incoming / "pvr-A1BcD2EfG3H.mkv")
             }, **kwargs)
+
+    def test_round_episode_and_season_filters(self):
+        self.rows(season=2025, round_no=1, episode_number=101)
+        self.db.episodes.find.assert_called_with({
+            "series_id": "Rugby_Womens_PWR", "season": 2025,
+            "round": 1, "episode": 101,
+        })
 
     def test_preview_is_read_only(self):
         row, = self.rows()

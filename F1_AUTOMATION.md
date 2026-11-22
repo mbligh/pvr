@@ -2,10 +2,10 @@
 
 Two commands:
 
-- ./acquire_Formula_1: preview or explicitly acquire and file F1 sessions from
+- ./acquire_f1: preview or explicitly acquire and file F1 sessions from
   already indexed teletz releases. No discovery or source URLs accessed in
   preview mode.
-- ./run_Formula_1: one-shot cron wrapper. With --apply it discovers current teletz
+- ./run_f1: one-shot cron wrapper. With --apply it discovers current teletz
   posts, imports new/edited releases, then calls acquire_f1 --apply.
   Discovery or importer failure aborts acquisition.
 
@@ -19,6 +19,12 @@ Two commands:
 After checking the plan, run one recent acquisition:
 
     ./run_f1 --apply --pages 3 --limit 1 --max-checks 8
+
+The acquisition worker accepts both --season and --year for
+the season filter, matching acquire_rugby. Both workers share
+--round, --episode, --limit, --dry-run and --apply; F1 uses
+an explicit recent-session window and availability-check budget
+instead of rugby's optional refresh and candidate-comparison budget.
 
 For historical recordings, explicitly opt into backfill:
 

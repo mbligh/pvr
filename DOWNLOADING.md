@@ -6,7 +6,7 @@ destination**, verifies it with `ffprobe`, and stores its file inventory
 and job in Atlas. It also retains the existing Formula 1 TransferNow
 adapter. Preview is the default; **only `--apply` makes changes**.
 
-This is the **single-release adapter**, separate from `acquire_missing`
+This is the **single-release adapter**, separate from `acquire_rugby`
 which performs multi-provider selection and canonical filing. This command
 does not generate NFOs, overwrite published media, or clean up alternatives.
 

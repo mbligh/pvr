@@ -6,10 +6,26 @@ Two independent preview-first tools work together:
   and **RugbyPass** catalogue entries, validates their stable IDs and
   matches them to known PWR and international fixtures in Atlas. Preview performs no writes;
   `--apply` imports releases and links unambiguous matches.
-- `acquire_missing` finds due numbered rugby episodes that lack a published recording,
+- `acquire_rugby` finds due numbered rugby episodes that lack a published recording,
   downloads the needed source recordings, evaluates their **actual** video
   properties, and canonically files the winner with the NFO stored in Atlas.
   It is limited to one episode per run unless `--limit` is increased.
+
+The primary rugby worker is now **./acquire_rugby**; the older
+**./acquire_missing** executable remains a compatibility alias for existing
+cron jobs and scripts.
+
+Both workers accept --season (with --year as an alias), --round,
+--episode, --limit, --min-age-hours, --retry-after-hours,
+--sports-root, --incoming-root, --host, --ffmpeg, --ffprobe,
+--show-skipped, --database, and --apply or --dry-run (mutually exclusive,
+with preview as the default).
+
+Rugby-specific options include --series, --source, --refresh,
+--max-candidates, and provider discovery limits. F1-specific options
+include --recent-hours, --backfill, --max-checks, and
+--unavailable-recheck-hours. Candidate and check limits control
+different operations and intentionally are not aliases.
 
 ## Getting started on slagg
 
@@ -24,29 +40,29 @@ python3 refresh_releases
 python3 refresh_releases --apply
 
 # Preview acquisition (may show several source downloads for one episode):
-python3 acquire_missing --limit 3
+./acquire_rugby --limit 3
 
 # Run a bounded single-episode trial across available sources:
-python3 acquire_missing --limit 1 --apply
+./acquire_rugby --limit 1 --apply
 ```
 
 To combine discovery, matching and acquisition in one invocation:
 
 ```sh
-python3 acquire_missing --refresh --limit 1 --apply
+./acquire_rugby --refresh --limit 1 --apply
 ```
 
 Without `--apply`, `--refresh` queries providers but **does not import newly
 discovered releases into Atlas**. The subsequent acquisition preview can
 therefore include only releases already linked in the database. For a fully
 accurate plan including newly discovered sources, run
-`refresh_releases --apply` first, then preview `acquire_missing`.
+`refresh_releases --apply` first, then preview `acquire_rugby`.
 
 Continue the historical **YouTube-only** backfill without involving new
 providers:
 
 ```sh
-python3 acquire_missing --season 2025 --source youtube --limit 10 --apply
+./acquire_rugby --season 2025 --source youtube --limit 10 --apply
 ```
 
 `--source` is repeatable, e.g. `--source bbc --source youtube`. The
@@ -73,20 +89,20 @@ python3 match_rugbypass --verbose
 python3 match_rugbypass --apply
 
 # Inspect missing men's internationals and Nations Championship recordings:
-python3 acquire_missing --series Rugby_Mens_Intl --limit 5
-python3 acquire_missing --series Rugby_Mens_Nations --limit 5
+./acquire_rugby --series Rugby_Mens_Intl --limit 5
+./acquire_rugby --series Rugby_Mens_Nations --limit 5
 
 # Inspect women's internationals:
-python3 acquire_missing --series Rugby_Womens_Intl --limit 5
+./acquire_rugby --series Rugby_Womens_Intl --limit 5
 
 # WXV has its own scheduler fixture identities after import_rugby is applied:
-python3 acquire_missing --series Rugby_Womens_WXV --limit 5
+./acquire_rugby --series Rugby_Womens_WXV --limit 5
 
 # Safely trial exactly one Nations Championship RugbyPass recording:
-python3 acquire_missing --series Rugby_Mens_Nations --limit 1 --apply
+./acquire_rugby --series Rugby_Mens_Nations --limit 1 --apply
 
 # Later: refresh RugbyPass listings, match and acquire in one bounded run:
-python3 acquire_missing --series Rugby_Womens_Intl --refresh --limit 1 --apply
+./acquire_rugby --series Rugby_Womens_Intl --refresh --limit 1 --apply
 ```
 
 These commands use the existing `pvr.episodes` IDs, numbered
@@ -229,7 +245,7 @@ installed by the repository. Once manual trials are successful and all
 three providers work on slagg, a conservative unattended invocation is:
 
 ```cron
-30 5 * * * cd /home/mbligh/pvr && /usr/bin/python3 acquire_missing --refresh --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
+30 5 * * * cd /home/mbligh/pvr && /usr/bin/./acquire_rugby --refresh --limit 2 --apply >> /home/mbligh/pvr-acquire.log 2>&1
 ```
 
 The sample is not installed or enabled. A refresh fetches the BBC brand,
