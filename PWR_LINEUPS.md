@@ -11,6 +11,14 @@ home/away player IDs, names, positions and captain flags.
 `--season 2025`, `--fixture 295034`, `--limit 50`, and `--force`
 allow controlled backfill, direct checks and manual refresh.
 
+Routine runs ignore fixtures dated before **July 1, 2023**, because historical
+PWR team sheets are frequently missing or incomplete. This prevents repeated
+errors and retries for those older matches. The cutoff also applies to
+unavailable/partial matches already saved in Atlas; no deletion is required.
+An explicit `--fixture 272435` or `--force` overrides the cutoff for
+manual historical investigations. Fixtures with no usable date are skipped in
+routine scans. Data already imported remains untouched.
+
 Records are stored in the separate Atlas `pvr.pwr_lineups` collection with
 `_id` equal to the canonical `episodes._id`. Fields include
 `fixture_id`, `season`, `home_team`, `away_team`, `home`, `away`,

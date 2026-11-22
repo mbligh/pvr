@@ -7,6 +7,9 @@ import urllib.request
 SERIES = "Rugby_Womens_PWR"
 FIXTURE_ID = re.compile(r"^Rugby_Womens_PWR:pwr-(\d+)@mbligh\.github\.io$")
 UTC = dt.timezone.utc
+# Historic PWR lineups before this date are incomplete/inconsistent and not
+# useful for routine retries. Explicit fixture and --force checks bypass it.
+MIN_AUTO_LINEUP_DATE = dt.date(2023, 7, 1)
 
 
 def utc(value):
@@ -126,11 +129,19 @@ def candidates(db, season=None, fixture=None, force=False, limit=50, now=None):
         old = existing.get(episode["_id"], {})
         if not force:
             scheduled = utc(episode.get("scheduled"))
+            day = episode.get("scheduled_date")
+            if fixture is None:
+                # Do not keep retrying incomplete 2017–early 2023 data.
+                # The cutoff applies to automatic scans only: --fixture
+                # permits targeted investigation of an older match.
+                match_date = (dt.date.fromisoformat(day) if day
+                              else scheduled.date() if scheduled else None)
+                if match_date is None or match_date < MIN_AUTO_LINEUP_DATE:
+                    continue
             if scheduled and scheduled > now + dt.timedelta(days=3):
                 continue
             # TBC fixtures still have an authoritative scheduled_date. Avoid
             # polling future seasons months before team selection is possible.
-            day = episode.get("scheduled_date")
             if not scheduled and day and dt.date.fromisoformat(day) > (
                     now + dt.timedelta(days=3)).date():
                 continue

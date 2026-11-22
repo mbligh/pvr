@@ -85,6 +85,34 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "number 24"):
             mod.normalize(data, EP, NOW)
 
+    def test_automatic_cutoff_skips_old_incomplete_matches(self):
+        db = MagicMock()
+        old = {**EP, "_id": "Rugby_Womens_PWR:pwr-272435@mbligh.github.io",
+               "scheduled": dt.datetime(2023, 5, 28, 12),
+               "scheduled_date": "2023-05-28"}
+        first_allowed = {**EP,
+               "_id": "Rugby_Womens_PWR:pwr-280001@mbligh.github.io",
+               "scheduled": dt.datetime(2023, 7, 1, 12),
+               "scheduled_date": "2023-07-01"}
+        no_timestamp = {**EP,
+               "_id": "Rugby_Womens_PWR:pwr-270001@mbligh.github.io",
+               "scheduled": None, "scheduled_date": "2023-01-15"}
+        db.episodes.find.return_value = [old, first_allowed, no_timestamp]
+        db.pwr_lineups.find.return_value = []
+        result = mod.candidates(db, now=NOW)
+        self.assertEqual([mod.fixture_id(e) for e in result], [280001])
+        self.assertEqual(len(mod.candidates(db, now=NOW, force=True)), 3)
+
+    def test_explicit_fixture_bypasses_old_cutoff(self):
+        db = MagicMock()
+        old = {**EP, "_id": "Rugby_Womens_PWR:pwr-272435@mbligh.github.io",
+               "scheduled": dt.datetime(2023, 5, 28, 12),
+               "scheduled_date": "2023-05-28"}
+        db.episodes.find.return_value = [old]
+        db.pwr_lineups.find.return_value = []
+        selected = mod.candidates(db, fixture=272435, now=NOW)
+        self.assertEqual([mod.fixture_id(e) for e in selected], [272435])
+
     def test_candidates_sort_mongodb_naive_and_aware_utc(self):
         db = MagicMock()
         older_naive = {**EP, "_id": "Rugby_Womens_PWR:pwr-200001@mbligh.github.io",
