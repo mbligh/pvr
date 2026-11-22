@@ -24,6 +24,34 @@ class F1ImportTests(unittest.TestCase):
                        "url": "/en/racing/2026/netherlands", "isTestEvent": False},
              "sessions": sessions, "detail": {"meetingContext": {"meetingKey": "1292"}}}]}
 
+    def test_live_source_calls_scheduler_module_directly(self):
+        expected = self.payload()
+        with patch.object(f1.f1_data, "fetch_season", return_value=expected) as fetch:
+            self.assertIs(f1.read_source(None, 2026), expected)
+        fetch.assert_called_once_with(2026)
+
+    def test_saved_source_does_not_fetch_live(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "schedule.json"
+            payload = self.payload()
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with patch.object(f1.f1_data, "fetch_season") as fetch:
+                self.assertEqual(f1.read_source(path, 2026), payload)
+            fetch.assert_not_called()
+
+    def test_import_cli_reports_live_source_failures_without_traceback(self):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with patch.object(f1.f1_data, "fetch_season",
+                          side_effect=RuntimeError("F1 API unreachable")), \
+             contextlib.redirect_stderr(err):
+            self.assertEqual(f1.main(["--year", "2026"]), 1)
+        self.assertIn("F1 API unreachable", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
     def test_offsets_testing_stable_identity(self):
         result = f1.build_episodes(self.payload())
         self.assertEqual(len(result), 7)

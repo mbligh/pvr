@@ -13,13 +13,13 @@ import json
 import os
 import pathlib
 import re
-import subprocess
 import sys
 import unicodedata
 import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+from . import f1_data
+
 UTC = dt.timezone.utc
 SERIES_ID = "Formula_1"
 SHOWTITLE = "Formula 1"
@@ -212,11 +212,7 @@ def read_source(path, year):
     if path:
         return json.load(sys.stdin) if str(path) == "-" else json.loads(
             path.read_text(encoding="utf-8"))
-    command = [sys.executable, str(ROOT / "f1_data"), "--year", str(year)]
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode:
-        raise ValueError(f"f1_data failed: {result.stderr.strip()}")
-    return json.loads(result.stdout)
+    return f1_data.fetch_season(year)
 
 
 def main(argv=None):
@@ -263,7 +259,7 @@ def main(argv=None):
                                           dt.datetime.now(UTC))
         print(json.dumps(report, indent=2))
         return 0
-    except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError) as exc:
+    except (ValueError, TypeError, KeyError, OSError, RuntimeError) as exc:
         print(f"import_Formula_1: {exc}", file=sys.stderr)
         return 1
 

@@ -56,6 +56,31 @@ class F1DataTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "returned meetingKey 9999"):
                 f1.collect(2026, "test-key", 10)
 
+    def test_shared_fetch_season_honors_key_discovery_and_env(self):
+        with patch.dict("os.environ", {"F1_API_KEY": "browser-client-key"}), \
+             patch.object(f1, "discover_api_key") as discover, \
+             patch.object(f1, "collect", return_value={"season": "2026"}) as collect:
+            self.assertEqual(f1.fetch_season(2026), {"season": "2026"})
+        discover.assert_not_called()
+        collect.assert_called_once_with(
+            2026, "browser-client-key", 25, meeting_keys=None, limit=None)
+
+        with patch.dict("os.environ", {}, clear=True), \
+             patch.object(f1, "discover_api_key", return_value="discovered-key") as discover, \
+             patch.object(f1, "collect", return_value={}) as collect:
+            f1.fetch_season(2026, timeout=15, limit=2)
+        discover.assert_called_once_with(2026, 15)
+        collect.assert_called_once_with(
+            2026, "discovered-key", 15, meeting_keys=None, limit=2)
+
+        with patch.dict("os.environ", {"F1_API_KEY": "env-key"}), \
+             patch.object(f1, "discover_api_key") as discover, \
+             patch.object(f1, "collect", return_value={}) as collect:
+            f1.fetch_season(2026, api_key="explicit-key", meeting_keys=["1279"])
+        discover.assert_not_called()
+        collect.assert_called_once_with(
+            2026, "explicit-key", 25, meeting_keys=["1279"], limit=None)
+
     def test_single_meeting_filter_validates_keys(self):
         with patch.object(f1, "api_json", return_value=self.listing):
             with self.assertRaisesRegex(ValueError, "not found"):

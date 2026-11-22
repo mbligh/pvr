@@ -1,9 +1,13 @@
 # Formula 1 metadata importer
 
 The official Formula 1 event listing and meeting timetables are fetched by
-[f1_data](f1_data). The executable [import_f1](import_f1) turns its JSON
-snapshot into PVR episodes. It is independent of rugby ingestion and does
-not modify media files, releases, or existing calendars.
+schedulers/f1_data.py (also available through the [f1_data](f1_data)
+executable). The [import_f1](import_f1) executable now calls
+schedulers.f1_data.fetch_season() directly when no saved input is provided,
+rather than spawning the other CLI. The same public key discovery, source
+validation and JSON structure serve both entry points. Saved --input data
+still bypasses network fetching. F1 ingestion remains independent of rugby
+and does not modify media files, releases or existing calendars.
 
 ## Episode identity and numbering
 

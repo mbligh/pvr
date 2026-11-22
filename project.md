@@ -520,3 +520,16 @@ moved to tests/ and participate in the standard CI suite. The
 obsolete standalone filter.py and plex_nfo.py entry points were retired.
 Root importer CLIs and the data-only bootstrap from published calendar
 snapshots remain unchanged. No database schema or fixture IDs changed.
+
+
+## Formula 1 in-process scheduler source cleanup (2026-11-21)
+
+Both import_f1 and the standalone f1_data CLI now use a common
+schedulers.f1_data.fetch_season() function. The F1 episode importer
+calls it in-process rather than invoking the root f1_data executable
+as a subprocess. It handles public API-key discovery, F1_API_KEY
+overrides and validated event/session data retrieval.
+Existing --input JSON/standard-input handling, preview/JSONL modes,
+Atlas persistence, stable session IDs and both root CLIs remain
+unchanged. Errors are caught directly, and tests cover source
+dispatch and key selection.

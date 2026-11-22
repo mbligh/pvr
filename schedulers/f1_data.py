@@ -131,6 +131,16 @@ def collect(year, api_key, timeout, meeting_keys=None, limit=None):
     }
 
 
+def fetch_season(year, *, api_key=None, timeout=25, meeting_keys=None, limit=None):
+    """Fetch official season data for CLI and in-process scheduler consumers.
+
+    Use the same public browser API-key discovery and source validation in
+    both modes. An explicit key or F1_API_KEY skips HTML key discovery.
+    """
+    key = api_key or os.environ.get("F1_API_KEY") or discover_api_key(year, timeout)
+    return collect(year, key, timeout, meeting_keys=meeting_keys, limit=limit)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--year", type=int, default=dt.datetime.now(dt.timezone.utc).year,
@@ -151,9 +161,8 @@ def main(argv=None):
         parser.error("--timeout must be positive")
 
     try:
-        api_key = args.api_key or discover_api_key(args.year, args.timeout)
-        data = collect(args.year, api_key, args.timeout,
-                       meeting_keys=args.meeting_keys, limit=args.limit)
+        data = fetch_season(args.year, api_key=args.api_key, timeout=args.timeout,
+                            meeting_keys=args.meeting_keys, limit=args.limit)
         output = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
         if args.output:
             args.output.write_text(output, encoding="utf-8")
