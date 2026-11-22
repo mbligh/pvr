@@ -5,6 +5,11 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers copied from `mb
 ## Sources
 
 - World Rugby (men's and women's internationals, WXV, Nations Championship): world_rugby.py
+  For WXV, accept the historic `WXV` and current `WXV Global Series` API
+  competition labels, but **exclude the separate Challenger competition**.
+  Normalize all accepted fixture descriptions to `WXV` (not the API branding).
+  The series slug `rugby-womens-wxv`, folder `Rugby_Womens_WXV`, canonical
+  showtitle and original match/calendar UIDs remain unchanged.
 - PWR: pwr.py
 - Gallagher PREM direct feed: prem.py (requires existing PREM_APP_ID and PREM_API_KEY credentials)
 - Existing Premiership and Six Nations ICS feeds: filter.py
