@@ -136,6 +136,7 @@ class WorldRugbyLineupTests(unittest.TestCase):
             player = next(row for row in rows if row["number"] == str(true_number))
             player["number"] = str(repeated)
             player["order"] = slot
+            player["position"] = "FL" if true_number == 7 else "FB"
             player["player"]["isReplacement"] = False
         result = mod.normalize(data, EP, NOW)
         self.assertEqual(result["status"], "complete")
