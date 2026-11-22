@@ -279,3 +279,34 @@ removed event). The remaining calendar and manifest entries were preserved.
 Use `./import_rugby --no-refresh` to preview the stored calendar,
 or `./import_rugby --no-refresh --apply` to persist without
 fetching external fixtures. Normal future imports also filter NC events.
+
+## One-time Gallagher PREM 2026/27 historical backfill
+
+The initial PREM official API import used the normal freeze-at-kickoff calendar
+merge and omitted 11 already played fixtures: all five Round 1 matches
+(25–27 September), all five Round 2 matches (2–4 October), and
+Leicester Tigers vs Gloucester Rugby (9 October, Round 3). The official
+match API returns all 93 fixtures (90 regular season plus three playoffs)
+without needing pagination; 11 were excluded by our historical freeze policy.
+
+The explicit one-time backfill uses only official, allowlisted, spoiler-free
+metadata. It requires all 15 match IDs 294908–294922 in the verified first
+three rounds, exactly five matches and ten distinct teams per round, and
+confirmed kickoff dates in the verified windows. No historical score/result
+fields can be imported. The normal daily importer remains unchanged.
+
+    cd ~/pvr
+    git pull
+    ./import_prem_history          # preview, no writes
+    ./import_prem_history --apply  # apply once, then rerunnable safely
+
+The backfill admits only these selected historical fixtures into the Atlas
+PREM calendar snapshot, regenerates the canonical rugby metadata manifest
+and NFO XML, and upserts episodes through the existing importer. Round 3 is
+renumbered chronologically to 301–305; Round 1 becomes 101–105 and Round 2
+becomes 201–205. Existing fixture MongoDB IDs and associated releases/jobs
+are unchanged. A preflight refuses to renumber if local recordings reference
+the old Round 3 numbers. It previews counts of missing and renumbered entries.
+The historical exception is never active for ordinary `./import_rugby --apply`.
+After applying, publish the authoritative Atlas calendars through the existing
+`mbligh/calendar/build_rugby_calendars --apply --publish` workflow when desired.

@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""One-time preview-first 2026/27 Gallagher PREM rounds 1-3 backfill.
+
+Usage: ./import_prem_history [--apply]
+Uses the standard importer with a strictly validated one-off historical
+exception; regular ./import_rugby still freezes past kickoffs.
+"""
+import argparse
+
+from schedulers.rugby.importer import main as import_rugby_main
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true",
+                        help="Write validated fixtures and renumbered Round 3 to Atlas")
+    args = parser.parse_args(argv)
+    import_rugby_main(["--backfill-prem-2026"] + (["--apply"] if args.apply else []))
+
+
+if __name__ == "__main__":
+    main()

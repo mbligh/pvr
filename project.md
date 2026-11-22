@@ -749,3 +749,15 @@ browser User-Agent got HTTP 200. Use the installed curl executable with a
 shared temporary cookie jar and no curl_cffi Python dependency. Avoid burst
 requests, and include status, path and safe HTTP headers in errors. Keep entire discovery atomic
 with respect to Atlas writes, so rejected pages cannot cause partial imports.
+
+### One-time 2026/27 PREM history recovery
+
+The official PREM match API returns the full season, but regular historical
+calendar freezing omitted the 11 first-season fixtures played before PREM
+was introduced into PVR. `import_prem_history` explicitly admits only
+verified official rounds 1–3, validates the 15 known match IDs, team
+coverage and kickoff dates, then regenerates the saved calendar snapshot,
+NFOs and canonical manifest. Round 3 can be renumbered chronologically
+per operator approval, while stable fixture IDs and release links survive.
+Previews perform the same conflict and existing-media checks as apply.
+Normal daily `import_rugby` does not enable this exception.

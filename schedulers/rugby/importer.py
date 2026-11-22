@@ -29,6 +29,7 @@ from .prem import fetch_prem
 from .world_rugby import fetch_world_rugby
 from schedulers.series_ids import assert_migrated, canonicalize, CANONICAL_TO_LEGACY
 from schedulers.rugby.prem_identity import reconcile_uids, season_for
+from schedulers.rugby import prem_history
 from schedulers.rugby.wxv import (
     WOMENS, WXV, split_snapshot, legacy_id, validate_migration,
 )
@@ -123,10 +124,14 @@ def fetch_calendar(entry, now):
     return calendar_filter.fetch(url)
 
 
-def build_catalogue(db, config, now, refresh):
+def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
     """Build in memory first. No Atlas writes until ALL source parsing/numbering succeeds."""
+    if backfill_prem_2026 and not refresh:
+        raise ValueError("Historical PREM backfill requires live official fixture refresh")
     config = json.loads(json.dumps(config))
     prior_manifest = old_manifest(db)
+    if backfill_prem_2026:
+        prior_manifest = prem_history.strip_round_three_assignments(prior_manifest)
     snapshots = {}
     prem_metadata = {}
     # First WXV migration must use already accepted score-free events.
@@ -163,6 +168,8 @@ def build_catalogue(db, config, now, refresh):
                 if slug == "Rugby_Mens_Prem":
                     source, prem_metadata = reconcile_uids(source, previous)
                 merged = calendar_filter.merge(source, previous, now, zone, entry["name"])
+                if slug == prem_history.SERIES and backfill_prem_2026:
+                    merged, _ = prem_history.add_history(source, merged, now)
             else:
                 merged = previous
             if slug == MENS_INTL:
@@ -373,9 +380,12 @@ def main(argv=None):
                       help="Preview only (compatibility alias; now the default)")
     parser.add_argument("--offline", action="store_true",
                         help="Preview using published bootstrap snapshots; no Atlas access")
+    parser.add_argument("--backfill-prem-2026", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.offline and args.apply:
         parser.error("--offline cannot be combined with --apply")
+    if args.backfill_prem_2026 and (args.offline or args.no_refresh):
+        parser.error("PREM 2026 backfill needs Atlas and live official fixture refresh")
     config = json.loads(args.config.read_text(encoding="utf-8"))
     now = dt.datetime.now(UTC)
 
@@ -398,9 +408,11 @@ def main(argv=None):
     try:
         if db is not None:
             assert_migrated(db)
+        kwargs = {"backfill_prem_2026": True} if args.backfill_prem_2026 else {}
         snapshots, manifest, episodes = build_catalogue(
-            db, config, now, refresh=not args.no_refresh
+            db, config, now, refresh=not args.no_refresh, **kwargs
         )
+        prem_plan = prem_history.validate_plan(db, episodes) if args.backfill_prem_2026 else None
         if db is not None and not args.apply:
             validate_existing(db, episodes)
         print(json.dumps({
@@ -409,6 +421,7 @@ def main(argv=None):
             "numbered": sum(e["episode"] is not None for e in episodes),
             "preview": not args.apply,
             "database": args.database if db is not None else None,
+            **({"prem_history_2026": prem_plan} if prem_plan is not None else {}),
         }, indent=2))
         if args.apply:
             persist(db, snapshots, manifest, episodes, now)
