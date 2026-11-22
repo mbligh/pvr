@@ -121,7 +121,7 @@ class Tests(unittest.TestCase):
                        "scheduled": dt.datetime(2026, 11, 22, 13,
                                                 tzinfo=dt.timezone(dt.timedelta(hours=1)))}
         no_kickoff = {**EP, "_id": "Rugby_Womens_PWR:pwr-200003@mbligh.github.io",
-                      "scheduled": None}
+                      "scheduled": None, "scheduled_date": "2026-11-20"}
         db.episodes.find.return_value = [older_naive, no_kickoff, newer_aware]
         db.pwr_lineups.find.return_value = []
         result = mod.candidates(db, now=NOW)
