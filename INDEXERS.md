@@ -176,3 +176,16 @@ The refresh command runs `match_prem --apply` after indexing. It matches
 only unambiguous league fixtures by home/away team and a ±2-day date window.
 `run_rugby --series Rugby_Mens_Prem` uses Rugby24 discovery and acquisition
 with the same per-source polling, retry, locking and provenance rules as PWR.
+
+### Rugby24 request client and HTTP 403 diagnostics
+
+Rugby24 uses a shared `curl_cffi.requests.Session(impersonate="chrome")`
+for the category listing and article pages. The former plain `urllib`
+client received HTTP 403 from the host. Session reuse provides consistent
+headers, TLS negotiation and cookies, with 0.5 seconds between page loads.
+It requires `curl_cffi` in the system Python environment (declared in
+`requirements.txt`); check with `python3 -c 'import curl_cffi'`.
+Indexing fails closed on HTTP errors and reports the URL path, status and
+safe server/challenge headers. An HTTP 403 even with this client may mean
+network/IP restrictions or site policy; do not assume it is always solvable
+by changing the User-Agent.

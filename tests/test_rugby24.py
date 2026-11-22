@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 from downloaders import rugby24
 from matchers.prem import match_release
@@ -60,6 +61,43 @@ class IndexerTests(unittest.TestCase):
             indexer.discover(pages=1, fetch=lambda url:
                 '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>')
         self.assertIsNone(indexer.embed_url('<iframe src="https://evil.tld/videoembed/123456"></iframe>'))
+
+
+    def test_browser_fetch_uses_session_and_reports_url_on_403(self):
+        class Session:
+            def __init__(self, status=200):
+                self.status = status
+                self.calls = []
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return SimpleNamespace(
+                    status_code=self.status, url=url,
+                    content=b"<html>article</html>",
+                    headers={"server": "cloudflare", "cf-mitigated": "challenge"}
+                )
+
+        session = Session()
+        page = indexer.fetch_html(indexer.DEFAULT_URL, session=session)
+        self.assertIn("<html>", page)
+        self.assertEqual(session.calls[0][1]["timeout"], 30)
+        with self.assertRaisesRegex(ValueError, "non-Rugby24"):
+            indexer.fetch_html("https://evil.example/", session=session)
+        session.status = 403
+        with self.assertRaisesRegex(RuntimeError,
+                                   "HTTP 403 at /premiership-rugby"):
+            indexer.fetch_html(indexer.DEFAULT_URL, session=session)
+        self.assertEqual(len(session.calls), 2)
+
+    def test_browser_redirect_to_foreign_host_is_rejected(self):
+        class Session:
+            def get(self, url, **kwargs):
+                return SimpleNamespace(
+                    status_code=200, url="https://other.example/",
+                    content=b"fake", headers={}
+                )
+        with self.assertRaisesRegex(RuntimeError, "redirected"):
+            indexer.fetch_html(indexer.DEFAULT_URL, session=Session())
 
     def test_fixture_matching_requires_league_teams_and_date(self):
         release = {"source": "rugby24", "title": TITLE, "published": "2026-10-31",

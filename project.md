@@ -741,3 +741,10 @@ links unambiguous replays to imported official fixtures; cup articles are
 retained as unmatched records. Download via the existing staged, probed,
 no-clobber yt-dlp/MKV path. Refresh, polling and bounded acquisition run
 through `run_rugby`; Atlas remains authoritative for links and jobs.
+
+### Rugby24 transport diagnostics
+
+The first slagg invocation got HTTP 403 from urllib; use a cookie-preserving
+curl_cffi Chrome-profile session instead, avoid burst requests, and include
+status, path and safe HTTP headers in errors. Keep entire discovery atomic
+with respect to Atlas writes, so rejected pages cannot cause partial imports.
