@@ -72,6 +72,7 @@ def render_page(selected, rows, *, timezone, updated_at):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>PVR · {esc(selected)}</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
 <link rel="stylesheet" href="/style.css">
 <script src="/dashboard.js" defer></script>
 </head>
@@ -174,7 +175,7 @@ def make_handler(data, *, quality_lookup=None, now_fn=None):
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Content-Security-Policy",
                              "default-src 'none'; style-src 'self'; "
-                             "script-src 'self'; connect-src 'self'; "
+                             "script-src 'self'; connect-src 'self'; img-src 'self'; "
                              "base-uri 'none'; frame-ancestors 'none'")
             self.end_headers()
             self.wfile.write(payload)
@@ -187,10 +188,13 @@ def make_handler(data, *, quality_lookup=None, now_fn=None):
             try:
                 url = urlsplit(self.path)
                 path = url.path
-                if path in ("/style.css", "/dashboard.js"):
+                if path in ("/style.css", "/dashboard.js", "/favicon.ico"):
                     name = path.removeprefix("/")
-                    mime = ("text/css; charset=utf-8" if name == "style.css"
-                            else "application/javascript; charset=utf-8")
+                    mime = {
+                        "style.css": "text/css; charset=utf-8",
+                        "dashboard.js": "application/javascript; charset=utf-8",
+                        "favicon.ico": "image/x-icon",
+                    }[name]
                     self.send((directory / name).read_bytes(), mime)
                     return
                 if path == "/healthz":

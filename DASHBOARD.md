@@ -78,6 +78,9 @@ on shutdown.
   `Quality unavailable`; the file still counts as installed.
 - The page is read-only: it does **not** fetch providers, trigger
   downloads, overwrite any files or write to Atlas.
+- `/favicon.ico` serves the England Rugby ball icon (16 and 32 px), linked
+  from the HTML head for browser tabs and bookmarks. After `git pull` on
+  slagg, restart a running `pvr_dashboard` process to load the change.
 
 ## Options
 

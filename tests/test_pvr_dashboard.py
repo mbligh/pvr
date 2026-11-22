@@ -241,11 +241,13 @@ class DashboardTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                def request(path):
+                def request(path, *, binary=False):
                     con = HTTPConnection("127.0.0.1", server.server_port, timeout=4)
                     con.request("GET", path)
                     response = con.getresponse()
-                    body = response.read().decode("utf-8")
+                    body = response.read()
+                    if not binary:
+                        body = body.decode("utf-8")
                     headers = dict(response.getheaders())
                     result = response.status, headers, body
                     con.close()
@@ -257,6 +259,14 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(headers["X-Frame-Options"], "DENY")
                 self.assertIn("Rugby_Womens_PWR", page)
                 self.assertIn("Installed", page)
+                self.assertIn('rel="icon" href="/favicon.ico" type="image/x-icon"', page)
+                self.assertIn("img-src 'self'", headers["Content-Security-Policy"])
+
+                status, headers, icon = request("/favicon.ico", binary=True)
+                self.assertEqual(status, 200)
+                self.assertEqual(headers["Content-Type"], "image/x-icon")
+                self.assertEqual(icon, (ROOT / "dashboard" / "favicon.ico").read_bytes())
+                self.assertEqual(icon[:4], b"\x00\x00\x01\x00")
 
                 status, headers, css = request("/style.css")
                 self.assertEqual(status, 200)
