@@ -45,7 +45,7 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
             "--cookie", str(cookie_jar), "--cookie-jar", str(cookie_jar),
             "--dump-header", str(header_path),
             "--output", str(body_path),
-            "--write-out", "%{http_code}\\n%{url_effective}\\n",
+            "--write-out", "%{http_code}|%{url_effective}",
             url,
         ]
         result = execute(command, capture_output=True, text=True, check=False)
@@ -54,7 +54,7 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
             raise RuntimeError(
                 f"Rugby24 curl failed ({result.returncode}) at {parsed.path}: {error}"
             )
-        details = result.stdout.splitlines()
+        details = result.stdout.split("|", 1)
         if len(details) != 2 or not details[0].isdigit():
             raise RuntimeError("Rugby24 curl did not return HTTP status and final URL")
         status = int(details[0])
@@ -65,11 +65,12 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
         if status != 200:
             headers = header_path.read_text(errors="replace") if header_path.exists() else ""
             def safe_header(name):
-                values = re.findall(
-                    r"^" + re.escape(name) + r":[ \\t]*([^\\r\\n]*)",
-                    headers, flags=re.I | re.M
-                )
-                return values[-1][:80] if values else ""
+                values = []
+                for line in headers.splitlines():
+                    key, separator, value = line.partition(":")
+                    if separator and key.casefold() == name:
+                        values.append(value.strip()[:80])
+                return values[-1] if values else ""
             server = safe_header("server") or "unknown"
             challenge = safe_header("cf-mitigated")
             path = parsed.path + (("?" + parsed.query) if parsed.query else "")

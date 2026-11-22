@@ -81,11 +81,11 @@ class IndexerTests(unittest.TestCase):
                     "<html>article</html>"
                 )
                 pathlib.Path(command[command.index("--dump-header") + 1]).write_text(
-                    "HTTP/2 403\\r\\nserver: cloudflare\\r\\n"
-                    "cf-mitigated: challenge\\r\\n"
+                    chr(10).join(["HTTP/2 403", "server: cloudflare",
+                                  "cf-mitigated: challenge"])
                 )
                 return subprocess.CompletedProcess(
-                    command, 0, "403\\n" + command[-1] + "\\n", ""
+                    command, 0, "403|" + command[-1], ""
                 )
 
             with self.assertRaisesRegex(ValueError, "non-Rugby24"):
@@ -102,7 +102,7 @@ class IndexerTests(unittest.TestCase):
                     "<html>article</html>"
                 )
                 return subprocess.CompletedProcess(
-                    command, 0, "200\\n" + command[-1] + "\\n", ""
+                    command, 0, "200|" + command[-1], ""
                 )
             self.assertIn(
                 "<html>", indexer.fetch_html(indexer.DEFAULT_URL,
@@ -115,7 +115,7 @@ class IndexerTests(unittest.TestCase):
 
             def redirect(command, **kwargs):
                 return subprocess.CompletedProcess(
-                    command, 0, "200\\nhttps://other.example/\\n", ""
+                    command, 0, "200|https://other.example/", ""
                 )
             with self.assertRaisesRegex(RuntimeError, "redirected"):
                 indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
