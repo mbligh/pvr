@@ -49,11 +49,15 @@ source data. For now the calendar GitHub Actions publication workflow remains
 unchanged. The current PVR importer can still read published initial
 historical snapshots only when no Atlas state exists.
 
-**WXV:** the directory `Rugby_Womens_WXV` is registered, but existing
-Atlas WXV events remain `rugby-womens-intl`. The WXV fixture/episode
-migration should happen in the scheduler, with explicit historical
-identity and duplicate checks, before enabling WXV acquisition and
-Atlas-driven calendar publishing.
+**WXV:** the scheduler now partitions previously accepted, spoiler-free
+World Rugby women's fixtures into a distinct `rugby-womens-wxv` feed,
+with independent WXV week-based episode numbering. On its first live
+`import_rugby` run, Atlas receives canonical WXV episodes and NFOs;
+legacy WXV records in `rugby-womens-intl` become `status=superseded`,
+while any associated release/job IDs migrate. Media-inventory conflicts
+abort the migration rather than silently moving recordings. The calendar
+publisher `mbligh/calendar/build_rugby_calendars` moves frozen WXV
+calendar events to the new feed with their original UIDs.
 
 The named `Rugby_Nations` directory and stable `rugby-nations`
 series identifier remain unchanged pending a separately coordinated
