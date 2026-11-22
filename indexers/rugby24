@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Index Rugby24 full-match replays with validated OK.ru embeds. JSONL output."""
+import argparse
+from datetime import datetime
+from html.parser import HTMLParser
+import json
+import re
+import sys
+from urllib.parse import urljoin, urlsplit
+from urllib.request import Request, urlopen
+
+DEFAULT_URL = "https://rugby24.net/premiership-rugby"
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+EMBED = re.compile(r"(?:https?:)?//ok\.ru/videoembed/(\d{5,20})", re.I)
+DATE = re.compile(r"\b(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b")
+FULL = re.compile(r"\bfull match replay\b", re.I)
+CUP = re.compile(r"\b(?:prem(?:iership)? rugby cup|premiership cup)\b", re.I)
+
+
+def fetch_html(url):
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; PVR/1.0)",
+                                    "Accept": "text/html"})
+    with urlopen(request, timeout=30) as response:
+        body = response.read(2_000_001)
+        if len(body) > 2_000_000:
+            raise ValueError("Rugby24 page too large")
+        return body.decode("utf-8", errors="replace")
+
+
+def article_slug(url):
+    parts = urlsplit(url)
+    if (parts.scheme != "https" or parts.hostname != "rugby24.net"
+            or parts.username or parts.password or parts.port or parts.query
+            or parts.fragment):
+        return None
+    path = parts.path.strip("/")
+    return path if SLUG.fullmatch(path) and len(path) <= 128 else None
+
+
+class ListingParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.in_heading = False
+        self.href = None
+        self.words = []
+        self.entries = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "h3":
+            self.in_heading = True
+        elif tag == "a" and self.in_heading and self.href is None:
+            self.href = dict(attrs).get("href")
+            self.words = []
+
+    def handle_data(self, data):
+        if self.href is not None:
+            self.words.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.href is not None:
+            self.entries.append((self.href, " ".join("".join(self.words).split())))
+            self.href = None
+            self.words = []
+        elif tag == "h3":
+            self.in_heading = False
+
+
+class EmbedParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.embeds = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "iframe":
+            return
+        for key, value in attrs:
+            if key in ("src", "data-src") and value:
+                match = EMBED.fullmatch(value.strip())
+                if match:
+                    self.embeds.append("https://ok.ru/videoembed/" + match.group(1))
+
+
+def listing(html, base_url):
+    parser = ListingParser()
+    parser.feed(html)
+    entries = {}
+    for href, title in parser.entries:
+        url = urljoin(base_url, href)
+        slug = article_slug(url)
+        if slug and FULL.search(title) and (
+                "prem" in title.lower() or "rugby cup" in title.lower()):
+            entries[url] = title
+    return entries
+
+
+def embed_url(html):
+    parser = EmbedParser()
+    parser.feed(html)
+    if parser.embeds:
+        return parser.embeds[0]
+    match = EMBED.search(html)
+    return "https://ok.ru/videoembed/" + match.group(1) if match else None
+
+
+def competition(title):
+    if CUP.search(title):
+        return "cup"
+    if re.search(r"\b(?:prem rugby|premiership rugby|gallagher prem)\b", title, re.I):
+        return "league"
+    return "unknown"
+
+
+def match_date(title):
+    matches = list(DATE.finditer(title))
+    if not matches:
+        return None
+    try:
+        return datetime.strptime(matches[-1].group(1), "%d %B %Y").date().isoformat()
+    except ValueError:
+        return None
+
+
+def discover(url=DEFAULT_URL, *, pages=2, fetch=fetch_html):
+    if not 1 <= pages <= 25:
+        raise ValueError("Rugby24 pages must be between 1 and 25")
+    if urlsplit(url).scheme != "https" or urlsplit(url).hostname != "rugby24.net":
+        raise ValueError("Rugby24 listing must be on https://rugby24.net")
+    entries = {}
+    for page in range(1, pages + 1):
+        page_url = url if page == 1 else url.split("?")[0] + "?page" + str(page)
+        found = listing(fetch(page_url), page_url)
+        if not found:
+            raise ValueError("Rugby24 listing contained no full-match entries: " + page_url)
+        entries.update(found)
+    releases = []
+    for page_url, title in entries.items():
+        slug = article_slug(page_url)
+        embed = embed_url(fetch(page_url))
+        if not embed:
+            continue  # Unplayable articles must not become download candidates.
+        row = {"source": "rugby24", "id": slug, "uri": "rugby24:" + slug,
+               "title": title, "type": "episode", "available": True,
+               "metadata": {"page_url": page_url, "embed_url": embed,
+                            "competition": competition(title), "date_basis": "title"}}
+        date = match_date(title)
+        if date:
+            row["published"] = date
+        releases.append(row)
+    if not releases:
+        raise ValueError("Rugby24 listing had no entries with OK.ru embeds")
+    return releases
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--url", default=DEFAULT_URL)
+    parser.add_argument("--pages", type=int, default=2)
+    parser.add_argument("--search", help="Only output titles containing this text")
+    args = parser.parse_args(argv)
+    try:
+        rows = discover(args.url, pages=args.pages)
+    except (OSError, ValueError) as exc:
+        print("Rugby24 indexer: " + str(exc), file=sys.stderr)
+        return 1
+    for row in rows:
+        if not args.search or args.search.casefold() in row["title"].casefold():
+            print(json.dumps(row, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
