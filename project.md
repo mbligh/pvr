@@ -17,3 +17,5 @@
 - Deployment is through pulling the Git repository on slagg and restarting the existing dashboard process; no automatic restart is configured.
 
 Detailed behavior and commands are documented in `DASHBOARD.md`, `RUGBY_IMPORT.md`, `INDEXERS.md`, `ACQUISITION.md`, `MATCHING.md`, and `F1_AUTOMATION.md`.
+
+- `import_rugby_crew` enriches existing rugby episodes from World Rugby, PWR and ICDb, with provenance and broadcast-specific commentary. See `RUGBY_CREW.md`.

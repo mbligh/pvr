@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Import rugby match officials and broadcast commentary into existing PVR episodes."""
+from schedulers.rugby.crew import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

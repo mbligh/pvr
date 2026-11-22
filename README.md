@@ -8,3 +8,9 @@ it accessible from a trusted LAN (no login is provided). The dashboard
 lists all canonical series, future events through the next seven days,
 and installed recordings' verified files and media quality.
 See [DASHBOARD.md](DASHBOARD.md) for setup, options and security.
+
+## Rugby match crew
+
+Run `./import_rugby_crew` to preview referee/commentary enrichment from official
+match pages and ICDb, or `./import_rugby_crew --apply` to update existing Atlas
+episodes. See [RUGBY_CREW.md](RUGBY_CREW.md).
