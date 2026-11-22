@@ -61,7 +61,9 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
         raise ValueError("Unsupported acquisition series")
     sources = tuple(dict.fromkeys(sources if sources is not None else sources_for(series_id)))
     if not sources or any(source not in sources_for(series_id) for source in sources):
-        raise ValueError("Source not supported for selected series")
+        raise ValueError("International/Nations acquisition supports RugbyPass only"
+                         if sources_for(series_id) == ("rugbypass",)
+                         else "Source not supported for selected series")
 
     def execute():
         rows, info = planning_rows(

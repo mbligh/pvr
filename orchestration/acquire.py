@@ -111,7 +111,9 @@ def planning_rows(database, *, sports_root="/data/sports",
         raise ValueError("Unsupported rugby fixture series")
     sources = tuple(dict.fromkeys(sources if sources is not None else sources_for(series_id)))
     if not sources or any(source not in sources_for(series_id) for source in sources):
-        raise ValueError("Source not supported for selected rugby series")
+        raise ValueError("International/Nations acquisition supports RugbyPass only"
+                         if sources_for(series_id) == ("rugbypass",)
+                         else "Source not supported for selected series")
     sports_root = pathlib.Path(sports_root).expanduser()
     incoming_root = pathlib.Path(incoming_root).expanduser()
     if not sports_root.is_absolute() or not incoming_root.is_absolute():
