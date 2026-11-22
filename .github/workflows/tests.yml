@@ -1,4 +1,4 @@
-name: Import rugby metadata to MongoDB
+name: PVR tests
 on:
   push:
     branches: [main]
@@ -21,27 +21,7 @@ jobs:
           for path in [pathlib.Path("import_rugby"), pathlib.Path("import_rugby_lineups"), pathlib.Path("import_pwr_lineups"), pathlib.Path("import_prem_lineups"), pathlib.Path("import_pwr_history"), pathlib.Path("index_releases"), pathlib.Path("match_releases"), pathlib.Path("match_rugbypass"), pathlib.Path("match_prem"), pathlib.Path("inventory_files"), pathlib.Path("download_release"), pathlib.Path("file_recording"), pathlib.Path("select_recording"), pathlib.Path("refresh_releases"), pathlib.Path("f1_data"), pathlib.Path("import_f1"), pathlib.Path("import_teletz"), pathlib.Path("reddit_teletz.py"), pathlib.Path("select_f1_releases"), pathlib.Path("transfernow"), pathlib.Path("acquire_rugby"), pathlib.Path("run_rugby"), pathlib.Path("acquire_f1"), pathlib.Path("run_f1"), *pathlib.Path("downloaders").glob("*.py"), *pathlib.Path("filing").glob("*.py"), *pathlib.Path("selection").glob("*.py"), *pathlib.Path("orchestration").glob("*.py"), *pathlib.Path("inventory").glob("*.py"), *pathlib.Path("indexers").glob("*"), *pathlib.Path("matchers").glob("*.py"), *pathlib.Path("schedulers").rglob("*.py")]:
               compile(path.read_text(), str(path), "exec")
           PY
-      - name: Test rugby schedulers, adapters, and release indexers
+      - name: Run PVR unit tests
         run: python -m unittest discover -s tests -p 'test_*.py'
       - name: Exercise rugby import against published spoiler-free snapshots
         run: python import_rugby --offline --no-refresh
-  import:
-    # Manual until Atlas secret and network access are configured.
-    if: github.event_name == 'workflow_dispatch'
-    needs: tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python -m pip install -r requirements.txt
-      - name: Import fixtures into Atlas
-        env:
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MONGODB_DATABASE: pvr
-          PREM_APP_ID: ${{ secrets.PREM_APP_ID }}
-          PREM_API_KEY: ${{ secrets.PREM_API_KEY }}
-          PREM_REALM: ${{ secrets.PREM_REALM }}
-        run: python import_rugby --apply
