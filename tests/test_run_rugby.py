@@ -60,6 +60,10 @@ class RugbyRunTests(unittest.TestCase):
                       stderr=json.dumps({"planned": count}) + "\n")
 
     def invoke(self, **kwargs):
+        # Pin legacy test cases to their original three providers; the real
+        # default runner includes Rugby24 for the separate men\u0027s PREM series.
+        if "sources" not in kwargs and "series" not in kwargs:
+            kwargs["sources"] = ["bbc", "youtube", "rugbypass"]
         selected = kwargs.get("series") or "Rugby_Womens_PWR"
         source_values = kwargs.get("sources") or (
             ["bbc", "youtube", "rugbypass"] if selected == "Rugby_Womens_PWR"
@@ -137,6 +141,16 @@ class RugbyRunTests(unittest.TestCase):
         self.discovery = '{"mode": "apply", "sources": ["bbc"], "total_releases": 0}'
         self.assertEqual(self.invoke(apply=True, sources=["bbc"]), 0)
         self.assertEqual(len(self.calls), 2)
+
+    def test_prem_series_refresh_is_only_rugby24(self):
+        self.assertIn("rugby24", runner.source_set(None, None))
+        self.assertEqual(runner.source_set("Rugby_Mens_Prem", None), ("rugby24",))
+        self.assertEqual(self.invoke(apply=True, series="Rugby_Mens_Prem"), 0)
+        refresh, acquire = (x[0] for x in self.calls)
+        self.assertEqual(refresh[refresh.index("--source") + 1], "rugby24")
+        self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
+        with self.assertRaises(ValueError):
+            runner.source_set("Rugby_Mens_Prem", ["youtube"])
 
     def test_national_series_refresh_is_only_rugbypass(self):
         self.discovery = json.dumps({

@@ -78,12 +78,12 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
 
 
 def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
-        bbc_pages=10, rugbypass_pages=5, rugby24_pages=2, rugby24_pages=2,
+        bbc_pages=10, rugbypass_pages=5, rugby24_pages=2,
         rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
         discover=discover_sources, output=sys.stdout):
     sources = tuple(dict.fromkeys(sources))
     if not sources or any(source not in SOURCES for source in sources):
-        raise ValueError("Specify at least one source from bbc,youtube,rugbypass")
+        raise ValueError("Specify at least one supported rugby source")
     results = discover(sources, youtube_limit=youtube_limit, bbc_pages=bbc_pages,
                        rugbypass_pages=rugbypass_pages,
                        rugby24_pages=rugby24_pages,
@@ -138,7 +138,7 @@ def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
 
 
 def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
-        bbc_pages=10, rugbypass_pages=5,
+        bbc_pages=10, rugbypass_pages=5, rugby24_pages=2,
         rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
         discover=discover_sources, output=sys.stdout, lock_root=None):
     """Hold each provider's indexer lock through discovery and Atlas matching.

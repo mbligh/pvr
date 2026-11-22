@@ -76,8 +76,8 @@ class PollingTests(unittest.TestCase):
     def check(self, db, sources=("bbc", "youtube", "rugbypass"), now=NOW):
         return polling.plan(db, sources=sources, now=now, sports_root=self.sports)
 
-    def test_registry_prevents_pwr_polling_for_mens_prem(self):
-        self.assertEqual(sources_for("Rugby_Mens_Prem"), ())
+    def test_registry_routes_mens_prem_to_rugby24_only(self):
+        self.assertEqual(sources_for("Rugby_Mens_Prem"), ("rugby24",))
         self.assertEqual(sources_for("Rugby_Mens_6N"), ())
         self.assertEqual(sources_for("Rugby_Womens_6N"), ())
         self.assertEqual(sources_for("Rugby_Womens_PWR"),
@@ -85,6 +85,15 @@ class PollingTests(unittest.TestCase):
         self.assertEqual(sources_for("Rugby_Mens_Intl"), ("rugbypass",))
         self.assertEqual(sources_for("Formula_1"), ("reddit-teletz",))
         self.assertNotIn("Rugby_Mens_Prem", series_for("bbc"))
+        self.assertEqual(series_for("rugby24"), ("Rugby_Mens_Prem",))
+
+    def test_rugby24_polling_uses_prem_fixtures(self):
+        prem = episode("Rugby_Mens_Prem", NOW - dt.timedelta(minutes=30))
+        db = Database([prem])
+        decisions, missing = self.check(db, sources=("rugby24",))
+        self.assertEqual(len(missing), 1)
+        self.assertEqual(decisions["rugby24"]["interval_minutes"], 5)
+        self.assertTrue(decisions["rugby24"]["due"])
 
     def test_age_backoff_boundaries(self):
         table = [(0, 5), (119, 5), (120, 15), (719, 15),

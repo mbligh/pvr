@@ -26,6 +26,9 @@ class RefreshTests(unittest.TestCase):
             "rugbypass": [{"source": "rugbypass", "id": "1048390",
                            "uri": "rugbypass:1048390",
                            "title": "Scotland v New Zealand Full Match Replay"}],
+            "rugby24": [{"source": "rugby24", "id": "northampton-v-gloucester",
+                         "uri": "rugby24:northampton-v-gloucester",
+                         "title": "Northampton v Gloucester - Full Match Replay"}],
         }
 
     def discover(self, sources, **kwargs):
@@ -33,8 +36,8 @@ class RefreshTests(unittest.TestCase):
 
     def test_preview_validates_sources_but_makes_no_atlas_writes(self):
         result = CLI.run(self.db, discover=self.discover, output=io.StringIO())
-        self.assertEqual(result["total_releases"], 3)
-        self.assertEqual(result["releases"], {"bbc": 1, "youtube": 1, "rugbypass": 1})
+        self.assertEqual(result["total_releases"], 4)
+        self.assertEqual(result["releases"], {"bbc": 1, "youtube": 1, "rugbypass": 1, "rugby24": 1})
         self.assertEqual(result["mode"], "preview")
         self.db.releases.bulk_write.assert_not_called()
         self.db.releases.update_one.assert_not_called()
@@ -58,16 +61,20 @@ class RefreshTests(unittest.TestCase):
         matcher.run.return_value = {"linked": 2, "fixtures": 150}
         national = MagicMock()
         national.run.return_value = {"linked": 12, "fixtures": 166}
-        with patch.object(CLI, "load_file", side_effect=[indexer, matcher, national]):
+        prem = MagicMock()
+        prem.run.return_value = {"linked": 4, "fixtures": 79}
+        with patch.object(CLI, "load_file", side_effect=[indexer, matcher, national, prem]):
             report = CLI.run(self.db, apply=True, discover=self.discover,
                              output=io.StringIO())
-        self.assertEqual(indexer.upsert_releases.call_count, 3)
+        self.assertEqual(indexer.upsert_releases.call_count, 4)
         matcher.run.assert_called_once()
         national.run.assert_called_once()
+        prem.run.assert_called_once()
         self.assertTrue(matcher.run.call_args.kwargs["apply"])
         self.assertTrue(national.run.call_args.kwargs["apply"])
         self.assertEqual(report["matching"]["linked"], 2)
         self.assertEqual(report["international_matching"]["linked"], 12)
+        self.assertEqual(report["prem_matching"]["linked"], 4)
 
     def test_rugbypass_jsonl_parsing_and_failure_is_safe(self):
         class Result:
