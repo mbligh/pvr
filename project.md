@@ -213,11 +213,13 @@ folders explicitly pin their `library_dir` values. This does not
 create new fixtures, rename existing recordings, or rewrite Atlas history.
 See [FILING.md](FILING.md).
 
-WXV now has an explicit, distinct `rugby-womens-wxv` directory
-mapping. Historical Atlas WXV fixtures were previously imported under
-`rugby-womens-intl`; we do not silently change their episode IDs,
-numbering or NFOs. RugbyPass WXV titles are held out of automatic
-filing until a dedicated WXV fixture migration is implemented.
+WXV has a distinct `rugby-womens-wxv` directory and a dedicated
+World Rugby fixture source. The migration is implemented in the
+scheduler: `import_rugby` creates new WXV episode IDs, independent
+tournament-week numbering and canonical NFOs, preserving original
+calendar UIDs. Old WXV entries in `rugby-womens-intl` become
+superseded history; association migration is preflight-validated.
+The live Atlas migration requires running the updated importer on slagg.
 
 ## RugbyPass international and Nations Championship expansion (2026-11-21)
 
@@ -426,21 +428,25 @@ do not change. `indexers/` discover releases; `downloaders/` handle
 recording transfers. Release import/matching remains separate from
 `pvr.episodes` scheduling. See [schedulers/README.md](schedulers/README.md).
 
-The `mbligh/calendar` repository now has an opt-in `build_rugby_calendars` CLI
-to preview rugby ICS files derived from `pvr.episodes` using the existing
-calendar freeze-at-kickoff merger. It preserves the source UID suffixes and
-already accepted past events, and never reads media releases. This is
-**not yet the live calendar publisher**: its hourly GitHub Action still
-fetches source calendars and generates the legacy NFO archive. The
+The `mbligh/calendar` repository now has a preview-first
+`build_rugby_calendars` CLI that builds rugby ICS from `pvr.episodes`,
+preserves original UID suffixes and frozen history, and migrates existing
+WXV calendar events into a separate feed after verifying matching Atlas
+fixtures. It never reads media releases. The hourly GitHub Action keeps
+the legacy publisher active only until the explicitly generated
+`.github/atlas-rugby-active` marker is committed from the Atlas-allowlisted
+host. The builder's `--apply --publish --activate` is the one-time
+handoff; recurring builds then use `--apply --publish`. The
 exporter must be exercised on slagg and its published fixture/UID diff
 reviewed before cutover; Atlas IP allowlisting prevents relying on a
 GitHub-hosted Actions runner. The scheduler still bootstraps old history
 from previously published calendar *data* only when Atlas lacks snapshots,
 but no longer imports code from the calendar checkout.
 
-Required later migrations: explicit cancellation status propagation from
-scheduler to episodes, the separate WXV fixture/episode/NFO split (the
-current World Rugby women's feed still includes WXV), safe calendar
-publication handoff to the Atlas exporter, and retirement of duplicate
-calendar fetching and NFO logic after production validation. Keep
+Cancellation status propagation and the WXV fixture/episode/NFO split
+are implemented and tested, but must be applied to the production Atlas
+database by running the updated rugby scheduler on slagg. The publishing
+handoff is deliberately not activated without the allowlisted host's
+first fully verified Atlas-derived ICS commit. No remote slagg cron
+changes were made by these Git commits. Keep
 `Rugby_Nations` unchanged pending the user's folder rename.
