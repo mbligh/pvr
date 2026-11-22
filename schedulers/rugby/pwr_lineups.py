@@ -32,6 +32,11 @@ def fetch(fixture):
         headers={"User-Agent": "pvr-lineups/1.0", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as reply:
         payload = json.load(reply)
+    # The provider sometimes knows the fixture from its season listing but
+    # has no corresponding match-detail record (historic gaps and playoffs).
+    # This is missing lineup data, not a failed import; keep the retry policy.
+    if payload.get("status") == 404 and payload.get("message") == "Could not fetch match data":
+        return {"forwards": [], "backs": [], "subs": []}
     if payload.get("status") != 200 or not isinstance(payload.get("data"), dict):
         raise ValueError(f"Bad lineup response for PWR fixture {fixture}")
     return payload["data"]
@@ -48,6 +53,12 @@ def normalize(data, episode, now=None):
             raise ValueError(f"Missing/invalid {group} group for fixture {fixture}")
         for row in rows:
             number = row.get("shirtNumber")
+            # The API occasionally prepends an *unnumbered* extra player
+            # (shirtNumber=0) to the forwards array, even when their actual
+            # position is a winger or substitute. They are not among the
+            # selected numbered 1-23 and must not invalidate the team sheet.
+            if number == 0:
+                continue
             if type(number) is not int or not 1 <= number <= 23 or number in shirts:
                 raise ValueError(f"Duplicate/invalid shirt number in fixture {fixture}")
             shirts.add(number)
@@ -76,6 +87,10 @@ def normalize(data, episode, now=None):
               "status": status, "source": "thepwr.com", "checked_at": now}
     if status != "complete":
         kickoff = utc(episode.get("scheduled"))
+        if kickoff is None and episode.get("scheduled_date"):
+            kickoff = dt.datetime.combine(
+                dt.date.fromisoformat(episode["scheduled_date"]),
+                dt.time(hour=12), tzinfo=UTC)
         if kickoff and now < kickoff + dt.timedelta(days=2):
             interval = dt.timedelta(hours=3)
         elif kickoff and now < kickoff + dt.timedelta(days=14):
@@ -94,7 +109,8 @@ def candidates(db, season=None, fixture=None, force=False, limit=50, now=None):
     if fixture is not None:
         query["_id"] = f"{SERIES}:pwr-{fixture}@mbligh.github.io"
     episodes = list(db.episodes.find(query, {"_id": 1, "series_id": 1,
-        "season": 1, "home": 1, "away": 1, "scheduled": 1}))
+        "season": 1, "home": 1, "away": 1,
+        "scheduled": 1, "scheduled_date": 1}))
     existing = {doc["_id"]: doc for doc in db.pwr_lineups.find(
         {"_id": {"$in": [ep["_id"] for ep in episodes]}},
         {"_id": 1, "status": 1, "next_check_at": 1})}
@@ -105,6 +121,12 @@ def candidates(db, season=None, fixture=None, force=False, limit=50, now=None):
         if not force:
             scheduled = utc(episode.get("scheduled"))
             if scheduled and scheduled > now + dt.timedelta(days=3):
+                continue
+            # TBC fixtures still have an authoritative scheduled_date. Avoid
+            # polling future seasons months before team selection is possible.
+            day = episode.get("scheduled_date")
+            if not scheduled and day and dt.date.fromisoformat(day) > (
+                    now + dt.timedelta(days=3)).date():
                 continue
             if old.get("status") == "complete":
                 continue

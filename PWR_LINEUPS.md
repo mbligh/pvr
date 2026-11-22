@@ -23,6 +23,15 @@ eligible for retry (every three hours near match, daily soon after, and
 monthly for older gaps); complete sheets stop polling unless forced.
 Reruns do not discard previously collected complete sheets.
 
+The provider sometimes supplies extra rows with `shirtNumber: 0` alongside
+the valid numbered starters and substitutes. Those unselected/unnumbered rows
+are ignored, not treated as match failures. The provider also returns
+`{"message":"Could not fetch match data","status":404}` for some historical
+matches and unconfirmed playoffs; this known missing-data response is saved as
+`unavailable` and rechecked under the normal backoff policy. Unexpected
+errors still fail the run. Provisional fixtures with `scheduled_date` are not
+queried more than three days ahead unless `--force` is supplied.
+
 No scores, result fields or match statuses are copied. This importer never
 changes canonical `episodes`, calendar snapshots, or NFO sidecars.
 It reads `MONGODB_URI` or `~/.mongodb/pvr`, as the other PVR CLIs do.

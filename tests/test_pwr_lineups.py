@@ -73,6 +73,63 @@ class Tests(unittest.TestCase):
         self.assertEqual(document["status"], "unavailable")
         self.assertGreater(document["next_check_at"], NOW)
 
+
+    def test_unnumbered_extra_player_does_not_block_valid_selection(self):
+        data = sheet()
+        data["forwards"].insert(0, {
+            "shirtNumber": 0,
+            "position": "sub 6",
+            "homePlayer": None,
+            "awayPlayer": {
+                "id": 999, "name": "Unnumbered Extra",
+                "position": {"id": 21, "name": "sub 6", "shirtNumber": 0},
+            },
+        })
+        document = mod.normalize(data, EP, NOW)
+        self.assertEqual(document["status"], "complete")
+        self.assertEqual(len(document["home"]), 23)
+        self.assertEqual(len(document["away"]), 23)
+        self.assertNotIn(999, [p["id"] for p in document["away"]])
+
+    def test_provider_known_missing_match_becomes_unavailable(self):
+        import io
+        from unittest.mock import patch
+        import json
+        response = io.BytesIO(json.dumps({
+            "message": "Could not fetch match data", "status": 404,
+        }).encode("utf-8"))
+        with patch.object(mod.urllib.request, "urlopen", return_value=response):
+            data = mod.fetch(295106)
+        self.assertEqual(data, {"forwards": [], "backs": [], "subs": []})
+        result = mod.normalize(data, {**EP, "_id":
+            "Rugby_Womens_PWR:pwr-295106@mbligh.github.io"}, NOW)
+        self.assertEqual(result["status"], "unavailable")
+
+    def test_unexpected_failed_response_still_raises(self):
+        import io
+        from unittest.mock import patch
+        import json
+        response = io.BytesIO(json.dumps({
+            "message": "Unexpected API failure", "status": 503,
+        }).encode("utf-8"))
+        with patch.object(mod.urllib.request, "urlopen", return_value=response):
+            with self.assertRaises(ValueError):
+                mod.fetch(295106)
+
+    def test_future_date_only_fixtures_not_polled(self):
+        db = MagicMock()
+        episode = {**EP, "scheduled": None, "scheduled_date": "2027-06-05"}
+        db.episodes.find.return_value = [episode]
+        db.pwr_lineups.find.return_value = []
+        self.assertEqual(mod.candidates(db, now=NOW), [])
+        self.assertEqual(len(mod.candidates(db, now=NOW, force=True)), 1)
+        close = dt.datetime(2027, 6, 3, 12, tzinfo=dt.timezone.utc)
+        self.assertEqual(len(mod.candidates(db, now=close)), 1)
+        lineups = mod.normalize({"forwards": [], "backs": [], "subs": []},
+                                episode, now=close)
+        self.assertLessEqual(
+            lineups["next_check_at"] - close, dt.timedelta(hours=3))
+
     def test_candidates_do_not_poll_complete(self):
         db = MagicMock()
         db.episodes.find.return_value = [EP]
