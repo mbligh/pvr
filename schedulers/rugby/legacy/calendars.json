@@ -46,6 +46,13 @@
       "library_dir": "Rugby_Womens_Intl"
     },
     {
+      "slug": "rugby-womens-wxv",
+      "name": "Rugby Womens WXV",
+      "type": "world-rugby",
+      "group": "wxv",
+      "library_dir": "Rugby_Womens_WXV"
+    },
+    {
       "slug": "rugby-womens-pwr",
       "name": "Rugby Womens PWR",
       "type": "pwr",
