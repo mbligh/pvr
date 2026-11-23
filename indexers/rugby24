@@ -85,7 +85,7 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
                 raise RuntimeError("Rugby24 curl did not return HTTP status and final URL")
             status = int(details[0])
             if details[1] != current:
-                raise RuntimeError("Rugby24 curl unexpectedly changed the requested URL")
+                raise RuntimeError("Rugby24 curl unexpectedly redirected to another URL; refusing content")
             headers = header_path.read_text(errors="replace") if header_path.exists() else ""
 
             def header(name):
