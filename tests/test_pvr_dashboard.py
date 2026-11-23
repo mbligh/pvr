@@ -232,7 +232,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual([label for label, _ in rows],
                          ["Formula 1", "Men&#x27;s rugby", "Women&#x27;s rugby"])
         actual = [
-            re.findall(r'href="/\\?series=([^"]+)"', markup)
+            re.findall(r'href="/[?]series=([^"]+)"', markup)
             for _, markup in rows
         ]
         expected = [
