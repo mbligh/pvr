@@ -89,7 +89,18 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
                 "--write-out", "%{http_code}|%{url_effective}",
                 current,
             ]
-            result = execute(command, capture_output=True, text=True, check=False)
+            options = {"capture_output": True, "text": True, "check": False}
+        if binary == Path("/usr/bin/cf-curl"):
+            # Ensure cf-curl invokes the binary and browser profile installed
+            # by the same Debian package, even if /usr/local/bin precedes
+            # /usr/bin on PATH. Leave explicit wrapper overrides alone.
+            options["env"] = {
+                **os.environ,
+                "CFSOLVE_BIN": "/usr/bin/cfsolve",
+                "CFSOLVE_PROFILE":
+                    "/usr/share/cfsolve/profiles/safari-26-ios.json",
+            }
+        result = execute(command, **options)
             if result.returncode:
                 error = result.stderr.strip()[:250]
                 raise RuntimeError(
@@ -150,10 +161,11 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
 def fetch_page(url, *, cookie_jar, execute=subprocess.run):
     """Use cf-curl for Rugby24 if installed; keep curl-only as a fallback.
 
-    cf-curl manages its own private cross-run clearance cache. Its redirect
-    guard, HTTP error handling and response cap preserve the discovery
-    contract without affecting the other PVR indexers. An explicit client
-    path must exist; use RUGBY24_CF_CURL=off to force legacy curl.
+    The Debian-packaged /usr/bin/cf-curl manages its own private clearance
+    cache, with /usr/bin/cfsolve and the packaged browser profile. Its
+    redirect guard, HTTP error handling and response cap preserve discovery.
+    RUGBY24_CF_CURL overrides the executable; 'off' forces legacy curl.
+    If the Debian package is absent, fall back to the legacy curl transport.
     """
     if urlsplit(url).scheme != "https":
         raise ValueError("Refusing non-Rugby24 URL")
@@ -166,8 +178,9 @@ def fetch_page(url, *, cookie_jar, execute=subprocess.run):
     if configured is not None and configured.casefold() in ("off", "0", "false"):
         return fetch_html(url, cookie_jar=cookie_jar, execute=execute)
     if configured is None:
-        configured = shutil.which("cf-curl") or str(
-            Path("~/tools/video/cf-curl").expanduser())
+        # Use the Debian package, not a source checkout or a PATH entry
+        # that might shadow it (e.g. an older /usr/local installation).
+        configured = "/usr/bin/cf-curl"
     binary = Path(configured).expanduser()
     if not binary.is_file():
         if "RUGBY24_CF_CURL" in os.environ:

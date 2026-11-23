@@ -193,9 +193,9 @@ temporary cookie jar and a 0.5-second delay across requests.
 
 ### Rugby24 request client and HTTP 403 diagnostics
 
-Rugby24 prefers `cf-curl` when it is installed on the host. This is a
-standalone Python/curl wrapper maintained in `mbligh/tools/video/cf-curl`;
-it invokes the prebuilt `cfsolve` executable **only** when the response
+Rugby24 prefers the `cfsolve` Debian package from `apt.mbligh.org`.
+Its `/usr/bin/cf-curl` wrapper (source: `mbligh/tools/video/cf-curl`)
+invokes `/usr/bin/cfsolve` **only** when the response
 has `cf-mitigated: challenge`. It saves the clearance in a private
 per-host cache under `~/.cache/cf-curl/`, then returns the fetched HTML.
 Later Rugby24 pages reuse that cookie with ordinary curl; Cloudflare
@@ -203,23 +203,27 @@ challenges cause at most one solver attempt per request. No PVR MongoDB
 collection contains authentication cookies, and no Rust or Cargo is
 needed on slagg at runtime.
 
-To deploy the tested standalone solver and its profile after pulling tools:
+Install the Debian package on the host running the PVR indexer:
 
 ```sh
-cd ~/tools && git pull
-cd /tmp/cfsolve-rugby24.NH9rz3/src
-sudo install -m 755 target/release/challenge /usr/local/bin/cfsolve
-sudo mkdir -p /usr/local/share/cfsolve
-sudo cp -a profiles /usr/local/share/cfsolve/
-sudo install -m 755 ~/tools/video/cf-curl /usr/local/bin/cf-curl
+sudo apt update
+sudo apt install cfsolve
 cd ~/pvr && git pull
 ```
 
-The indexer detects `cf-curl` on `PATH`, or at
-`~/tools/video/cf-curl`. Override the executable path with
-`RUGBY24_CF_CURL=/path/to/cf-curl`, or set `RUGBY24_CF_CURL=off`
-to use the original curl-only transport. The latter retains support for
-`RUGBY24_COOKIE_JAR` and `RUGBY24_USER_AGENT` as described below.
+The package installs `/usr/bin/cf-curl`, `/usr/bin/cfsolve` and
+`/usr/share/cfsolve/profiles/` (including `safari-26-ios.json`).
+The indexer uses these exact paths by default, not `PATH`,
+`~/tools/video/cf-curl` or `/usr/local` installations. No local Rust
+toolchain, build checkout, or environment variables are required.
+If an old `RUGBY24_CF_CURL` environment override is set, remove it
+to use the Debian package.
+
+For troubleshooting, `RUGBY24_CF_CURL=/path/to/cf-curl` can still
+override the wrapper, or `RUGBY24_CF_CURL=off` selects the original
+curl-only transport. The latter retains support for `RUGBY24_COOKIE_JAR`
+and `RUGBY24_USER_AGENT`. If the Debian package is not installed
+the indexer also falls back to that original transport.
 For a standalone source check, use
 `./refresh_releases --source rugby24 --rugby24-category championship`
 without `--apply`.

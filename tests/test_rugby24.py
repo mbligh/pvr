@@ -232,6 +232,64 @@ class IndexerTests(unittest.TestCase):
             self.assertEqual(page, "<html>champions cup page</html>")
             self.assertEqual(len(seen), 1)
 
+
+    def test_cf_curl_uses_debian_package_without_path_lookup(self):
+        # CI need not have cfsolve installed; simulate only the existence of
+        # the packaged wrapper, not its execution or a live HTTP request.
+        packaged = pathlib.Path("/usr/bin/cf-curl")
+        original_is_file = pathlib.Path.is_file
+        original_access = os.access
+        seen = []
+
+        def is_file(path):
+            return path == packaged or original_is_file(path)
+
+        def access(path, mode):
+            return True if pathlib.Path(path) == packaged else original_access(path, mode)
+
+        def execute(command, **kwargs):
+            seen.append((command, kwargs))
+            self.assertEqual(command[0], str(packaged))
+            self.assertEqual(kwargs["env"]["CFSOLVE_BIN"], "/usr/bin/cfsolve")
+            self.assertEqual(kwargs["env"]["CFSOLVE_PROFILE"],
+                             "/usr/share/cfsolve/profiles/safari-26-ios.json")
+            pathlib.Path(command[command.index("-o") + 1]).write_text(
+                "<html>Debian packaged solver</html>")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with unittest.mock.patch.dict(os.environ, {}, clear=True), \
+                    unittest.mock.patch.object(pathlib.Path, "is_file", autospec=True, side_effect=is_file), \
+                    unittest.mock.patch.object(os, "access", side_effect=access), \
+                    unittest.mock.patch.object(indexer.shutil, "which", side_effect=AssertionError("PATH lookup should not occur")):
+                result = indexer.fetch_page(indexer.DEFAULT_URL,
+                    cookie_jar=pathlib.Path(temporary) / "unused.txt",
+                    execute=execute)
+        self.assertEqual(result, "<html>Debian packaged solver</html>")
+        self.assertEqual(len(seen), 1)
+
+    def test_missing_debian_package_does_not_use_tools_checkout(self):
+        packaged = pathlib.Path("/usr/bin/cf-curl")
+        original_is_file = pathlib.Path.is_file
+
+        def is_file(path):
+            return False if path == packaged else original_is_file(path)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            def execute(command, **kwargs):
+                self.assertEqual(command[0], "curl")
+                pathlib.Path(command[command.index("--output") + 1]).write_text(
+                    "<html>legacy fallback</html>")
+                return subprocess.CompletedProcess(command, 0, "200|" + command[-1], "")
+
+            with unittest.mock.patch.dict(os.environ, {}, clear=True), \
+                    unittest.mock.patch.object(pathlib.Path, "is_file", autospec=True, side_effect=is_file), \
+                    unittest.mock.patch.object(indexer.shutil, "which", side_effect=AssertionError("PATH lookup should not occur")):
+                result = indexer.fetch_page(indexer.DEFAULT_URL,
+                    cookie_jar=pathlib.Path(temporary) / "unused.txt",
+                    execute=execute)
+        self.assertEqual(result, "<html>legacy fallback</html>")
+
     def test_cf_curl_fails_closed_on_transport_error_and_oversized_page(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
