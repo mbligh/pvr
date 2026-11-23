@@ -16,9 +16,12 @@ The source registry is orchestration/source_registry.py:
 | RugbyPass | Rugby_Womens_PWR, Rugby_Mens_Intl, Rugby_Womens_Intl, Rugby_Mens_Nations, Rugby_Womens_WXV |
 | Reddit/teletz | Formula_1 |
 
-Men's Premiership, men's Six Nations and women's Six Nations have
-**no supported recording indexer**. These fixtures never trigger
-the BBC/YouTube PWR indexers. Multiple missing fixtures on one source
+Men's Premiership and EPCR Champions Cup use Rugby24. Men's and women's
+Six Nations have **no supported recording indexer**. These fixtures never
+trigger the BBC/YouTube PWR indexers. Rugby24 keeps distinct Atlas poll
+states `rugby24:prem` and `rugby24:championship` so one category's
+successful check or Cloudflare challenge never resets the other category's
+schedule. The previous shared `rugby24` state is unused after migration. Multiple missing fixtures on one source
 result in one provider check, not one check per fixture.
 
 ## Eligibility and polling
@@ -68,7 +71,11 @@ fallback determines the next check. A two-week-old missing event never
 causes five-minute polling by itself.
 
 After failed discovery/indexing, retries back off 5, 10, 20, 40,
-then at most 60 minutes until success. A successful scan with zero new
+then at most 60 minutes until success. For Rugby24 Cloudflare
+`cf-mitigated: challenge` responses, use a much longer retry delay:
+12h, 24h, 48h, then at most 72h per category. Even
+`run_rugby --force-discovery` respects active failure cooldowns; a
+manual `refresh_releases` invocation still permits deliberate testing. A successful scan with zero new
 recordings is still success. Failure does not change last-success time.
 State is stored in MongoDB Atlas pvr.indexer_poll_state, one document per
 source with last_success, last_attempt, failures and (for failures)

@@ -150,17 +150,54 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
             scope = contextlib.nullcontext(poll_db)
         with scope as connection:
             db = connection[database] if poll_db is None else connection
+            category_series = (
+                ("prem", "Rugby_Mens_Prem"),
+                ("championship", "Rugby_Mens_Championship"),
+            )
+            selected_category = next(
+                (category for category, name in category_series if name == series),
+                None,
+            )
+            state_keys = ({"rugby24": "rugby24:" + selected_category}
+                          if selected_category and "rugby24" in sources else None)
             decisions, missing = polling.plan(
                 db, sources=sources, now=now, sports_root=sports_root,
                 host=hostname, season=season,
                 series_ids=(series,) if series is not None else None,
-                round_no=round_no, episode_number=episode_number)
-            print(json.dumps({"type": "polling", "sources":
-                              polling.status_summary(decisions)}, sort_keys=True),
+                round_no=round_no, episode_number=episode_number,
+                state_keys=state_keys)
+            # One Rugby24 category cannot advance the other category's
+            # discovery timestamp. Plan both scopes independently for cron.
+            jobs = []
+            for source in sources:
+                if source != "rugby24":
+                    jobs.append((source, source, None, decisions[source]))
+                elif selected_category:
+                    jobs.append((source, "rugby24:" + selected_category,
+                                 selected_category, decisions[source]))
+                else:
+                    for category, selected_series in category_series:
+                        category_decisions, _ = polling.plan(
+                            db, sources=("rugby24",), now=now,
+                            sports_root=sports_root, host=hostname,
+                            season=season, series_ids=(selected_series,),
+                            round_no=round_no, episode_number=episode_number,
+                            state_keys={"rugby24": "rugby24:" + category})
+                        jobs.append((source, "rugby24:" + category,
+                                     category, category_decisions["rugby24"]))
+            status = []
+            for source, state_key, category, decision in jobs:
+                entry = polling.status_summary({source: decision})[0]
+                entry["source"] = state_key
+                status.append(entry)
+            print(json.dumps({"type": "polling", "sources": status}, sort_keys=True),
                   file=output)
             if apply and not skip_discovery:
-                for source in sources:
-                    if not (decisions[source]["due"] or force_discovery):
+                for source, state_key, category, decision in jobs:
+                    # A forced check bypasses the successful-check interval,
+                    # but never bypasses a failure/challenge cooldown.
+                    if decision.get("cooldown_active") or (
+                            not decision["due"] and not force_discovery):
                         continue
                     args = ["--apply", "--source", source,
                             "--youtube-limit", youtube_limit, "--bbc-pages", bbc_pages,
@@ -168,36 +205,34 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                             "--rugby24-pages", rugby24_pages,
                             "--yt-dlp", yt_dlp, "--rugbypass", rugbypass,
                             "--database", database, "--lock-root", incoming_root]
-                    rugby24_category = "both"
-                    if source == "rugby24":
-                        rugby24_category = {
-                            "Rugby_Mens_Prem": "prem",
-                            "Rugby_Mens_Championship": "championship",
-                        }.get(series, "both")
-                        args.extend(("--rugby24-category", rugby24_category))
+                    if category:
+                        args.extend(("--rugby24-category", category))
                     try:
                         result = invoke("refresh_releases", *args)
                         if result.returncode == 75:
-                            # A separate cron invocation is already indexing
-                            # this site. It will update its successful check.
-                            print(json.dumps({"type": "indexer_busy", "source": source}),
-                                  file=output)
+                            print(json.dumps({"type": "indexer_busy",
+                                              "source": state_key}), file=output)
                             continue
                         if result.returncode:
-                            raise RuntimeError("Discovery failed for " + source + "; refusing acquisition")
+                            raise RuntimeError("Discovery failed for " + state_key
+                                               + "; refusing acquisition")
                         report = json.loads(result.stdout)
                         if (report.get("mode") != "apply" or
                                 report.get("sources") != [source] or
                                 type(report.get("total_releases")) is not int or
                                 report["total_releases"] < 0):
-                            raise RuntimeError("Invalid discovery report for " + source)
-                        # A one-series Rugby24 scan does not refresh both
-                        # categories; do not mark the shared poll source fresh.
-                        if rugby24_category == "both":
-                            polling.record_success(db, source, now=now)
+                            raise RuntimeError("Invalid discovery report for " + state_key)
+                        polling.record_success(db, state_key, now=now)
                     except Exception:
-                        if rugby24_category == "both":
-                            polling.record_failure(db, source, now=now)
+                        # The source wrapper reports Cloudflare's specific
+                        # challenge without printing any session credentials.
+                        challenged = (source == "rugby24"
+                                      and "cloudflare" in result.stderr.casefold()
+                                      and "challenge" in result.stderr.casefold()) if (
+                                          "result" in locals()) else False
+                        polling.record_failure(
+                            db, state_key, now=now,
+                            reason="cloudflare_challenge" if challenged else None)
                         raise
             if not missing:
                 return 0

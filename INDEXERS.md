@@ -206,6 +206,15 @@ redirects; each hop is separately validated (host, scheme, no credentials
 or custom port), reuses cookies, and counts toward the five-hop limit.
 An HTTPS ↔ HTTP redirect cycle is rejected. HTTP traffic is unencrypted;
 Rugby24 page metadata should not be considered authenticated.
+Ordinary `refresh_releases` runs also load existing Rugby24 releases
+from Atlas and reuse a validated, competition-matched `metadata.embed_url`
+rather than refetching every article on each poll. Fresh article fetches
+record `metadata.embed_checked_at`; only replays within 30 days of their
+match date are revalidated, no more than weekly. Legacy cached embeds
+without timestamps are initially reused and timestamped; known unavailable
+embeds are refetched. A new article still requires one page request.
+The standalone `indexers/rugby24` CLI has no Atlas cache.
+
 Cloudflare may instead return `HTTP 403` with `cf-mitigated: challenge`.
 That is an explicit browser challenge, not a redirect or an empty match
 catalogue. Even an automated browser scraper can encounter the same block.

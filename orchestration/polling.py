@@ -153,7 +153,7 @@ def eligible_missing(database, *, sources, now=None, sports_root="/data/sports",
 
 def plan(database, *, sources, now=None, sports_root="/data/sports",
          host=None, season=None, series_ids=None,
-         round_no=None, episode_number=None):
+         round_no=None, episode_number=None, state_keys=None):
     """Return per-source poll decisions, without modifying Atlas."""
     now = aware(now) or dt.datetime.now(UTC)
     missing, published = eligible_missing(
@@ -195,7 +195,8 @@ def plan(database, *, sources, now=None, sports_root="/data/sports",
     ]
     result = {}
     for source in sources:
-        state = database.indexer_poll_state.find_one({"_id": source}) or {}
+        state_key = (state_keys or {}).get(source, source)
+        state = database.indexer_poll_state.find_one({"_id": state_key}) or {}
         last = aware(state.get("last_success"))
         due_time = last + DAILY if last is not None else now
         urgent = None
@@ -236,6 +237,7 @@ def plan(database, *, sources, now=None, sports_root="/data/sports",
             "next_at": gated, "interval_minutes": (
                 int(urgent.total_seconds() // 60) if urgent is not None else 1440),
             "last_success": last,
+            "cooldown_active": retry is not None and retry > now,
         }
     return result, missing
 
@@ -245,19 +247,28 @@ def record_success(database, source, *, now=None):
     database.indexer_poll_state.update_one(
         {"_id": source},
         {"$set": {"last_success": now, "last_attempt": now, "failures": 0},
-         "$unset": {"retry_not_before": ""}},
+         "$unset": {"retry_not_before": "", "failure_reason": ""}},
         upsert=True)
 
 
-def record_failure(database, source, *, now=None):
+def record_failure(database, source, *, now=None, reason=None):
     now = aware(now) or dt.datetime.now(UTC)
     prior = database.indexer_poll_state.find_one({"_id": source}) or {}
     failures = max(0, int(prior.get("failures", 0))) + 1
-    delay = dt.timedelta(minutes=min(60, 5 * 2 ** min(failures - 1, 5)))
+    if reason == "cloudflare_challenge":
+        # A browser challenge is not transient server overload: retry
+        # after 12h, 24h, 48h, then at most 72h until access resumes.
+        delay = dt.timedelta(hours=min(72, 12 * 2 ** min(failures - 1, 3)))
+    else:
+        delay = dt.timedelta(minutes=min(60, 5 * 2 ** min(failures - 1, 5)))
+    values = {"last_attempt": now, "failures": failures,
+              "retry_not_before": now + delay}
+    if reason:
+        values["failure_reason"] = reason
     database.indexer_poll_state.update_one(
         {"_id": source},
-        {"$set": {"last_attempt": now, "failures": failures,
-                  "retry_not_before": now + delay}},
+        {"$set": values, **({"$unset": {"failure_reason": ""}}
+                            if not reason else {})},
         upsert=True)
     return delay
 

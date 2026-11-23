@@ -150,6 +150,9 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual(refresh[refresh.index("--source") + 1], "rugby24")
         self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
         self.assertEqual(refresh[refresh.index("--rugby24-category") + 1], "prem")
+        self.assertEqual(
+            self.db.indexer_poll_state.update_one.call_args.args[0]["_id"],
+            "rugby24:prem")
         with self.assertRaises(ValueError):
             runner.source_set("Rugby_Mens_Prem", ["youtube"])
 
@@ -162,9 +165,44 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
         self.assertEqual(refresh[refresh.index("--rugby24-category") + 1],
                          "championship")
-        self.db.indexer_poll_state.update_one.assert_not_called()
+        self.assertEqual(
+            self.db.indexer_poll_state.update_one.call_args.args[0]["_id"],
+            "rugby24:championship")
         with self.assertRaisesRegex(ValueError, "Rugby24 only"):
             runner.source_set("Rugby_Mens_Championship", ["youtube"])
+
+    def test_championship_challenge_cooldown_and_force_discovery(self):
+        def blocked(cmd, **kwargs):
+            self.calls.append((cmd, kwargs))
+            return Result(code=1, stderr=(
+                "Rugby24 indexer: Rugby24 Cloudflare challenge (HTTP 403) "
+                "at /champions-cup\n"))
+        self.execute = blocked
+        with self.assertRaisesRegex(RuntimeError, "refusing acquisition"):
+            self.invoke(apply=True, series="Rugby_Mens_Championship")
+        update = self.db.indexer_poll_state.update_one.call_args
+        self.assertEqual(update.args[0]["_id"], "rugby24:championship")
+        self.assertEqual(update.args[1]["$set"]["failure_reason"],
+                         "cloudflare_challenge")
+        self.calls.clear()
+
+        # Force should not override a known Cloudflare challenge cooldown.
+        def planning(db, *, sources, **kwargs):
+            return ({"rugby24": {
+                "due": False, "cooldown_active": True,
+                "reason": "failure_backoff", "missing": 1,
+                "improving": 0, "next_at": self.finished,
+                "interval_minutes": 60}},
+                [{"series_id": "Rugby_Mens_Championship",
+                  "episode_id": "Rugby_Mens_Championship:101",
+                  "finished": self.finished}])
+        with patch.object(runner.polling, "plan", side_effect=planning):
+            self.assertEqual(runner.run(
+                apply=True, force_discovery=True,
+                series="Rugby_Mens_Championship", incoming_root=self.incoming,
+                execute=self.execute, poll_db=self.db, output=io.StringIO(),
+                error=io.StringIO()), 0)
+        self.assertEqual(len(self.calls), 1)  # acquisition only
 
     def test_national_series_refresh_is_only_rugbypass(self):
         self.discovery = json.dumps({

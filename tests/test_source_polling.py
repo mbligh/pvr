@@ -97,6 +97,46 @@ class PollingTests(unittest.TestCase):
         self.assertEqual(decisions["rugby24"]["interval_minutes"], 5)
         self.assertTrue(decisions["rugby24"]["due"])
 
+    def test_rugby24_category_states_are_independent(self):
+        prem = episode("Rugby_Mens_Prem", NOW - dt.timedelta(hours=1))
+        champ = episode("Rugby_Mens_Championship",
+                        NOW - dt.timedelta(hours=1), 102)
+        db = Database([prem, champ])
+        keys = {"prem": "rugby24:prem",
+                "championship": "rugby24:championship"}
+        polling.record_success(db, keys["prem"], now=NOW)
+        for category, series_id in (
+                ("prem", "Rugby_Mens_Prem"),
+                ("championship", "Rugby_Mens_Championship")):
+            decisions, missing = polling.plan(
+                db, sources=("rugby24",), now=NOW,
+                sports_root=self.sports, series_ids=(series_id,),
+                state_keys={"rugby24": keys[category]})
+            self.assertEqual(len(missing), 1)
+            self.assertEqual(decisions["rugby24"]["due"], category == "championship")
+        self.assertEqual(set(db.states), set(keys.values()))
+
+    def test_cloudflare_backoff_is_long_and_survives_force_checks(self):
+        db = Database([episode("Rugby_Mens_Championship",
+                               NOW - dt.timedelta(hours=1))])
+        key = "rugby24:championship"
+        first = polling.record_failure(db, key, now=NOW,
+                                       reason="cloudflare_challenge")
+        self.assertEqual(first, dt.timedelta(hours=12))
+        decisions, _ = polling.plan(
+            db, sources=("rugby24",), now=NOW,
+            sports_root=self.sports,
+            series_ids=("Rugby_Mens_Championship",),
+            state_keys={"rugby24": key})
+        self.assertFalse(decisions["rugby24"]["due"])
+        self.assertTrue(decisions["rugby24"]["cooldown_active"])
+        again = polling.record_failure(db, key, now=NOW + first,
+                                       reason="cloudflare_challenge")
+        self.assertEqual(again, dt.timedelta(hours=24))
+        polling.record_success(db, key, now=NOW + dt.timedelta(hours=36))
+        self.assertNotIn("failure_reason", db.states[key])
+        self.assertNotIn("retry_not_before", db.states[key])
+
     def test_age_backoff_boundaries(self):
         table = [(0, 5), (119, 5), (120, 15), (719, 15),
                  (720, 60), (2879, 60), (2880, 360),
