@@ -193,6 +193,7 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
             print(json.dumps({"type": "polling", "sources": status}, sort_keys=True),
                   file=output)
             if apply and not skip_discovery:
+                category_failures = []
                 for source, state_key, category, decision in jobs:
                     # A forced check bypasses the successful-check interval,
                     # but never bypasses a failure/challenge cooldown.
@@ -235,7 +236,17 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                         polling.record_failure(
                             db, state_key, now=now,
                             reason="cloudflare_challenge" if challenged else None)
+                        # In the unscoped cron run one Rugby24 category
+                        # may fail without preventing a check of the other.
+                        # Never acquire anything on a partial refresh.
+                        if source == "rugby24" and series is None:
+                            category_failures.append(state_key)
+                            continue
                         raise
+                if category_failures:
+                    raise RuntimeError(
+                        "Discovery failed for " + ", ".join(category_failures)
+                        + "; refusing acquisition")
             if not missing:
                 return 0
             return run_acquisitions(missing, apply=apply)

@@ -183,6 +183,30 @@ class RugbyRunTests(unittest.TestCase):
              self.db.indexer_poll_state.update_one.call_args_list],
             ["rugby24:prem", "rugby24:championship"])
 
+    def test_failed_prem_check_does_not_block_championship_refresh(self):
+        def partial_failure(cmd, **kwargs):
+            self.calls.append((cmd, kwargs))
+            if Path(cmd[1]).name == "refresh_releases":
+                category = cmd[cmd.index("--rugby24-category") + 1]
+                if category == "prem":
+                    return Result(code=1, stderr=(
+                        "Rugby24 Cloudflare challenge (HTTP 403)\n"))
+                return Result(stdout=json.dumps({
+                    "mode": "apply", "sources": ["rugby24"],
+                    "total_releases": 1}))
+            return Result(stderr='{"planned": 0}\n')
+        self.execute = partial_failure
+        with self.assertRaisesRegex(RuntimeError, "refusing acquisition"):
+            self.invoke(apply=True, sources=["rugby24"])
+        self.assertEqual(
+            [cmd[cmd.index("--rugby24-category") + 1] for cmd, _ in
+             self.calls if Path(cmd[1]).name == "refresh_releases"],
+            ["prem", "championship"])
+        self.assertEqual(
+            [call.args[0]["_id"] for call in
+             self.db.indexer_poll_state.update_one.call_args_list],
+            ["rugby24:prem", "rugby24:championship"])
+
     def test_championship_challenge_cooldown_and_force_discovery(self):
         def blocked(cmd, **kwargs):
             self.calls.append((cmd, kwargs))
