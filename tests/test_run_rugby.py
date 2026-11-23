@@ -149,6 +149,7 @@ class RugbyRunTests(unittest.TestCase):
         refresh, acquire = (x[0] for x in self.calls)
         self.assertEqual(refresh[refresh.index("--source") + 1], "rugby24")
         self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
+        self.assertEqual(refresh[refresh.index("--rugby24-category") + 1], "prem")
         with self.assertRaises(ValueError):
             runner.source_set("Rugby_Mens_Prem", ["youtube"])
 
@@ -159,6 +160,9 @@ class RugbyRunTests(unittest.TestCase):
         refresh, acquire = (x[0] for x in self.calls)
         self.assertEqual(refresh[refresh.index("--source") + 1], "rugby24")
         self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
+        self.assertEqual(refresh[refresh.index("--rugby24-category") + 1],
+                         "championship")
+        self.db.indexer_poll_state.update_one.assert_not_called()
         with self.assertRaisesRegex(ValueError, "Rugby24 only"):
             runner.source_set("Rugby_Mens_Championship", ["youtube"])
 

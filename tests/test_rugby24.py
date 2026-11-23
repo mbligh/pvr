@@ -4,6 +4,7 @@ import importlib.machinery
 import importlib.util
 import pathlib
 import subprocess
+import os
 import tempfile
 import unittest
 from unittest.mock import MagicMock
@@ -93,6 +94,40 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(indexer.competition(CHAMP_TITLE), "champions-cup")
         self.assertEqual(indexer.competition(CUP_TITLE), "cup")
 
+    def test_championship_only_never_fetches_premiership(self):
+        url = indexer.CHAMPIONS_URL
+        urls = []
+        pages = {
+            url: '<h3><a href="/' + CHAMP_SLUG + '">' + CHAMP_TITLE + '</a></h3>',
+            BASE + CHAMP_SLUG: '<iframe src="//ok.ru/videoembed/12345678902"></iframe>',
+        }
+        def fetch(page):
+            urls.append(page)
+            return pages[page]
+        releases = indexer.discover_all(category="championship", pages=1, fetch=fetch)
+        self.assertEqual([x["metadata"]["competition"] for x in releases],
+                         ["champions-cup"])
+        self.assertEqual(urls, [url, BASE + CHAMP_SLUG])
+        with self.assertRaisesRegex(ValueError, "Unsupported Rugby24 category"):
+            indexer.discover_all(category="unknown", pages=1, fetch=fetch)
+
+    def test_private_browser_cookie_file_is_copied_only_to_temp_jar(self):
+        with tempfile.TemporaryDirectory() as root:
+            browser = pathlib.Path(root) / "browser.txt"
+            jar = pathlib.Path(root) / "temporary.txt"
+            content = "# Netscape HTTP Cookie File\n.rugby24.net\tTRUE\t/\tTRUE\t0\tcf_clearance\ttest-token\n"
+            browser.write_text(content)
+            with unittest.mock.patch.dict(os.environ, {
+                    "RUGBY24_COOKIE_JAR": str(browser)}):
+                indexer.init_cookie_jar(jar)
+            self.assertEqual(jar.read_text(), content)
+            self.assertEqual(browser.read_text(), content)
+            self.assertEqual(jar.stat().st_mode & 0o777, 0o600)
+            with unittest.mock.patch.dict(os.environ, {
+                    "RUGBY24_COOKIE_JAR": str(browser) + ".missing"}):
+                with self.assertRaisesRegex(ValueError, "RUGBY24_COOKIE_JAR"):
+                    indexer.init_cookie_jar(jar)
+
     def test_indexer_fails_on_empty_or_unplayable_pages(self):
         with self.assertRaisesRegex(ValueError, "no full-match"):
             indexer.discover(pages=1, fetch=lambda url: "<html></html>")
@@ -132,7 +167,7 @@ class IndexerTests(unittest.TestCase):
                 indexer.fetch_html("https://evil.example/", cookie_jar=cookie_jar,
                                    execute=execute)
             with self.assertRaisesRegex(RuntimeError,
-                "HTTP 403 at /premiership-rugby \\(server=cloudflare, cf-mitigated=challenge"):
+                "Cloudflare challenge \\(HTTP 403\\) at /premiership-rugby"):
                 indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
                                    execute=execute)
             self.assertEqual(len(seen), 1)

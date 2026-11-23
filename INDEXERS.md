@@ -180,8 +180,8 @@ with home/away team aliases and a ±2-day date window; ambiguous cases are
 not linked. The public site may block requests with HTTP 403.
 
     ./indexers/rugby24 --pages 2 | ./index_releases --dry-run
-    ./indexers/rugby24 --url https://rugby24.net/champions-cup --pages 2
-    ./refresh_releases --source rugby24 --rugby24-pages 2 --apply
+    ./indexers/rugby24 --category championship --pages 2
+    ./refresh_releases --source rugby24 --rugby24-category championship --rugby24-pages 2 --apply
     ./match_prem              # preview PREM fixture links
     ./match_championship      # preview Champions Cup fixture links
 
@@ -206,6 +206,26 @@ redirects; each hop is separately validated (host, scheme, no credentials
 or custom port), reuses cookies, and counts toward the five-hop limit.
 An HTTPS ↔ HTTP redirect cycle is rejected. HTTP traffic is unencrypted;
 Rugby24 page metadata should not be considered authenticated.
+Cloudflare may instead return `HTTP 403` with `cf-mitigated: challenge`.
+That is an explicit browser challenge, not a redirect or an empty match
+catalogue. Even an automated browser scraper can encounter the same block.
+This indexer fails closed rather than repeatedly retrying or claiming it
+has successfully discovered zero replays.
+
+To scan Champions Cup without touching the independently protected
+Premiership category, use `--category championship` (or
+`--rugby24-category championship` on `refresh_releases`).
+`run_rugby --series Rugby_Mens_Championship` selects this automatically.
+Category-specific runs do not reset the shared all-category polling state.
+
+If Rugby24 allows a previously validated browser session to access pages,
+you can *optionally* supply a local Netscape-format cookies.txt file
+via `RUGBY24_COOKIE_JAR`, and set `RUGBY24_USER_AGENT` to the exact user
+agent of that browser. Cookies are copied to a private temporary file
+for each scan; the original is not modified, and neither path nor contents
+are stored in MongoDB. Do not commit the cookie file. A Cloudflare clearance
+cookie may be bound to the browser IP, user agent or TLS fingerprint and may
+expire; there is no guarantee it will work from slagg. Unencrypted HTTP
+requests also expose cookies in transit when the site redirects there.
 The indexer still rejects non-Rugby24 URLs/redirects, failed HTTP requests,
-oversized pages and missing playable embeds. HTTP errors report safe
-server/challenge headers and the affected request path.
+oversized pages and missing playable embeds.

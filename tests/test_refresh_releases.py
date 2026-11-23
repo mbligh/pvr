@@ -104,6 +104,14 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(result["youtube"], self.releases["youtube"])
         self.assertEqual(calls, [{"limit": 100, "binary": "yt-dlp"}])
 
+    def test_rugby24_category_is_forwarded_to_indexer(self):
+        fetch = MagicMock(return_value=self.releases["rugby24"])
+        out = CLI.discover_sources(("rugby24",), rugby24_pages=1,
+                                   rugby24_category="championship",
+                                   rugby24_discover=fetch)
+        self.assertEqual(out["rugby24"], self.releases["rugby24"])
+        fetch.assert_called_once_with(pages=1, category="championship")
+
     def test_provider_argument_validation(self):
         with self.assertRaises(ValueError):
             CLI.run(self.db, sources=("unknown",), discover=self.discover)
