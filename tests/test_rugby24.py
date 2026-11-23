@@ -251,7 +251,8 @@ class DownloaderTests(unittest.TestCase):
         db = MagicMock()
         db.releases.find_one.return_value = {
             "_id": self.uri, "source": "rugby24", "episode_id": FIXTURE["_id"],
-            "metadata": {"page_url": self.page, "embed_url": self.embed}}
+            "metadata": {"page_url": self.page, "embed_url": self.embed,
+                         "competition": "league"}}
         db.episodes.find_one.return_value = FIXTURE
         db.files.find.return_value = []
         plan = cli.plan(db, self.uri, self.target, hostname="slagg")
@@ -275,6 +276,28 @@ class DownloaderTests(unittest.TestCase):
         db.releases.find_one.return_value["metadata"]["embed_url"] = "https://evil.example/video"
         with self.assertRaises(ValueError):
             cli.plan(db, self.uri, pathlib.Path(self.temp.name) / "second.mkv", hostname="slagg")
+
+    def test_wrong_competition_cannot_download_even_if_manually_linked(self):
+        from importlib.machinery import SourceFileLoader
+        cli = SourceFileLoader("pvr_rugby24_dl_wrong_kind",
+                               str(ROOT / "download_release")).load_module()
+        db = MagicMock()
+        db.files.find.return_value = []
+        for fixture, kind in ((FIXTURE, "champions-cup"),
+                              (CHAMP_FIXTURE, "cup"),
+                              (CHAMP_FIXTURE, "league")):
+            db.episodes.find_one.return_value = fixture
+            uri = "rugby24:" + CHAMP_SLUG
+            db.releases.find_one.return_value = {
+                "_id": uri, "source": "rugby24",
+                "episode_id": fixture["_id"],
+                "metadata": {"page_url": BASE + CHAMP_SLUG,
+                             "embed_url": self.embed, "competition": kind},
+            }
+            with self.subTest(fixture=fixture["_id"], kind=kind):
+                with self.assertRaisesRegex(ValueError,
+                                            "competition does not match"):
+                    cli.plan(db, uri, self.target, hostname="slagg")
 
     def test_championship_download_plan_reuses_existing_embed_adapter(self):
         from importlib.machinery import SourceFileLoader
