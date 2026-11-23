@@ -65,8 +65,8 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
             output[source] = (bbc_discover or bbc.discover)(
                 bbc.DEFAULT_BRAND, max_pages=bbc_pages)
         elif source == "youtube":
-            output[source] = (yt_discover or yt.discover)(
-                yt.DEFAULT_URL, limit=youtube_limit, binary=yt_dlp)
+            output[source] = (yt_discover or yt.discover_pwr)(
+                limit=youtube_limit, binary=yt_dlp)
         elif source == "rugbypass":
             output[source] = rp_discover(script=rugbypass, pages=rugbypass_pages)
         elif source == "rugby24":

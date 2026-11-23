@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""YouTube channel streams indexer using the local yt-dlp executable.
+"""PWR channel streams and full-match playlist indexer using local yt-dlp.
 
-Default mode fetches individual video metadata (without downloading media) so
-archived livestreams have their original release or publication dates. Use
---flat for fast catalogue browsing when dates are not needed.
+Resolve metadata for channel streams first, then enumerate the curated full-match
+playlist cheaply and resolve only video IDs absent from the stream listing.
+Use --flat for fast catalogue browsing when dates are not needed.
 """
 import argparse
 import datetime as dt
@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 DEFAULT_URL = "https://www.youtube.com/@ThePWROfficial/streams"
+FULL_MATCH_PLAYLIST = "https://www.youtube.com/playlist?list=PL6NsZFkjlRqEZH4Pi5o9RoHfIfwzeo04l"
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 COMPACT_DATE = re.compile(r"^\d{8}$")
 # A future scheduled livestream can raise an extraction error even with
@@ -130,10 +131,37 @@ def discover(url=DEFAULT_URL, *, search=None, limit=100, binary="yt-dlp",
     return list(found.values())
 
 
+def discover_pwr(*, search=None, limit=100, binary="yt-dlp", flat=False,
+                 execute=subprocess.run):
+    """Index streams plus the curated full-match playlist without repeat lookups.
+
+    The stream index retains its original metadata-rich behavior. A cheap flat
+    playlist scan finds uploads omitted by /streams; only previously unseen IDs
+    receive additional per-video metadata requests. Unfinished streams remain
+    excluded and all records keep the normal youtube:<video-id> identity.
+    """
+    found = {item["id"]: item for item in discover(
+        DEFAULT_URL, search=search, limit=limit, binary=binary,
+        flat=flat, execute=execute)}
+    playlist = discover(FULL_MATCH_PLAYLIST, search=search, limit=limit,
+                        binary=binary, flat=True, execute=execute)
+    for item in playlist:
+        if item["id"] in found:
+            continue
+        if flat:
+            found[item["id"]] = item
+        else:
+            url = "https://www.youtube.com/watch?v=" + item["id"]
+            for detailed in discover(url, search=search, limit=1,
+                                     binary=binary, execute=execute):
+                found[detailed["id"]] = detailed
+    return list(found.values())
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default=DEFAULT_URL,
-                        help="YouTube /streams, /videos or playlist URL")
+    parser.add_argument("--url",
+                        help="Override default PWR streams + full-match playlist with one URL")
     parser.add_argument("--search", help="Case-insensitive video title substring")
     parser.add_argument("--limit", type=int, default=100,
                         help="Maximum listed videos (default 100)")
@@ -144,8 +172,10 @@ def main(argv=None):
     if not 1 <= args.limit <= 5000:
         parser.error("--limit must be 1-5000")
     try:
-        releases = discover(args.url, search=args.search, limit=args.limit,
-                            binary=args.yt_dlp, flat=args.flat)
+        options = {"search": args.search, "limit": args.limit,
+                   "binary": args.yt_dlp, "flat": args.flat}
+        releases = (discover(args.url, **options) if args.url else
+                    discover_pwr(**options))
     except (ValueError, OSError, RuntimeError) as exc:
         print(f"YouTube indexer: {exc}", file=sys.stderr)
         return 1
