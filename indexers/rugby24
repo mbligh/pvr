@@ -27,68 +27,102 @@ USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
 MAX_HTML_BYTES = 2_000_000
 
 
-def fetch_html(url, *, cookie_jar, execute=subprocess.run):
-    """Fetch Rugby24 with system curl, the same client verified on slagg.
-
-    Keep the category/article cookie jar across requests, while never
-    returning an HTTP-error/challenge page as a successful discovery.
-    """
+def safe_https_url(url):
+    """Accept only rugby24.net; upgrade its HTTP redirects instead of following them."""
     parsed = urlsplit(url)
-    if (parsed.scheme != "https" or parsed.hostname != "rugby24.net"
-            or parsed.username or parsed.password or parsed.port):
+    if (parsed.scheme not in ("https", "http")
+            or parsed.hostname != "rugby24.net"
+            or parsed.username or parsed.password or parsed.port
+            or parsed.fragment):
+        raise ValueError("Refusing non-Rugby24 redirect URL")
+    return parsed._replace(scheme="https").geturl()
+
+
+def fetch_html(url, *, cookie_jar, execute=subprocess.run):
+    """Fetch Rugby24 through HTTPS, normalizing its own HTTP redirects.
+
+    The site sometimes returns a Location: http://rugby24.net/... even for an
+    HTTPS request. Letting curl follow that URL would downgrade transport.
+    Instead request each redirect as a separate HTTPS-only curl invocation,
+    preserving cookies but rejecting other hosts and loops.
+    """
+    if urlsplit(url).scheme != "https":
         raise ValueError("Refusing non-Rugby24 URL")
+    try:
+        current = safe_https_url(url)
+    except ValueError as exc:
+        raise ValueError("Refusing non-Rugby24 URL") from exc
+    seen = set()
     with tempfile.TemporaryDirectory(prefix="pvr-rugby24-page-") as temporary:
         body_path = Path(temporary) / "response.html"
         header_path = Path(temporary) / "headers.txt"
-        command = [
-            "curl", "--silent", "--show-error", "--location", "--compressed",
-            "--max-redirs", "5", "--max-time", "30",
-            "--max-filesize", str(MAX_HTML_BYTES),
-            "--proto", "=https", "--proto-redir", "=https",
-            "--user-agent", USER_AGENT, "--header", "Accept: text/html",
-            "--cookie", str(cookie_jar), "--cookie-jar", str(cookie_jar),
-            "--dump-header", str(header_path),
-            "--output", str(body_path),
-            "--write-out", "%{http_code}|%{url_effective}",
-            url,
-        ]
-        result = execute(command, capture_output=True, text=True, check=False)
-        if result.returncode:
-            error = result.stderr.strip()[:250]
-            raise RuntimeError(
-                f"Rugby24 curl failed ({result.returncode}) at {parsed.path}: {error}"
-            )
-        details = result.stdout.split("|", 1)
-        if len(details) != 2 or not details[0].isdigit():
-            raise RuntimeError("Rugby24 curl did not return HTTP status and final URL")
-        status = int(details[0])
-        target = urlsplit(details[1])
-        if (target.scheme != "https" or target.hostname != "rugby24.net"
-                or target.username or target.password or target.port):
-            raise RuntimeError("Rugby24 redirected to a different host; refusing content")
-        if status != 200:
+        for hop in range(6):
+            if current in seen:
+                raise RuntimeError("Rugby24 HTTPS redirect loop at " + urlsplit(current).path)
+            seen.add(current)
+            if hop:
+                time.sleep(0.5)
+            command = [
+                "curl", "--silent", "--show-error", "--compressed",
+                "--max-time", "30", "--max-filesize", str(MAX_HTML_BYTES),
+                "--proto", "=https",
+                "--user-agent", USER_AGENT, "--header", "Accept: text/html",
+                "--cookie", str(cookie_jar), "--cookie-jar", str(cookie_jar),
+                "--dump-header", str(header_path),
+                "--output", str(body_path),
+                "--write-out", "%{http_code}|%{url_effective}",
+                current,
+            ]
+            result = execute(command, capture_output=True, text=True, check=False)
+            if result.returncode:
+                error = result.stderr.strip()[:250]
+                raise RuntimeError(
+                    f"Rugby24 curl failed ({result.returncode}) "
+                    f"at {urlsplit(current).path}: {error}"
+                )
+            details = result.stdout.split("|", 1)
+            if len(details) != 2 or not details[0].isdigit():
+                raise RuntimeError("Rugby24 curl did not return HTTP status and final URL")
+            status = int(details[0])
+            if details[1] != current:
+                raise RuntimeError("Rugby24 curl unexpectedly changed the requested URL")
             headers = header_path.read_text(errors="replace") if header_path.exists() else ""
-            def safe_header(name):
+
+            def header(name):
                 values = []
                 for line in headers.splitlines():
                     key, separator, value = line.partition(":")
                     if separator and key.casefold() == name:
-                        values.append(value.strip()[:80])
+                        values.append(value.strip()[:1000])
                 return values[-1] if values else ""
-            server = safe_header("server") or "unknown"
-            challenge = safe_header("cf-mitigated")
-            path = parsed.path + (("?" + parsed.query) if parsed.query else "")
-            raise RuntimeError(
-                f"Rugby24 HTTP {status} at {path} (server={server}"
-                + (f", cf-mitigated={challenge}" if challenge else "")
-                + "); check whether the site is accessible with curl from this host"
-            )
-        if not body_path.exists():
-            raise RuntimeError("Rugby24 curl returned HTTP 200 without a response body")
-        body = body_path.read_bytes()
-        if len(body) > MAX_HTML_BYTES:
-            raise ValueError("Rugby24 page too large")
-        return body.decode("utf-8", errors="replace")
+
+            if status in (301, 302, 303, 307, 308):
+                location = header("location")
+                if not location:
+                    raise RuntimeError("Rugby24 redirect is missing a Location header")
+                try:
+                    current = safe_https_url(urljoin(current, location))
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "Rugby24 redirected to a different host; refusing content"
+                    ) from exc
+                continue
+            if status != 200:
+                server = header("server")[:80] or "unknown"
+                challenge = header("cf-mitigated")[:80]
+                path = urlsplit(current).path
+                raise RuntimeError(
+                    f"Rugby24 HTTP {status} at {path} (server={server}"
+                    + (f", cf-mitigated={challenge}" if challenge else "")
+                    + "); check whether the site is accessible with curl from this host"
+                )
+            if not body_path.exists():
+                raise RuntimeError("Rugby24 curl returned HTTP 200 without a response body")
+            body = body_path.read_bytes()
+            if len(body) > MAX_HTML_BYTES:
+                raise ValueError("Rugby24 page too large")
+            return body.decode("utf-8", errors="replace")
+    raise RuntimeError("Rugby24 exceeded five HTTPS redirects")
 
 def article_slug(url):
     parts = urlsplit(url)

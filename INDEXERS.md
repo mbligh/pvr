@@ -199,6 +199,11 @@ jar across category and article requests and delays 0.5 seconds between
 requests. No `curl_cffi` Python dependency or privileged pip install is
 required. The previous `urllib` request with the PVR User-Agent returned
 HTTP 403; the exact reason for that difference is not established.
+Rugby24 may send an HTTP Location header in response to an HTTPS request.
+The adapter follows the redirect manually, upgrading that same-host URL
+back to HTTPS before issuing another request. It does not follow HTTP
+transport, leave rugby24.net, or retry redirects indefinitely. An HTTPS
+redirect loop is an actionable site-side configuration error.
 The indexer still rejects non-Rugby24 URLs/redirects, failed HTTP requests,
 oversized pages and missing playable embeds. HTTP errors report safe
 server/challenge headers and the affected request path.

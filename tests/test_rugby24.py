@@ -169,6 +169,53 @@ class IndexerTests(unittest.TestCase):
                 indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
                                    execute=failed)
 
+
+    def test_http_location_from_https_is_upgraded_before_following(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cookie_jar = pathlib.Path(temporary) / "cookies.txt"
+            calls = []
+            def execute(command, **kwargs):
+                current = command[-1]
+                calls.append(current)
+                self.assertEqual(command[command.index("--proto") + 1], "=https")
+                self.assertNotIn("--location", command)
+                self.assertEqual(command[command.index("--cookie") + 1],
+                                 str(cookie_jar))
+                header_path = pathlib.Path(command[command.index("--dump-header") + 1])
+                body_path = pathlib.Path(command[command.index("--output") + 1])
+                if len(calls) == 1:
+                    header_path.write_text(
+                        "HTTP/2 301\r\nLocation: http://rugby24.net/premiership-rugby/\r\n")
+                    return subprocess.CompletedProcess(command, 0, "301|" + current, "")
+                header_path.write_text("HTTP/2 200\r\n")
+                body_path.write_text("<html>rugby replays</html>")
+                return subprocess.CompletedProcess(command, 0, "200|" + current, "")
+            body = indexer.fetch_html(indexer.DEFAULT_URL,
+                                      cookie_jar=cookie_jar, execute=execute)
+            self.assertEqual(body, "<html>rugby replays</html>")
+            self.assertEqual(calls, [indexer.DEFAULT_URL,
+                                     indexer.DEFAULT_URL + "/"])
+
+    def test_redirect_rejects_other_hosts_and_http_downgrade_loop(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            jar = pathlib.Path(temporary) / "cookies.txt"
+            for target, expected in (
+                ("http://evil.example/path", "different host"),
+                ("http://rugby24.net/premiership-rugby", "redirect loop"),
+            ):
+                calls = []
+                def execute(command, **kwargs):
+                    calls.append(command[-1])
+                    pathlib.Path(command[command.index("--dump-header") + 1]).write_text(
+                        "HTTP/2 301\r\nLocation: " + target + "\r\n")
+                    return subprocess.CompletedProcess(
+                        command, 0, "301|" + command[-1], "")
+                with self.subTest(target=target):
+                    with self.assertRaisesRegex(RuntimeError, expected):
+                        indexer.fetch_html(indexer.DEFAULT_URL,
+                                           cookie_jar=jar, execute=execute)
+                    self.assertEqual(calls, [indexer.DEFAULT_URL])
+
     def test_championship_matching_strict_teams_date_and_competition(self):
         release = {"source": "rugby24", "title": CHAMP_TITLE,
                    "published": "2026-10-16",
