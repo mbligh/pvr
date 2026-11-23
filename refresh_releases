@@ -55,7 +55,8 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
                      rugby24_category="both",
                      rugbypass="~/tools/video/rugbypass",
                      yt_dlp="yt-dlp", bbc_discover=None, yt_discover=None,
-                     rp_discover=scan_rugbypass, rugby24_discover=None):
+                     rp_discover=scan_rugbypass, rugby24_discover=None,
+                     rugby24_cached=None):
     if not 1 <= youtube_limit <= 5000 or not 1 <= bbc_pages <= 20 or not 1 <= rugbypass_pages <= 50 or not 1 <= rugby24_pages <= 25:
         raise ValueError("Provider paging limits are out of range")
     bbc = load_file("pvr_refresh_bbc", "indexers/bbc")
@@ -73,7 +74,8 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
         elif source == "rugby24":
             adapter = load_file("pvr_refresh_rugby24", "indexers/rugby24")
             output[source] = (rugby24_discover or adapter.discover_all)(
-                pages=rugby24_pages, category=rugby24_category)
+                pages=rugby24_pages, category=rugby24_category,
+                cached=rugby24_cached)
         else:
             raise ValueError(f"Unknown source: {source}")
     return output
@@ -87,10 +89,24 @@ def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
     sources = tuple(dict.fromkeys(sources))
     if not sources or any(source not in SOURCES for source in sources):
         raise ValueError("Specify at least one supported rugby source")
+    # Reuse verified embed links from Atlas: refreshes still read listing pages,
+    # but an unchanged article need not be requested on every run. No new DB
+    # collection or auth state is required, and previews remain read-only.
+    rugby24_cached = {}
+    if "rugby24" in sources:
+        rugby24_cached = {
+            row["_id"]: row
+            for row in database.releases.find(
+                {"source": "rugby24"},
+                {"_id": 1, "source": 1, "id": 1, "metadata": 1,
+                 "availability_check": 1})
+            if isinstance(row.get("_id"), str)
+        }
     results = discover(sources, youtube_limit=youtube_limit, bbc_pages=bbc_pages,
                        rugbypass_pages=rugbypass_pages,
                        rugby24_pages=rugby24_pages,
                        rugby24_category=rugby24_category,
+                       rugby24_cached=rugby24_cached,
                        rugbypass=rugbypass, yt_dlp=yt_dlp)
     indexer = load_file("pvr_refresh_index_releases", "index_releases")
     matcher = load_file("pvr_refresh_match_releases", "match_releases")

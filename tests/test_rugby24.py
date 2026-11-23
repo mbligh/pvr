@@ -128,6 +128,71 @@ class IndexerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "RUGBY24_COOKIE_JAR"):
                     indexer.init_cookie_jar(jar)
 
+    def test_known_article_embed_is_reused_without_refetching(self):
+        now = dt.datetime(2026, 11, 23, tzinfo=dt.timezone.utc)
+        prem = indexer.DEFAULT_URL
+        article = BASE + LEAGUE_SLUG
+        page = '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>'
+        cache = {"rugby24:" + LEAGUE_SLUG: {
+            "source": "rugby24", "id": LEAGUE_SLUG,
+            "metadata": {"page_url": article,
+                         "embed_url": "https://ok.ru/videoembed/12345678901",
+                         "competition": "league"}}}
+        calls = []
+        def fetch(url):
+            calls.append(url)
+            if url == prem:
+                return page
+            raise AssertionError("known article should not be fetched")
+        rows = indexer.discover(pages=1, fetch=fetch, cached=cache, now=now)
+        self.assertEqual(calls, [prem])
+        self.assertEqual(rows[0]["metadata"]["embed_url"],
+                         "https://ok.ru/videoembed/12345678901")
+        self.assertEqual(rows[0]["metadata"]["embed_checked_at"],
+                         now.isoformat())
+
+    def test_recent_cached_embed_revalidates_weekly_not_hourly(self):
+        article = BASE + LEAGUE_SLUG
+        now = dt.datetime(2026, 11, 1, tzinfo=dt.timezone.utc)
+        cached = {"rugby24:" + LEAGUE_SLUG: {
+            "source": "rugby24", "id": LEAGUE_SLUG,
+            "metadata": {
+                "page_url": article, "competition": "league",
+                "embed_url": "https://ok.ru/videoembed/12345678901",
+                "embed_checked_at": (now - dt.timedelta(days=8)).isoformat(),
+            }}}
+        fetched = []
+        def fetch(url):
+            fetched.append(url)
+            if url == indexer.DEFAULT_URL:
+                return '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>'
+            if url == article:
+                return '<iframe src="//ok.ru/videoembed/12345678902"></iframe>'
+            raise AssertionError(url)
+        rows = indexer.discover(pages=1, fetch=fetch, cached=cached, now=now)
+        self.assertEqual(fetched, [indexer.DEFAULT_URL, article])
+        self.assertEqual(rows[0]["metadata"]["embed_url"],
+                         "https://ok.ru/videoembed/12345678902")
+
+    def test_invalid_cached_embed_never_skips_article_fetch(self):
+        cached = {"rugby24:" + LEAGUE_SLUG: {
+            "source": "rugby24", "id": LEAGUE_SLUG,
+            "metadata": {"page_url": BASE + LEAGUE_SLUG,
+                         "embed_url": "https://evil.example/videoembed/123",
+                         "competition": "league"}}}
+        pages = {
+            indexer.DEFAULT_URL: '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>',
+            BASE + LEAGUE_SLUG: '<iframe src="//ok.ru/videoembed/12345678902"></iframe>',
+        }
+        fetched = []
+        def fetch(url):
+            fetched.append(url)
+            return pages[url]
+        rows = indexer.discover(pages=1, fetch=fetch, cached=cached)
+        self.assertEqual(fetched, [indexer.DEFAULT_URL, BASE + LEAGUE_SLUG])
+        self.assertEqual(rows[0]["metadata"]["embed_url"],
+                         "https://ok.ru/videoembed/12345678902")
+
     def test_indexer_fails_on_empty_or_unplayable_pages(self):
         with self.assertRaisesRegex(ValueError, "no full-match"):
             indexer.discover(pages=1, fetch=lambda url: "<html></html>")

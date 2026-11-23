@@ -110,7 +110,27 @@ class RefreshTests(unittest.TestCase):
                                    rugby24_category="championship",
                                    rugby24_discover=fetch)
         self.assertEqual(out["rugby24"], self.releases["rugby24"])
-        fetch.assert_called_once_with(pages=1, category="championship")
+        fetch.assert_called_once_with(pages=1, category="championship",
+                                      cached=None)
+
+    def test_refresh_reads_cached_rugby24_releases_from_atlas(self):
+        existing = {
+            "_id": "rugby24:northampton-v-gloucester", "source": "rugby24",
+            "id": "northampton-v-gloucester",
+            "metadata": {"page_url": "https://rugby24.net/northampton-v-gloucester",
+                         "embed_url": "https://ok.ru/videoembed/12345678901",
+                         "competition": "league"},
+        }
+        self.db.releases.find.return_value = [existing]
+        seen = []
+        def scan(sources, **kwargs):
+            seen.append(kwargs["rugby24_cached"])
+            return {source: self.releases[source] for source in sources}
+        CLI.run(self.db, sources=("rugby24",), discover=scan,
+                output=io.StringIO())
+        self.assertEqual(seen[0], {existing["_id"]: existing})
+        self.db.releases.find.assert_called_once()
+        self.db.releases.bulk_write.assert_not_called()
 
     def test_provider_argument_validation(self):
         with self.assertRaises(ValueError):

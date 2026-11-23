@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Index Rugby24 full-match replays with validated OK.ru embeds. JSONL output."""
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from html.parser import HTMLParser
 import json
 import os
@@ -247,7 +247,7 @@ def match_date(title):
         return None
 
 
-def discover(url=DEFAULT_URL, *, pages=2, fetch=None):
+def discover(url=DEFAULT_URL, *, pages=2, fetch=None, cached=None, now=None):
     if not 1 <= pages <= 25:
         raise ValueError("Rugby24 pages must be between 1 and 25")
     if urlsplit(url).scheme != "https" or urlsplit(url).hostname != "rugby24.net":
@@ -264,7 +264,8 @@ def discover(url=DEFAULT_URL, *, pages=2, fetch=None):
                 calls[0] += 1
                 return fetch_html(page_url, cookie_jar=cookie_jar)
 
-            return discover(url, pages=pages, fetch=curl_fetch)
+            return discover(url, pages=pages, fetch=curl_fetch,
+                            cached=cached, now=now)
     entries = {}
     for page in range(1, pages + 1):
         page_url = url if page == 1 else url.split("?")[0] + "?page" + str(page)
@@ -273,16 +274,57 @@ def discover(url=DEFAULT_URL, *, pages=2, fetch=None):
             raise ValueError("Rugby24 listing contained no full-match entries: " + page_url)
         entries.update(found)
     releases = []
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        raise ValueError("Rugby24 cache clock must be timezone-aware")
+    cached = cached or {}
     for page_url, title in entries.items():
         slug = article_slug(page_url)
-        embed = embed_url(fetch(page_url))
+        uri = "rugby24:" + slug
+        kind = competition(title)
+        date = match_date(title)
+        known = cached.get(uri) or {}
+        prior = known.get("metadata") or {}
+        old_embed = prior.get("embed_url")
+        checked_at = prior.get("embed_checked_at")
+        checked = None
+        if isinstance(checked_at, str):
+            try:
+                checked = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
+                if checked.tzinfo is None or checked > now:
+                    checked = None
+            except ValueError:
+                pass
+        # Revalidate only recent recordings, no more than once per week.
+        # An existing known older replay is stable; retries on it add no value.
+        recent = False
+        if date:
+            age = (now.date() - datetime.fromisoformat(date).date()).days
+            recent = -2 <= age <= 30
+        stale = recent and checked is not None and now - checked >= timedelta(days=7)
+        reuse = (
+            known.get("source") == "rugby24"
+            and known.get("id") == slug
+            and prior.get("page_url") == page_url
+            and prior.get("competition") == kind
+            and isinstance(old_embed, str)
+            and EMBED.fullmatch(old_embed) is not None
+            and (known.get("availability_check") or {}).get("status") != "unavailable"
+            and not stale
+        )
+        if reuse:
+            embed = old_embed
+            checked_time = checked or now
+        else:
+            embed = embed_url(fetch(page_url))
+            checked_time = now
         if not embed:
             continue  # Unplayable articles must not become download candidates.
-        row = {"source": "rugby24", "id": slug, "uri": "rugby24:" + slug,
+        row = {"source": "rugby24", "id": slug, "uri": uri,
                "title": title, "type": "episode", "available": True,
                "metadata": {"page_url": page_url, "embed_url": embed,
-                            "competition": competition(title), "date_basis": "title"}}
-        date = match_date(title)
+                            "embed_checked_at": checked_time.isoformat(),
+                            "competition": kind, "date_basis": "title"}}
         if date:
             row["published"] = date
         releases.append(row)
@@ -291,7 +333,7 @@ def discover(url=DEFAULT_URL, *, pages=2, fetch=None):
     return releases
 
 
-def discover_all(*, pages=2, category="both", fetch=None):
+def discover_all(*, pages=2, category="both", fetch=None, cached=None, now=None):
     """Scan selected categories, sharing site cookies and a request budget.
 
     Each category is fetched independently and only validated full-match
@@ -312,11 +354,13 @@ def discover_all(*, pages=2, category="both", fetch=None):
                 calls[0] += 1
                 return fetch_html(url, cookie_jar=cookie_jar)
 
-            return discover_all(pages=pages, category=category, fetch=shared_fetch)
+            return discover_all(pages=pages, category=category, fetch=shared_fetch,
+                                cached=cached, now=now)
     rows = {}
     targets = CATEGORY_URLS if category == "both" else (CATEGORIES[category],)
     for target in targets:
-        for row in discover(target, pages=pages, fetch=fetch):
+        for row in discover(target, pages=pages, fetch=fetch,
+                            cached=cached, now=now):
             uri = row["uri"]
             if uri in rows and rows[uri] != row:
                 raise ValueError("Conflicting Rugby24 article across categories: " + uri)
