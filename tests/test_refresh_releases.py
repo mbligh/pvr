@@ -95,6 +95,15 @@ class RefreshTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-JSON"):
             CLI.scan_rugbypass(execute=lambda *args, **kw: Result(stdout="not json"))
 
+    def test_youtube_refresh_uses_combined_pwr_indexer(self):
+        calls = []
+        def fake_youtube(**kwargs):
+            calls.append(kwargs)
+            return self.releases["youtube"]
+        result = CLI.discover_sources(("youtube",), yt_discover=fake_youtube)
+        self.assertEqual(result["youtube"], self.releases["youtube"])
+        self.assertEqual(calls, [{"limit": 100, "binary": "yt-dlp"}])
+
     def test_provider_argument_validation(self):
         with self.assertRaises(ValueError):
             CLI.run(self.db, sources=("unknown",), discover=self.discover)

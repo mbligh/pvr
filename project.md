@@ -5,6 +5,7 @@
 - Discover scheduled rugby (including EPCR Investec Champions Cup) and Formula 1 events, and index recordings from supported providers.
 - Match releases to canonical events without mixing competitions, and preserve source metadata.
 - Acquire selected media, inspect recordings, and file episodes under the established sports directory structure.
+- Discover official PWR full-match recordings from both YouTube channel streams and the curated full-match playlist, deduplicating by video ID and avoiding repeated metadata fetches.
 - Store event, release, and file metadata in the MongoDB Atlas `pvr` database.
 - Run natively on slagg from scheduler/CLI entry points without Docker or a virtual environment.
 - Provide a read-only local dashboard for events, installed recordings, and quality.

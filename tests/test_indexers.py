@@ -76,6 +76,53 @@ class YouTubeIndexTests(unittest.TestCase):
             "id": "bdxiq73pR-I", "title": "Unclassified"}))
 
 
+    def test_default_pwr_sources_deduplicate_and_resolve_only_playlist_extras(self):
+        streamed = {"id": "bdxiq73pR-I",
+                    "title": "Loughborough Lightning vs Trailfinders Women",
+                    "live_status": "was_live", "release_date": "20261120"}
+        replay = {"id": "OWCDRBoSqmY",
+                  "title": "LIVE Premiership Women's Rugby | Saracens vs Trailfinders Women",
+                  "live_status": "not_live", "upload_date": "20260609",
+                  "duration": 6190}
+        pending = {"id": "aaaaaaaaaaa", "title": "Upcoming match",
+                   "live_status": "is_upcoming"}
+        urls = []
+        flat_mode = [False]
+
+        def fake(command, **kwargs):
+            url = command[-1]
+            urls.append(url)
+            if url == youtube.DEFAULT_URL:
+                self.assertEqual("--flat-playlist" in command, flat_mode[0])
+                rows = [streamed]
+            elif url == youtube.FULL_MATCH_PLAYLIST:
+                self.assertIn("--flat-playlist", command)
+                rows = [streamed, replay, pending]
+            elif url == "https://www.youtube.com/watch?v=OWCDRBoSqmY":
+                self.assertNotIn("--flat-playlist", command)
+                rows = [replay]
+            else:
+                self.fail("Unexpected metadata request: " + url)
+            return subprocess.CompletedProcess(
+                command, 0, stdout="".join(json.dumps(r) + "\n" for r in rows),
+                stderr="")
+
+        rows = youtube.discover_pwr(execute=fake)
+        self.assertEqual([r["id"] for r in rows],
+                         ["bdxiq73pR-I", "OWCDRBoSqmY"])
+        self.assertEqual(rows[1]["published"], "2026-06-09")
+        self.assertEqual(rows[1]["duration"], 6190)
+        self.assertEqual(urls, [
+            youtube.DEFAULT_URL, youtube.FULL_MATCH_PLAYLIST,
+            "https://www.youtube.com/watch?v=OWCDRBoSqmY"])
+
+        urls.clear()
+        flat_mode[0] = True
+        flat = youtube.discover_pwr(flat=True, execute=fake)
+        self.assertEqual([r["id"] for r in flat],
+                         ["bdxiq73pR-I", "OWCDRBoSqmY"])
+        self.assertEqual(urls, [youtube.DEFAULT_URL, youtube.FULL_MATCH_PLAYLIST])
+
     def test_original_livestream_date_preferred_over_upload(self):
         import datetime as dt
         original = dt.datetime(2026, 11, 20, 19, 30, tzinfo=dt.timezone.utc)

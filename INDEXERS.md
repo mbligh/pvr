@@ -22,7 +22,7 @@ On slagg (system Python, no virtual environment):
 
     cd ~/pvr
     python3 indexers/bbc --brand m001mnb5 --search "Trailfinders"
-    python3 indexers/youtube --url https://www.youtube.com/@ThePWROfficial/streams --search "Lightning"
+    ./indexers/youtube --search "Lightning"
 
 BBC uses the iPlayer iBL catalogue and works for BBC Sport online-only
 programmes which don't appear in the regular get_iplayer broadcast cache.
@@ -30,9 +30,15 @@ The default brand is PWR (`m001mnb5`); configure other brands with
 `--brand`.
 
 YouTube delegates channel/playlist enumeration to an installed `yt-dlp`.
-The default `--url` is the PWR Official **/streams** tab, not `/videos`.
-By default it retrieves full **per-video metadata without downloading media**;
-this is slower than a flat playlist but can recover dates for archived streams.
+By default the indexer combines the PWR Official **/streams** tab and the
+[curated full-match playlist](https://www.youtube.com/playlist?list=PL6NsZFkjlRqEZH4Pi5o9RoHfIfwzeo04l),
+not the noisy `/videos` tab. It retrieves full **per-video metadata without
+downloading media** for streams, then checks the full-match playlist in flat
+mode and only fetches individual metadata for video IDs not already seen.
+Both sources share the same `youtube:<id>` URI; duplicates are indexed once.
+This recovers uploaded full-match replays that do not appear under `/streams`.
+Use `--url <YouTube URL>` to scan one source explicitly instead of the default
+combined scan; use `--flat` to enumerate both sources without per-video lookups.
 The original livestream `release_timestamp` (or `release_date`) takes
 priority over the upload `timestamp` (or `upload_date`). The selected date
 appears in `published`, and `metadata.date_basis` states which field provided
