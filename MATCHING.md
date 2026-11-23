@@ -16,9 +16,15 @@ Atlas-backed CLI so future sports can have their own matching rules.
 * Accept known spelling and presentation variants such as Gloucester Hartpury,
   Saracens Women, Trailfinders and Ealing Trailfinders. It does not perform
   arbitrary string-similarity guesses.
-* Use the release's `published` field (which YouTube derives preferentially
-  from the original livestream timestamp). Convert timestamp values to
-  Europe/London date, then require a fixture within **±2 calendar days**.
+* Prefer an explicit, unambiguous UK-format match date in the video title
+  (for example, `FULL MATCH | Saracens v Harlequins | 02.11.25`). This is
+  necessary for recorded games uploaded three or more days after kickoff.
+  If the title has no valid unique date, use the release's `published` field,
+  which YouTube derives preferentially from the original livestream timestamp,
+  and convert timestamps to Europe/London date. Require a fixture within
+  **±2 calendar days** of the selected date; never guess from just team names.
+  Store the chosen evidence in `match_details.date_basis` (`title` or the
+  existing timestamp basis), while preserving the actual publication date.
 * A fixture is selected only when there is **exactly one** matching home/away
   fixture in that date window. Missing dates, missing historical fixtures and
   ambiguous candidates never produce automatic links.

@@ -90,6 +90,68 @@ class PWRMatcherTests(unittest.TestCase):
             self.assertEqual(result["episode"], 101)
             self.assertEqual(result["delta_days"], 0)
 
+    def test_full_match_titles_use_fixture_date_not_delayed_upload(self):
+        cases = [
+            ("youtube:ebOetTMT2g0",
+             "FULL MATCH | Saracens v Harlequins Round 2 | 02.11.25",
+             "2025-11-05T14:59:46+00:00", "Saracens", "Harlequins",
+             dt.datetime(2025, 11, 2, 15, tzinfo=UTC)),
+            ("youtube:00v5Ge8rpn0",
+             "FULL MATCH | Round 5 | Bristol v Gloucester Hartpury | 30.11.25",
+             "2025-12-03T10:26:18+00:00", "Bristol Bears",
+             "Gloucester-Hartpury", dt.datetime(2025, 11, 30, 12, 30, tzinfo=UTC)),
+            ("youtube:bDT6FAXkfcM",
+             "FULL MATCH | Gloucester Hartpury v Trailfinders Women | 06.12.25",
+             "2025-12-09T09:41:01+00:00", "Gloucester-Hartpury",
+             "Trailfinders Women", dt.datetime(2025, 12, 6, 15, 5, tzinfo=UTC)),
+        ]
+        for uri, title, published, home, away, kickoff in cases:
+            with self.subTest(uri=uri):
+                match = fixture(uri + ":fixture", kickoff, home=home, away=away,
+                                season=2025, number=204)
+                rec = release(uri, title, published, metadata={"date_basis": "timestamp"})
+                result = pwr.match_release(rec, [match])
+                self.assertEqual(result["status"], "candidate")
+                self.assertEqual(result["episode_id"], match["_id"])
+                self.assertEqual(result["date_basis"], "title")
+                self.assertEqual(result["delta_days"], 0)
+                self.assertEqual(result["recording_date"], kickoff.date().isoformat())
+                self.assertEqual(pwr.title_teams(title),
+                                 (pwr.known_team(home), pwr.known_team(away)))
+
+    def test_title_date_validity_ambiguity_and_fallback(self):
+        self.assertEqual(pwr.date_in_title("Saracens v Harlequins | 2.11.2025"),
+                         dt.date(2025, 11, 2))
+        self.assertIsNone(pwr.date_in_title("Saracens v Harlequins | 31.02.25"))
+        self.assertIsNone(pwr.date_in_title("Saracens v Harlequins 02.11.25 / 03.11.25"))
+        self.assertIsNone(pwr.date_in_title("2025/26: Saracens v Harlequins"))
+        match = fixture("dated", dt.datetime(2025, 11, 2, 15, tzinfo=UTC),
+                        home="Saracens", away="Harlequins")
+        rec = release("youtube:late", "Saracens v Harlequins",
+                      "2025-11-05T14:59:46+00:00")
+        self.assertEqual(pwr.match_release(rec, [match])["status"], "no_fixture")
+        self.assertEqual(pwr.match_release(
+            dict(rec, title="Saracens v Harlequins | 2.11.2025"),
+            [fixture("wrong_sides", match["scheduled"],
+                     home="Harlequins", away="Saracens")])["status"], "no_fixture")
+
+    def test_title_date_used_in_persisted_match_provenance(self):
+        match = fixture("dated", dt.datetime(2025, 11, 2, 15, tzinfo=UTC),
+                        home="Saracens", away="Harlequins")
+        rec = release("youtube:ebOetTMT2g0",
+                      "FULL MATCH | Saracens v Harlequins Round 2 | 02.11.25",
+                      "2025-11-05T14:59:46+00:00",
+                      metadata={"date_basis": "timestamp"})
+        db = FakeDB([match], [rec])
+        report = matcher_cli.run(db, apply=True, stream=io.StringIO(),
+                                 summary_stream=io.StringIO())
+        self.assertEqual(report["linked"], 1)
+        stored = db.releases.documents[0]
+        self.assertEqual(stored["match_details"]["date_basis"], "title")
+        self.assertEqual(stored["match_details"]["recording_date"], "2025-11-02")
+        self.assertEqual(stored["match_details"]["delta_days"], 0)
+        self.assertEqual(stored["published"], "2025-11-05T14:59:46+00:00")
+
     def test_pwr_2025_recording_cannot_match_2026_season(self):
         old = release("youtube:old", YOUTUBE["title"],
                       "2025-11-20T19:15:00Z")

@@ -16,7 +16,7 @@ from matchers.pwr import SERIES_ID, match_release
 from orchestration.source_registry import sources_for
 
 SOURCES = sources_for(SERIES_ID)
-METHOD = "pwr-teams-date-v1"
+METHOD = "pwr-teams-date-v2"
 
 
 def evaluate(release, episodes, tolerance_days=2):
@@ -56,7 +56,7 @@ def run(database, *, apply=False, source=None, tolerance_days=2, verbose=False,
                 "scheduled_date": result["scheduled_date"],
                 "delta_days": result["delta_days"],
                 "teams": result["teams"],
-                "date_basis": release.get("metadata", {}).get("date_basis"),
+                "date_basis": result.get("date_basis"),
             }
             # An existing manual/automatic link wins. Avoid races with other
             # writers: _id and a missing/null episode_id must both match.

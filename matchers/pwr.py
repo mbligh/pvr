@@ -39,6 +39,9 @@ ALIASES = {
 }
 
 VERSUS = re.compile(r"(?<![a-z\d])(?:vs?\.?|versus)(?![a-z\d])", re.I)
+# Some official full-match uploads appear three or more days after kickoff.
+# Their titles can explicitly identify the actual fixture date (UK format).
+TITLE_DATE = re.compile(r"(?<!\d)(\d{1,2})([./-])(\d{1,2})\2(\d{2}|\d{4})(?!\d)")
 NON_MATCH = re.compile(
     r"\b(?:highlights?|preview|trailer|interview|reaction|next[ -]?gen|"
     r"academy|under[ -]?\d\d|u\d\d)\b", re.I
@@ -89,8 +92,30 @@ def title_teams(title):
     return (home, away) if home and away and home != away else None
 
 
+def date_in_title(title):
+    """Extract one unambiguous UK-formatted fixture date from a video title.
+
+    Invalid dates and titles containing conflicting dates are not evidence.
+    Avoid treating YouTube's upload date as kickoff when the title is explicit.
+    """
+    if not isinstance(title, str):
+        return None
+    dates = set()
+    for match in TITLE_DATE.finditer(title):
+        day, _, month, year = match.groups()
+        year = 2000 + int(year) if len(year) == 2 else int(year)
+        try:
+            dates.add(dt.date(year, int(month), int(day)))
+        except ValueError:
+            continue
+    return next(iter(dates)) if len(dates) == 1 else None
+
+
 def recording_date(release):
-    """Interpret timestamps in UK time, where the PWR match was played."""
+    """Use explicit title fixture date, falling back to UK publication date."""
+    stated = date_in_title(release.get("title"))
+    if stated is not None:
+        return stated
     value = release.get("published")
     if not isinstance(value, str) or not value.strip():
         return None
@@ -170,4 +195,6 @@ def match_release(release, episodes, tolerance_days=2):
         "recording_date": date.isoformat(),
         "scheduled_date": fixture_date(episode).isoformat(),
         "delta_days": delta,
+        "date_basis": ("title" if date_in_title(title) is not None else
+                       release.get("metadata", {}).get("date_basis")),
     }
