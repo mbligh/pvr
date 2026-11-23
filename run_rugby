@@ -168,6 +168,13 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                             "--rugby24-pages", rugby24_pages,
                             "--yt-dlp", yt_dlp, "--rugbypass", rugbypass,
                             "--database", database, "--lock-root", incoming_root]
+                    rugby24_category = "both"
+                    if source == "rugby24":
+                        rugby24_category = {
+                            "Rugby_Mens_Prem": "prem",
+                            "Rugby_Mens_Championship": "championship",
+                        }.get(series, "both")
+                        args.extend(("--rugby24-category", rugby24_category))
                     try:
                         result = invoke("refresh_releases", *args)
                         if result.returncode == 75:
@@ -184,9 +191,13 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                                 type(report.get("total_releases")) is not int or
                                 report["total_releases"] < 0):
                             raise RuntimeError("Invalid discovery report for " + source)
-                        polling.record_success(db, source, now=now)
+                        # A one-series Rugby24 scan does not refresh both
+                        # categories; do not mark the shared poll source fresh.
+                        if rugby24_category == "both":
+                            polling.record_success(db, source, now=now)
                     except Exception:
-                        polling.record_failure(db, source, now=now)
+                        if rugby24_category == "both":
+                            polling.record_failure(db, source, now=now)
                         raise
             if not missing:
                 return 0
