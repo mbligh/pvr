@@ -157,6 +157,25 @@ YouTube and RugbyPass together. Source selection for the international
 series is restricted to RugbyPass: using `--source youtube` or
 `--source bbc` with one of these series is deliberately an error.
 
+## Rugby24 Champions Cup
+
+The existing Rugby24 OK.ru embed downloader now also accepts matched
+`Rugby_Mens_Championship` fixtures. The indexer scans both Rugby24
+Premiership and Champions Cup category pages by default, while matchers
+keep Premiership Rugby Cup replays distinct from European Champions Cup.
+As always, downloads are preview-only unless `--apply` is supplied.
+
+```sh
+./refresh_releases --source rugby24 --rugby24-pages 2 --apply
+./match_championship                   # inspect linked/ambiguous fixtures
+./acquire_rugby --series Rugby_Mens_Championship --limit 10
+./run_rugby --series Rugby_Mens_Championship --apply --limit 1
+```
+
+Downloads are staged and verified with ffprobe, then filed under
+`/data/sports/Rugby_Mens_Championship/Season_YYYY/` with the
+existing EPCR NFO. Existing published files are never overwritten.
+
 ## Complete selection policy
 
 For each scheduled, numbered supported rugby fixture older than three hours (configurable),

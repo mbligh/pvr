@@ -158,24 +158,32 @@ limited to accessible/featured full-match sections. For detailed matching
 rules and preview commands see [MATCHING.md](MATCHING.md).
 
 
-## Rugby24 men's Premiership replay indexer (2026-11-22)
+## Rugby24 men's Premiership and Champions Cup replay indexer
 
-`indexers/rugby24` enumerates the Premiership category (`?page2` etc),
-visits each full-match article, and emits a stable `rugby24:<article-slug>`
-release only when a validated `https://ok.ru/videoembed/<id>` iframe is present.
-It records article URL, embed URL, match date from the title and league/cup classification.
-Cup articles are indexed, but are **not** matched to the Gallagher PREM league
-fixtures. This source uses no account credentials.
+`indexers/rugby24` scans **both** Premiership (`/premiership-rugby`) and
+EPCR Champions Cup (`/champions-cup`) categories, each with its own
+`--pages` budget (`?page2` etc). It visits full-match articles and emits
+stable `rugby24:<article-slug>` release URIs only when they carry a
+validated `https://ok.ru/videoembed/<id>` iframe.
+
+Titles are classified as `league`, `cup` (Premiership Rugby Cup), or
+`champions-cup`. Highlights and Challenge Cup entries are excluded.
+Only `league` can match `Rugby_Mens_Prem`, and only `champions-cup` can
+match `Rugby_Mens_Championship`. Matches require exactly one fixture
+with home/away team aliases and a ±2-day date window; ambiguous cases are
+not linked. The public site may block requests with HTTP 403.
 
     ./indexers/rugby24 --pages 2 | ./index_releases --dry-run
-    ./refresh_releases --source rugby24 --rugby24-pages 3 --apply
-    ./match_prem                    # preview fixture links
-    ./match_prem --apply            # apply links, if desired
+    ./indexers/rugby24 --url https://rugby24.net/champions-cup --pages 2
+    ./refresh_releases --source rugby24 --rugby24-pages 2 --apply
+    ./match_prem              # preview PREM fixture links
+    ./match_championship      # preview Champions Cup fixture links
 
-The refresh command runs `match_prem --apply` after indexing. It matches
-only unambiguous league fixtures by home/away team and a ±2-day date window.
-`run_rugby --series Rugby_Mens_Prem` uses Rugby24 discovery and acquisition
-with the same per-source polling, retry, locking and provenance rules as PWR.
+Refresh runs both matchers after indexing. `run_rugby --series
+Rugby_Mens_Championship --apply` or `run_rugby --series Rugby_Mens_Prem
+--apply` uses Rugby24 discovery and acquisition with the same
+polling, retry, locking and provenance rules. Both categories share a
+temporary cookie jar and a 0.5-second delay across requests.
 
 ### Rugby24 request client and HTTP 403 diagnostics
 

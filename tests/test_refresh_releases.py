@@ -63,18 +63,23 @@ class RefreshTests(unittest.TestCase):
         national.run.return_value = {"linked": 12, "fixtures": 166}
         prem = MagicMock()
         prem.run.return_value = {"linked": 4, "fixtures": 79}
-        with patch.object(CLI, "load_file", side_effect=[indexer, matcher, national, prem]):
+        championship = MagicMock()
+        championship.run.return_value = {"linked": 7, "fixtures": 48}
+        with patch.object(CLI, "load_file", side_effect=[
+                indexer, matcher, national, prem, championship]):
             report = CLI.run(self.db, apply=True, discover=self.discover,
                              output=io.StringIO())
         self.assertEqual(indexer.upsert_releases.call_count, 4)
         matcher.run.assert_called_once()
         national.run.assert_called_once()
         prem.run.assert_called_once()
+        championship.run.assert_called_once()
         self.assertTrue(matcher.run.call_args.kwargs["apply"])
         self.assertTrue(national.run.call_args.kwargs["apply"])
         self.assertEqual(report["matching"]["linked"], 2)
         self.assertEqual(report["international_matching"]["linked"], 12)
         self.assertEqual(report["prem_matching"]["linked"], 4)
+        self.assertEqual(report["championship_matching"]["linked"], 7)
 
     def test_rugbypass_jsonl_parsing_and_failure_is_safe(self):
         class Result:

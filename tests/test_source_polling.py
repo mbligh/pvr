@@ -85,7 +85,9 @@ class PollingTests(unittest.TestCase):
         self.assertEqual(sources_for("Rugby_Mens_Intl"), ("rugbypass",))
         self.assertEqual(sources_for("Formula_1"), ("reddit-teletz",))
         self.assertNotIn("Rugby_Mens_Prem", series_for("bbc"))
-        self.assertEqual(series_for("rugby24"), ("Rugby_Mens_Prem",))
+        self.assertEqual(sources_for("Rugby_Mens_Championship"), ("rugby24",))
+        self.assertEqual(series_for("rugby24"), (
+            "Rugby_Mens_Prem", "Rugby_Mens_Championship"))
 
     def test_rugby24_polling_uses_prem_fixtures(self):
         prem = episode("Rugby_Mens_Prem", NOW - dt.timedelta(minutes=30))

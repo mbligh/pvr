@@ -35,6 +35,8 @@ def source_set(series, sources):
     allowed = RUGBY_SOURCES if series is None else sources_for(series)
     values = tuple(dict.fromkeys(sources or allowed))
     if not values or any(item not in allowed for item in values):
+        if series in ("Rugby_Mens_Prem", "Rugby_Mens_Championship"):
+            raise ValueError("Rugby24 only for the selected series")
         raise ValueError("RugbyPass only for international series; source not supported for selected series")
     return values
 

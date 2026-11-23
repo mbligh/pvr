@@ -152,6 +152,16 @@ class RugbyRunTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.source_set("Rugby_Mens_Prem", ["youtube"])
 
+    def test_championship_series_refresh_and_acquire_is_rugby24(self):
+        self.assertEqual(runner.source_set("Rugby_Mens_Championship", None),
+                         ("rugby24",))
+        self.assertEqual(self.invoke(apply=True, series="Rugby_Mens_Championship"), 0)
+        refresh, acquire = (x[0] for x in self.calls)
+        self.assertEqual(refresh[refresh.index("--source") + 1], "rugby24")
+        self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
+        with self.assertRaisesRegex(ValueError, "Rugby24 only"):
+            runner.source_set("Rugby_Mens_Championship", ["youtube"])
+
     def test_national_series_refresh_is_only_rugbypass(self):
         self.discovery = json.dumps({
             "mode": "apply", "sources": ["rugbypass"], "total_releases": 8

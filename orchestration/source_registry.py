@@ -13,7 +13,7 @@ SOURCE_SERIES = {
         "Rugby_Mens_Nations",
         "Rugby_Womens_WXV",
     ),
-    "rugby24": ("Rugby_Mens_Prem",),
+    "rugby24": ("Rugby_Mens_Prem", "Rugby_Mens_Championship"),
     "reddit-teletz": ("Formula_1",),
 }
 RUGBY_SOURCES = ("bbc", "youtube", "rugbypass", "rugby24")
@@ -25,7 +25,7 @@ SERIES_SOURCES = {
 }
 RUGBY_SERIES = ("Rugby_Womens_PWR", "Rugby_Mens_Intl",
                 "Rugby_Womens_Intl", "Rugby_Mens_Nations", "Rugby_Womens_WXV",
-                "Rugby_Mens_Prem")
+                "Rugby_Mens_Prem", "Rugby_Mens_Championship")
 
 
 def sources_for(series):

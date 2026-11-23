@@ -44,7 +44,7 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         adapter = "rugbypass"
     elif uri.startswith("rugby24:"):
         rugby24_id(uri)
-        expected_series = "Rugby_Mens_Prem"
+        expected_series = ("Rugby_Mens_Prem", "Rugby_Mens_Championship")
         adapter = "rugby24"
     elif uri.startswith("reddit-teletz:"):
         transfernow_id(uri)

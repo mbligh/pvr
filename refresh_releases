@@ -71,7 +71,8 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
             output[source] = rp_discover(script=rugbypass, pages=rugbypass_pages)
         elif source == "rugby24":
             adapter = load_file("pvr_refresh_rugby24", "indexers/rugby24")
-            output[source] = (rugby24_discover or adapter.discover)(pages=rugby24_pages)
+            output[source] = (rugby24_discover or adapter.discover_all)(
+                pages=rugby24_pages)
         else:
             raise ValueError(f"Unknown source: {source}")
     return output
@@ -121,17 +122,25 @@ def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
             prem = load_file("pvr_refresh_match_prem", "match_prem")
             prem_report = prem.run(database, apply=True, stream=io.StringIO(),
                                    summary_stream=io.StringIO())
+            championship = load_file("pvr_refresh_match_championship",
+                                     "match_championship")
+            championship_report = championship.run(
+                database, apply=True, stream=io.StringIO(),
+                summary_stream=io.StringIO())
         else:
             prem_report = None
+            championship_report = None
     else:
         matched = None
         national_report = None
         prem_report = None
+        championship_report = None
     outcome = {"mode": "apply" if apply else "preview",
                "sources": list(sources), "releases": counts,
                "total_releases": sum(counts.values()),
                "matching": matched, "international_matching": national_report,
                "prem_matching": prem_report,
+               "championship_matching": championship_report,
                "note": "Preview does not link newly discovered releases" if not apply else None}
     print(json.dumps(outcome, sort_keys=True), file=output)
     return outcome

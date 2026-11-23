@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Preview-first link of Rugby24 Champions Cup replays to EPCR fixtures."""
+import argparse
+import collections
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import sys
+
+from matchers.championship import SERIES_ID, match_release
+
+METHOD = "rugby24-championship-teams-date-v1"
+
+
+def run(database, *, apply=False, tolerance_days=2,
+        stream=sys.stdout, summary_stream=sys.stderr):
+    episodes = list(database.episodes.find({"series_id": SERIES_ID}))
+    # No EPCR fixtures yet is a legitimate state during initial migration.
+    # A source refresh should not prevent PREM matches from being indexed.
+    counts = collections.Counter()
+    now = dt.datetime.now(dt.timezone.utc)
+    for release in database.releases.find({"source": "rugby24",
+                                           "metadata.competition": "champions-cup"}):
+        result = match_release(release, episodes, tolerance_days)
+        result.update(uri=release["_id"], title=release.get("title"))
+        existing = release.get("episode_id")
+        if existing:
+            result["status"] = ("already_linked" if result.get("episode_id") == existing
+                                else "existing_link")
+        elif result["status"] == "candidate" and apply:
+            details = {key: result[key] for key in
+                       ("recording_date", "scheduled_date", "delta_days", "teams")}
+            write = database.releases.update_one(
+                {"_id": release["_id"], "episode_id": None},
+                {"$set": {"episode_id": result["episode_id"], "matched_at": now,
+                          "match_method": METHOD, "match_details": details}})
+            result["status"] = "linked" if write.modified_count == 1 else "write_conflict"
+        counts[result["status"]] += 1
+        if result["status"] in ("candidate", "linked", "ambiguous", "write_conflict"):
+            print(json.dumps(result, default=str), file=stream)
+    report = {"mode": "apply" if apply else "preview", "series": SERIES_ID,
+              "fixtures": len(episodes), "processed": sum(counts.values()),
+              **dict(sorted(counts.items()))}
+    print(json.dumps(report, sort_keys=True), file=summary_stream)
+    return report
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--tolerance-days", type=int, default=2)
+    parser.add_argument("--database", default=os.environ.get("MONGODB_DATABASE", "pvr"))
+    args = parser.parse_args(argv)
+    if not 0 <= args.tolerance_days <= 7:
+        parser.error("--tolerance-days must be 0..7")
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        uri = (Path.home() / ".mongodb" / "pvr").read_text().strip()
+    from pymongo import MongoClient
+    with MongoClient(uri, serverSelectionTimeoutMS=15000) as client:
+        client.admin.command("ping")
+        run(client[args.database], apply=args.apply,
+            tolerance_days=args.tolerance_days)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
