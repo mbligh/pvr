@@ -89,18 +89,7 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
                 "--write-out", "%{http_code}|%{url_effective}",
                 current,
             ]
-            options = {"capture_output": True, "text": True, "check": False}
-        if binary == Path("/usr/bin/cf-curl"):
-            # Ensure cf-curl invokes the binary and browser profile installed
-            # by the same Debian package, even if /usr/local/bin precedes
-            # /usr/bin on PATH. Leave explicit wrapper overrides alone.
-            options["env"] = {
-                **os.environ,
-                "CFSOLVE_BIN": "/usr/bin/cfsolve",
-                "CFSOLVE_PROFILE":
-                    "/usr/share/cfsolve/profiles/safari-26-ios.json",
-            }
-        result = execute(command, **options)
+            result = execute(command, capture_output=True, text=True, check=False)
             if result.returncode:
                 error = result.stderr.strip()[:250]
                 raise RuntimeError(
@@ -197,7 +186,18 @@ def fetch_page(url, *, cookie_jar, execute=subprocess.run):
             "--allowed-host", "rugby24.net", "--fail",
             "-H", "Accept: text/html", "-o", str(body_path), url,
         ]
-        result = execute(command, capture_output=True, text=True, check=False)
+        options = {"capture_output": True, "text": True, "check": False}
+        if binary == Path("/usr/bin/cf-curl"):
+            # Ensure cf-curl invokes the binary and browser profile installed
+            # by the same Debian package, even if /usr/local/bin precedes
+            # /usr/bin on PATH. Leave explicit wrapper overrides alone.
+            options["env"] = {
+                **os.environ,
+                "CFSOLVE_BIN": "/usr/bin/cfsolve",
+                "CFSOLVE_PROFILE":
+                    "/usr/share/cfsolve/profiles/safari-26-ios.json",
+            }
+        result = execute(command, **options)
         if result.returncode:
             # cf-curl never writes cookie values to stderr, but limit how
             # much upstream diagnostic text enters polling logs.
