@@ -146,6 +146,59 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
             return body.decode("utf-8", errors="replace")
     raise RuntimeError("Rugby24 exceeded five redirects")
 
+
+def fetch_page(url, *, cookie_jar, execute=subprocess.run):
+    """Use cf-curl for Rugby24 if installed; keep curl-only as a fallback.
+
+    cf-curl manages its own private cross-run clearance cache. Its redirect
+    guard, HTTP error handling and response cap preserve the discovery
+    contract without affecting the other PVR indexers. An explicit client
+    path must exist; use RUGBY24_CF_CURL=off to force legacy curl.
+    """
+    if urlsplit(url).scheme != "https":
+        raise ValueError("Refusing non-Rugby24 URL")
+    try:
+        safe_rugby24_url(url)
+    except ValueError as exc:
+        raise ValueError("Refusing non-Rugby24 URL") from exc
+
+    configured = os.environ.get("RUGBY24_CF_CURL")
+    if configured is not None and configured.casefold() in ("off", "0", "false"):
+        return fetch_html(url, cookie_jar=cookie_jar, execute=execute)
+    if configured is None:
+        configured = shutil.which("cf-curl") or str(
+            Path("~/tools/video/cf-curl").expanduser())
+    binary = Path(configured).expanduser()
+    if not binary.is_file():
+        if "RUGBY24_CF_CURL" in os.environ:
+            raise RuntimeError("Configured Rugby24 cf-curl is missing: " + str(binary))
+        return fetch_html(url, cookie_jar=cookie_jar, execute=execute)
+    if not os.access(binary, os.X_OK):
+        raise RuntimeError("Rugby24 cf-curl is not executable: " + str(binary))
+
+    with tempfile.TemporaryDirectory(prefix="pvr-rugby24-cf-curl-") as temporary:
+        body_path = Path(temporary) / "response.html"
+        command = [
+            str(binary), "-L", "--compressed",
+            "--max-time", "90", "--max-filesize", str(MAX_HTML_BYTES),
+            "--allowed-host", "rugby24.net", "--fail",
+            "-H", "Accept: text/html", "-o", str(body_path), url,
+        ]
+        result = execute(command, capture_output=True, text=True, check=False)
+        if result.returncode:
+            # cf-curl never writes cookie values to stderr, but limit how
+            # much upstream diagnostic text enters polling logs.
+            detail = result.stderr.strip()[:300]
+            raise RuntimeError(
+                "Rugby24 cf-curl failed at " + urlsplit(url).path
+                + (": " + detail if detail else f" (exit {result.returncode})"))
+        if not body_path.is_file() or not body_path.stat().st_size:
+            raise RuntimeError("Rugby24 cf-curl returned no HTML")
+        data = body_path.read_bytes()
+        if len(data) > MAX_HTML_BYTES:
+            raise ValueError("Rugby24 page too large")
+        return data.decode("utf-8", errors="replace")
+
 def article_slug(url):
     parts = urlsplit(url)
     if (parts.scheme != "https" or parts.hostname != "rugby24.net"
@@ -262,7 +315,7 @@ def discover(url=DEFAULT_URL, *, pages=2, fetch=None, cached=None, now=None):
                 if calls[0]:
                     time.sleep(0.5)
                 calls[0] += 1
-                return fetch_html(page_url, cookie_jar=cookie_jar)
+                return fetch_page(page_url, cookie_jar=cookie_jar)
 
             return discover(url, pages=pages, fetch=curl_fetch,
                             cached=cached, now=now)
@@ -352,7 +405,7 @@ def discover_all(*, pages=2, category="both", fetch=None, cached=None, now=None)
                 if calls[0]:
                     time.sleep(0.5)
                 calls[0] += 1
-                return fetch_html(url, cookie_jar=cookie_jar)
+                return fetch_page(url, cookie_jar=cookie_jar)
 
             return discover_all(pages=pages, category=category, fetch=shared_fetch,
                                 cached=cached, now=now)

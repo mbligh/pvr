@@ -193,33 +193,52 @@ temporary cookie jar and a 0.5-second delay across requests.
 
 ### Rugby24 request client and HTTP 403 diagnostics
 
-Rugby24 uses the system `curl` executable with a browser User-Agent,
-as confirmed to return HTTP 200 on slagg. It reuses a temporary cookie
-jar across category and article requests and delays 0.5 seconds between
-requests. No `curl_cffi` Python dependency or privileged pip install is
-required. The previous `urllib` request with the PVR User-Agent returned
-HTTP 403; the exact reason for that difference is not established.
-Rugby24 sometimes redirects its HTTPS URLs to HTTP at the same path.
-The adapter follows only checked redirects on `rugby24.net`, allowing
-HTTP for this site's pages when required. Curl cannot automatically follow
-redirects; each hop is separately validated (host, scheme, no credentials
-or custom port), reuses cookies, and counts toward the five-hop limit.
-An HTTPS ↔ HTTP redirect cycle is rejected. HTTP traffic is unencrypted;
-Rugby24 page metadata should not be considered authenticated.
-Ordinary `refresh_releases` runs also load existing Rugby24 releases
-from Atlas and reuse a validated, competition-matched `metadata.embed_url`
-rather than refetching every article on each poll. Fresh article fetches
-record `metadata.embed_checked_at`; only replays within 30 days of their
-match date are revalidated, no more than weekly. Legacy cached embeds
-without timestamps are initially reused and timestamped; known unavailable
-embeds are refetched. A new article still requires one page request.
-The standalone `indexers/rugby24` CLI has no Atlas cache.
+Rugby24 prefers `cf-curl` when it is installed on the host. This is a
+standalone Python/curl wrapper maintained in `mbligh/tools/video/cf-curl`;
+it invokes the prebuilt `cfsolve` executable **only** when the response
+has `cf-mitigated: challenge`. It saves the clearance in a private
+per-host cache under `~/.cache/cf-curl/`, then returns the fetched HTML.
+Later Rugby24 pages reuse that cookie with ordinary curl; Cloudflare
+challenges cause at most one solver attempt per request. No PVR MongoDB
+collection contains authentication cookies, and no Rust or Cargo is
+needed on slagg at runtime.
 
-Cloudflare may instead return `HTTP 403` with `cf-mitigated: challenge`.
-That is an explicit browser challenge, not a redirect or an empty match
-catalogue. Even an automated browser scraper can encounter the same block.
-This indexer fails closed rather than repeatedly retrying or claiming it
-has successfully discovered zero replays.
+To deploy the tested standalone solver and its profile after pulling tools:
+
+```sh
+cd ~/tools && git pull
+cd /tmp/cfsolve-rugby24.NH9rz3/src
+sudo install -m 755 target/release/challenge /usr/local/bin/cfsolve
+sudo mkdir -p /usr/local/share/cfsolve
+sudo cp -a profiles /usr/local/share/cfsolve/
+sudo install -m 755 ~/tools/video/cf-curl /usr/local/bin/cf-curl
+cd ~/pvr && git pull
+```
+
+The indexer detects `cf-curl` on `PATH`, or at
+`~/tools/video/cf-curl`. Override the executable path with
+`RUGBY24_CF_CURL=/path/to/cf-curl`, or set `RUGBY24_CF_CURL=off`
+to use the original curl-only transport. The latter retains support for
+`RUGBY24_COOKIE_JAR` and `RUGBY24_USER_AGENT` as described below.
+For a standalone source check, use
+`./refresh_releases --source rugby24 --rugby24-category championship`
+without `--apply`.
+
+The cf-curl path permits only Rugby24 HTML, requires the final URL to
+remain on `rugby24.net`, rejects non-2xx HTTP errors, and caps responses
+at 2 MB. It allows same-host HTTPS-to-HTTP redirects, which Rugby24
+sometimes issues. The wrapper verifies the final URL; unlike the legacy
+transport, it cannot reject an intermediate off-host redirect before
+curl follows it. No privileged credentials are sent, and the clearance
+cookie is restricted to the Rugby24 host.
+
+Without `cf-curl`, the indexer keeps the original system-curl transport.
+It separately checks each same-host HTTP(S) redirect, uses a private
+temporary cookie jar and limits redirects to five hops. The challenge
+is then reported as an error rather than silently treating it as no
+recordings. Ordinary `refresh_releases` scans still reuse stored valid
+embeds, avoiding unnecessary article requests and respecting the
+per-category failure backoff.
 
 To scan Champions Cup without touching the independently protected
 Premiership category, use `--category championship` (or
@@ -227,8 +246,8 @@ Premiership category, use `--category championship` (or
 `run_rugby --series Rugby_Mens_Championship` selects this automatically.
 Category-specific runs do not reset the shared all-category polling state.
 
-If Rugby24 allows a previously validated browser session to access pages,
-you can *optionally* supply a local Netscape-format cookies.txt file
+When using the legacy curl transport, you can *optionally* supply a
+local Netscape-format cookies.txt file
 via `RUGBY24_COOKIE_JAR`, and set `RUGBY24_USER_AGENT` to the exact user
 agent of that browser. Cookies are copied to a private temporary file
 for each scan; the original is not modified, and neither path nor contents

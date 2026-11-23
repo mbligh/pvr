@@ -202,6 +202,76 @@ class IndexerTests(unittest.TestCase):
         self.assertIsNone(indexer.embed_url('<iframe src="https://evil.tld/videoembed/123456"></iframe>'))
 
 
+
+    def test_cf_curl_is_preferred_for_rugby24_when_installed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            wrapper = root / "cf-curl"
+            wrapper.write_text("#!/bin/sh\n")
+            wrapper.chmod(0o755)
+            cookie_jar = root / "unused-cookies.txt"
+            seen = []
+            def execute(command, **kwargs):
+                seen.append(command)
+                self.assertEqual(kwargs, {"capture_output": True,
+                                          "text": True, "check": False})
+                self.assertEqual(command[0], str(wrapper))
+                self.assertEqual(command[command.index("--allowed-host") + 1],
+                                 "rugby24.net")
+                self.assertEqual(command[command.index("--max-filesize") + 1],
+                                 str(indexer.MAX_HTML_BYTES))
+                self.assertIn("--fail", command)
+                self.assertEqual(command[-1], indexer.CHAMPIONS_URL)
+                pathlib.Path(command[command.index("-o") + 1]).write_text(
+                    "<html>champions cup page</html>")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            with unittest.mock.patch.dict(os.environ, {
+                    "RUGBY24_CF_CURL": str(wrapper)}):
+                page = indexer.fetch_page(indexer.CHAMPIONS_URL,
+                                          cookie_jar=cookie_jar, execute=execute)
+            self.assertEqual(page, "<html>champions cup page</html>")
+            self.assertEqual(len(seen), 1)
+
+    def test_cf_curl_fails_closed_on_transport_error_and_oversized_page(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            wrapper = root / "cf-curl"
+            wrapper.write_text("#!/bin/sh\n")
+            wrapper.chmod(0o755)
+            def failed(command, **kwargs):
+                return subprocess.CompletedProcess(
+                    command, 1, "", "cf-curl: Cloudflare challenge detected; cfsolve failed")
+            with unittest.mock.patch.dict(os.environ, {"RUGBY24_CF_CURL": str(wrapper)}):
+                with self.assertRaisesRegex(RuntimeError, "Cloudflare challenge"):
+                    indexer.fetch_page(indexer.DEFAULT_URL,
+                                      cookie_jar=root / "unused.txt", execute=failed)
+                def oversized(command, **kwargs):
+                    pathlib.Path(command[command.index("-o") + 1]).write_bytes(
+                        b"x" * (indexer.MAX_HTML_BYTES + 1))
+                    return subprocess.CompletedProcess(command, 0, "", "")
+                with self.assertRaisesRegex(ValueError, "page too large"):
+                    indexer.fetch_page(indexer.DEFAULT_URL,
+                                      cookie_jar=root / "unused.txt", execute=oversized)
+
+    def test_cf_curl_missing_explicit_path_and_legacy_opt_out(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            jar = root / "legacy.txt"
+            with unittest.mock.patch.dict(os.environ, {
+                    "RUGBY24_CF_CURL": str(root / "missing")}):
+                with self.assertRaisesRegex(RuntimeError, "is missing"):
+                    indexer.fetch_page(indexer.DEFAULT_URL, cookie_jar=jar)
+            def old_curl(command, **kwargs):
+                self.assertEqual(command[0], "curl")
+                pathlib.Path(command[command.index("--output") + 1]).write_text(
+                    "<html>legacy</html>")
+                return subprocess.CompletedProcess(command, 0,
+                                                   "200|" + command[-1], "")
+            with unittest.mock.patch.dict(os.environ, {"RUGBY24_CF_CURL": "off"}):
+                page = indexer.fetch_page(indexer.DEFAULT_URL,
+                                          cookie_jar=jar, execute=old_curl)
+            self.assertEqual(page, "<html>legacy</html>")
+
     def test_curl_transport_cookie_jar_and_http_403_diagnostics(self):
         with tempfile.TemporaryDirectory() as temporary:
             cookie_jar = pathlib.Path(temporary) / "cookies.txt"
