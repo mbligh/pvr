@@ -8,7 +8,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from icalendar import Calendar
+from zoneinfo import ZoneInfo
 
+from dashboard.data import DashboardData
 from schedulers.rugby import epcr, importer, plex_nfo
 
 UTC = dt.timezone.utc
@@ -154,7 +156,7 @@ class EPCRSchedulerTests(unittest.TestCase):
         self.assertTrue(all(e["metadata_provider"] == "epcr/official"
                             for e in episodes))
 
-    def test_no_post_kickoff_discovery(self):
+    def test_generic_merge_still_rejects_new_past_fixtures(self):
         cal = epcr.convert_epcr(payload(
             match(293317, day="2026-10-16T19:00:00Z", round_no=1),
             match(293330)), season=202601)
@@ -162,6 +164,74 @@ class EPCRSchedulerTests(unittest.TestCase):
             cal, blank(), NOW, dt.timezone.utc, "Championship")
         self.assertEqual([str(e["UID"]) for e in result.walk("VEVENT")],
                          ["epcr-293330@mbligh.github.io"])
+
+    def test_imports_completed_round_as_missing_without_scores(self):
+        # The actual November 2026 EPCR feed has 12 already-completed round
+        # one fixtures. They must appear as Missing even though round two
+        # is outside the dashboard's seven-day upcoming cutoff.
+        previous = blank()
+        completed = [
+            match(293317 + n, f"Home {n}", f"Away {n}",
+                  day=f"2026-10-17T{12 + n:02d}:00:00Z", round_no=1)
+            for n in range(12)
+        ]
+        source = epcr.convert_epcr(payload(*completed, match(293330)),
+                                   season=202601)
+        db = MagicMock()
+        with (patch.object(importer, "read_snapshot", return_value=previous),
+              patch.object(importer, "old_manifest", return_value={
+                  "schema_version": 2, "fixtures": []}),
+              patch.object(importer, "fetch_epcr", return_value=source)):
+            snapshots, _, episodes = importer.build_catalogue(
+                db, {"timezone": "America/New_York", "calendars": [self.entry()]},
+                NOW, refresh=True)
+
+        self.assertEqual(len(episodes), 13)
+        self.assertEqual(len([e for e in episodes if e["round"] == 1]), 12)
+        self.assertEqual({e["episode"] for e in episodes if e["round"] == 1},
+                         set(range(101, 113)))
+        self.assertEqual({e["external_ids"]["epcr"] for e in episodes
+                          if e["round"] == 1},
+                         {str(293317 + n) for n in range(12)})
+        self.assertNotIn("score", snapshots[SERIES].lower())
+        self.assertNotIn("result", snapshots[SERIES].lower())
+        self.assertTrue(all(e["nfo_path"] and e.get("nfo") for e in episodes))
+
+        with tempfile.TemporaryDirectory() as temp:
+            db.episodes.find.return_value = episodes
+            db.files.find.return_value = []
+            data = DashboardData(db, pathlib.Path(temp),
+                                 ZoneInfo("America/New_York"))
+            visible = data.rows(SERIES, now=NOW)
+        self.assertEqual(len(visible), 12)
+        self.assertEqual({row["status"] for row in visible}, {"Missing"})
+
+    def test_historical_import_preserves_existing_past_fixtures(self):
+        old = epcr.convert_epcr(payload(
+            match(293317, "Original Home", "Original Away",
+                  day="2026-10-16T19:00:00Z", round_no=1)), season=202601)
+        revised = epcr.convert_epcr(payload(
+            match(293317, "Changed Home", "Changed Away",
+                  day="2026-10-18T19:00:00Z", round_no=1)), season=202601)
+        merged = importer.calendar_filter.merge(
+            revised, old, NOW, dt.timezone.utc, SERIES,
+            allow_new_past=True)
+        saved = merged.walk("VEVENT")
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(str(saved[0]["SUMMARY"]),
+                         "Original Home vs Original Away")
+        self.assertEqual(saved[0].decoded("DTSTART"),
+                         dt.datetime(2026, 10, 16, 19, tzinfo=UTC))
+
+    def test_historical_import_rejects_explicit_post_kickoff_revision(self):
+        source = epcr.convert_epcr(payload(
+            match(293317, day="2026-10-16T19:00:00Z", round_no=1)),
+            season=202601)
+        source.walk("VEVENT")[0].add("last-modified", NOW)
+        merged = importer.calendar_filter.merge(
+            source, blank(), NOW, dt.timezone.utc, SERIES,
+            allow_new_past=True)
+        self.assertEqual(merged.walk("VEVENT"), [])
 
 
 if __name__ == "__main__":

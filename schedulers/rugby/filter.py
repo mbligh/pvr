@@ -6,6 +6,8 @@ Existing events are frozen at their last accepted DTSTART. A source update
 whose LAST-MODIFIED/DTSTAMP is later than kickoff is never accepted, even if
 the updater first encounters it after the match. Missing timestamps cannot
 prove safety; an event is only updated while its saved kickoff is future.
+For the score-stripped EPCR adapter alone, callers can opt into discovering
+previously unknown past fixtures; already accepted events remain immutable.
 """
 import datetime as dt
 import urllib.request
@@ -53,7 +55,7 @@ def fetch(url):
     return cal
 
 
-def merge(source, previous, now, tz, name):
+def merge(source, previous, now, tz, name, *, allow_new_past=False):
     old = events(previous) if previous else {}
     current = events(source)
     accepted = dict(old)
@@ -70,9 +72,10 @@ def merge(source, previous, now, tz, name):
             continue
         saved = old.get(key)
         cutoff = start_time(saved, tz) if saved is not None else start
-        # Never import past events for the first time, or modify an event
-        # after its previously accepted kickoff, even if source reschedules it.
-        if cutoff <= now:
+        # Past events are frozen. The EPCR schedule-only adapter may opt into
+        # *new* historical IDs for a missing-fixtures backfill, but never
+        # rewrite a saved event after kickoff (even if a feed reschedules it).
+        if cutoff <= now and not (allow_new_past and saved is None):
             continue
         modified = modified_time(incoming)
         # Reject a source revision timestamped after the saved kickoff.

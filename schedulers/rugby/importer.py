@@ -179,7 +179,12 @@ def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
                 source = fetch_calendar(entry, now)
                 if slug == "Rugby_Mens_Prem":
                     source, prem_metadata = reconcile_uids(source, previous)
-                merged = calendar_filter.merge(source, previous, now, zone, entry["name"])
+                merged = calendar_filter.merge(
+                    source, previous, now, zone, entry["name"],
+                    # EPCR's adapter deliberately strips results before the
+                    # merger sees historical fixtures. Other feeds retain the
+                    # normal first-seen-after-kickoff prohibition.
+                    allow_new_past=(slug == EPCR_SERIES))
                 if slug == prem_history.SERIES and backfill_prem_2026:
                     merged, _ = prem_history.add_history(source, merged, now)
             else:
