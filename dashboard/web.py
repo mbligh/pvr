@@ -23,11 +23,11 @@ def render_page(selected, rows, *, timezone, updated_at):
     upcoming = sum(item["status"] == "Upcoming" for item in rows)
     # Each family occupies one navigation row, regardless of viewport width.
     groups = (
-        ("Formula 1", (s for s in SERIES if s == "Formula_1")),
-        ("Men's rugby", (s for s in SERIES if s.startswith("Rugby_Mens_"))),
-        ("Women's rugby", (s for s in SERIES if s.startswith("Rugby_Womens_"))),
+        ("Formula 1", tuple(s for s in SERIES if s == "Formula_1")),
+        ("Men's rugby", tuple(s for s in SERIES if s.startswith("Rugby_Mens_"))),
+        ("Women's rugby", tuple(s for s in SERIES if s.startswith("Rugby_Womens_"))),
     )
-    if sum((list(members) for _, members in groups), []) != list(SERIES):
+    if tuple(s for _, members in groups for s in members) != SERIES:
         raise ValueError("Uncategorized dashboard series")
     nav_rows = []
     for label, members in groups:
