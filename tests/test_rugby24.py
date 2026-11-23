@@ -170,14 +170,15 @@ class IndexerTests(unittest.TestCase):
                                    execute=failed)
 
 
-    def test_http_location_from_https_is_upgraded_before_following(self):
+    def test_http_location_from_https_follows_same_host_http(self):
         with tempfile.TemporaryDirectory() as temporary:
             cookie_jar = pathlib.Path(temporary) / "cookies.txt"
             calls = []
             def execute(command, **kwargs):
                 current = command[-1]
                 calls.append(current)
-                self.assertEqual(command[command.index("--proto") + 1], "=https")
+                self.assertEqual(command[command.index("--proto") + 1],
+                                 "=" + current.split(":", 1)[0])
                 self.assertNotIn("--location", command)
                 self.assertEqual(command[command.index("--cookie") + 1],
                                  str(cookie_jar))
@@ -193,15 +194,20 @@ class IndexerTests(unittest.TestCase):
             body = indexer.fetch_html(indexer.DEFAULT_URL,
                                       cookie_jar=cookie_jar, execute=execute)
             self.assertEqual(body, "<html>rugby replays</html>")
-            self.assertEqual(calls, [indexer.DEFAULT_URL,
-                                     indexer.DEFAULT_URL + "/"])
+            self.assertEqual(calls, [
+                indexer.DEFAULT_URL,
+                "http://rugby24.net/premiership-rugby/",
+            ])
 
-    def test_redirect_rejects_other_hosts_and_http_downgrade_loop(self):
+    def test_redirect_rejects_other_hosts_and_loops(self):
         with tempfile.TemporaryDirectory() as temporary:
             jar = pathlib.Path(temporary) / "cookies.txt"
-            for target, expected in (
-                ("http://evil.example/path", "different host"),
-                ("http://rugby24.net/premiership-rugby", "redirect loop"),
+            for target in (
+                "http://evil.example/path",
+                "https://evil.example/path",
+                "http://rugby24.net:8080/premiership-rugby",
+                "http://user:secret@rugby24.net/premiership-rugby",
+                "file:///etc/passwd",
             ):
                 calls = []
                 def execute(command, **kwargs):
@@ -211,10 +217,28 @@ class IndexerTests(unittest.TestCase):
                     return subprocess.CompletedProcess(
                         command, 0, "301|" + command[-1], "")
                 with self.subTest(target=target):
-                    with self.assertRaisesRegex(RuntimeError, expected):
+                    with self.assertRaisesRegex(RuntimeError, "different host"):
                         indexer.fetch_html(indexer.DEFAULT_URL,
                                            cookie_jar=jar, execute=execute)
                     self.assertEqual(calls, [indexer.DEFAULT_URL])
+
+            # A genuinely cyclic HTTPS -> HTTP -> HTTPS redirect still fails,
+            # but a single HTTPS -> HTTP hop is permitted.
+            calls = []
+            def cycle(command, **kwargs):
+                current = command[-1]
+                calls.append(current)
+                target = ("http://rugby24.net/premiership-rugby"
+                          if current.startswith("https:") else indexer.DEFAULT_URL)
+                pathlib.Path(command[command.index("--dump-header") + 1]).write_text(
+                    "HTTP/1.1 302\r\nLocation: " + target + "\r\n")
+                return subprocess.CompletedProcess(command, 0,
+                                                   "302|" + current, "")
+            with self.assertRaisesRegex(RuntimeError, "redirect loop"):
+                indexer.fetch_html(indexer.DEFAULT_URL,
+                                   cookie_jar=jar, execute=cycle)
+            self.assertEqual(calls, [indexer.DEFAULT_URL,
+                                     "http://rugby24.net/premiership-rugby"])
 
     def test_championship_matching_strict_teams_date_and_competition(self):
         release = {"source": "rugby24", "title": CHAMP_TITLE,

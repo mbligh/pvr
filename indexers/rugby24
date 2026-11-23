@@ -27,29 +27,29 @@ USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
 MAX_HTML_BYTES = 2_000_000
 
 
-def safe_https_url(url):
-    """Accept only rugby24.net; upgrade its HTTP redirects instead of following them."""
+def safe_rugby24_url(url):
+    """Accept HTTP(S) only on rugby24.net, with no credentials or non-default port."""
     parsed = urlsplit(url)
     if (parsed.scheme not in ("https", "http")
             or parsed.hostname != "rugby24.net"
             or parsed.username or parsed.password or parsed.port
             or parsed.fragment):
         raise ValueError("Refusing non-Rugby24 redirect URL")
-    return parsed._replace(scheme="https").geturl()
+    return parsed.geturl()
 
 
 def fetch_html(url, *, cookie_jar, execute=subprocess.run):
-    """Fetch Rugby24 through HTTPS, normalizing its own HTTP redirects.
+    """Fetch Rugby24, following only checked same-host HTTP(S) redirects.
 
-    The site sometimes returns a Location: http://rugby24.net/... even for an
-    HTTPS request. Letting curl follow that URL would downgrade transport.
-    Instead request each redirect as a separate HTTPS-only curl invocation,
-    preserving cookies but rejecting other hosts and loops.
+    The site can redirect an HTTPS request to an HTTP URL at exactly the
+    same path. Honor that redirect instead of looping back to HTTPS.
+    Curl never follows redirects automatically: each hop is validated,
+    uses the shared cookie jar, and allows just its requested protocol.
     """
     if urlsplit(url).scheme != "https":
         raise ValueError("Refusing non-Rugby24 URL")
     try:
-        current = safe_https_url(url)
+        current = safe_rugby24_url(url)
     except ValueError as exc:
         raise ValueError("Refusing non-Rugby24 URL") from exc
     seen = set()
@@ -58,14 +58,14 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
         header_path = Path(temporary) / "headers.txt"
         for hop in range(6):
             if current in seen:
-                raise RuntimeError("Rugby24 HTTPS redirect loop at " + urlsplit(current).path)
+                raise RuntimeError("Rugby24 redirect loop at " + urlsplit(current).path)
             seen.add(current)
             if hop:
                 time.sleep(0.5)
             command = [
                 "curl", "--silent", "--show-error", "--compressed",
                 "--max-time", "30", "--max-filesize", str(MAX_HTML_BYTES),
-                "--proto", "=https",
+                "--proto", "=" + urlsplit(current).scheme,
                 "--user-agent", USER_AGENT, "--header", "Accept: text/html",
                 "--cookie", str(cookie_jar), "--cookie-jar", str(cookie_jar),
                 "--dump-header", str(header_path),
@@ -101,7 +101,7 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
                 if not location:
                     raise RuntimeError("Rugby24 redirect is missing a Location header")
                 try:
-                    current = safe_https_url(urljoin(current, location))
+                    current = safe_rugby24_url(urljoin(current, location))
                 except ValueError as exc:
                     raise RuntimeError(
                         "Rugby24 redirected to a different host; refusing content"
@@ -122,7 +122,7 @@ def fetch_html(url, *, cookie_jar, execute=subprocess.run):
             if len(body) > MAX_HTML_BYTES:
                 raise ValueError("Rugby24 page too large")
             return body.decode("utf-8", errors="replace")
-    raise RuntimeError("Rugby24 exceeded five HTTPS redirects")
+    raise RuntimeError("Rugby24 exceeded five redirects")
 
 def article_slug(url):
     parts = urlsplit(url)
