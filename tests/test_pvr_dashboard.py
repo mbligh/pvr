@@ -3,6 +3,7 @@ import datetime as dt
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -222,6 +223,32 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('aria-current="page"', page)
         self.assertIn("No recordings are modified", page)
         self.assertIn("7 days", page)
+
+    def test_series_navigation_has_three_ordered_nonwrapping_rows(self):
+        page = render_page("Rugby_Mens_Championship", [],
+                           timezone=TZ, updated_at=NOW)
+        rows = re.findall(r'<div class="tab-row" aria-label="([^"]+)">(.*?)</div>',
+                          page)
+        self.assertEqual([label for label, _ in rows],
+                         ["Formula 1", "Men&#x27;s rugby", "Women&#x27;s rugby"])
+        actual = [
+            re.findall(r'href="/\\?series=([^"]+)"', markup)
+            for _, markup in rows
+        ]
+        expected = [
+            ["Formula_1"],
+            [s for s in SERIES if s.startswith("Rugby_Mens_")],
+            [s for s in SERIES if s.startswith("Rugby_Womens_")],
+        ]
+        self.assertEqual(actual, expected)
+        self.assertEqual(sum(map(len, actual)), len(SERIES))
+        self.assertIn(
+            '<a class="tab active" href="/?series=Rugby_Mens_Championship" aria-current="page">',
+            rows[1][1],
+        )
+        css = (ROOT / "dashboard/style.css").read_text()
+        self.assertIn(".tabs { display: flex; flex-direction: column;", css)
+        self.assertIn(".tab-row { display: flex; flex-wrap: nowrap;", css)
 
     def test_quality_formatter_rejects_invalid_or_nonfinite_values(self):
         self.assertIsNone(quality({"video": {"fps": float("nan")}}))

@@ -21,13 +21,26 @@ def render_page(selected, rows, *, timezone, updated_at):
         raise ValueError("Unknown series")
     installed = sum(item["installed"] for item in rows)
     upcoming = sum(item["status"] == "Upcoming" for item in rows)
-    tabs = []
-    for series in SERIES:
-        selected_class = " active" if series == selected else ""
-        current = ' aria-current="page"' if series == selected else ""
-        tabs.append(
-            f'<a class="tab{selected_class}" href="/?{urlencode({"series": series})}"'
-            f'{current}>{esc(series)}</a>'
+    # Each family occupies one navigation row, regardless of viewport width.
+    groups = (
+        ("Formula 1", (s for s in SERIES if s == "Formula_1")),
+        ("Men's rugby", (s for s in SERIES if s.startswith("Rugby_Mens_"))),
+        ("Women's rugby", (s for s in SERIES if s.startswith("Rugby_Womens_"))),
+    )
+    if sum((list(members) for _, members in groups), []) != list(SERIES):
+        raise ValueError("Uncategorized dashboard series")
+    nav_rows = []
+    for label, members in groups:
+        tabs = []
+        for series in members:
+            selected_class = " active" if series == selected else ""
+            current = ' aria-current="page"' if series == selected else ""
+            tabs.append(
+                f'<a class="tab{selected_class}" href="/?{urlencode({"series": series})}"'
+                f'{current}>{esc(series)}</a>'
+            )
+        nav_rows.append(
+            f'<div class="tab-row" aria-label="{esc(label)}">{"".join(tabs)}</div>'
         )
     body = []
     for item in rows:
@@ -62,7 +75,7 @@ def render_page(selected, rows, *, timezone, updated_at):
         )
     if not body:
         body.append('<tr><td colspan="7" class="empty">No events found for this series.</td></tr>')
-    nav = "".join(tabs)
+    nav = "".join(nav_rows)
     table = "".join(body)
     stamp = updated_at.astimezone(timezone).strftime("%d %b %Y, %I:%M %p %Z")
     return f"""<!DOCTYPE html>

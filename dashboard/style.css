@@ -37,8 +37,10 @@ h1 { margin: 0; font-size: clamp(21px, 2.7vw, 30px); font-weight: 650;
 .refresh { background: var(--panel-2); border: 1px solid var(--rule);
   border-radius: 6px; font-weight: 600; padding: 7px 11px; white-space: nowrap; }
 .refresh:hover { border-color: var(--accent); }
-.tabs { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 0 19px;
+.tabs { display: flex; flex-direction: column; gap: 7px; padding: 0 0 19px;
   border-bottom: 1px solid var(--rule); margin-bottom: 20px; }
+.tab-row { display: flex; flex-wrap: nowrap; gap: 7px; overflow-x: auto;
+  padding-bottom: 2px; }
 .tab { padding: 8px 11px; font-size: 12px; font-weight: 600; color: var(--muted);
   border: 1px solid var(--rule); background: #111a26; border-radius: 6px;
   transition: background .12s ease, color .12s ease;
@@ -103,5 +105,5 @@ footer { margin-top: 19px; color: var(--muted); font-size: 11px;
   .overview { gap: 8px; }
   .metric { padding: 12px; }
   .metric strong { font-size: 21px; }
-  .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 13px; }
+  .tab-row { padding-bottom: 6px; }
 }
