@@ -17,6 +17,7 @@ schedulers/
     pwr.py                 official women's PWR fixture API
     world_rugby.py         official World Rugby fixture API
     prem.py                official Gallagher PREM fixture API
+    epcr.py                official Investec Champions Cup fixture API
     prem_identity.py       preserve existing PREM match identifiers
     wxv.py                 womens international/WXV partitioning
   f1.py                   Formula 1 sessions -> pvr.episodes / NFOs

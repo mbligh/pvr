@@ -15,7 +15,7 @@ from filing.publish import canonical_paths, SERIES_PATHS
 UTC = dt.timezone.utc
 SERIES = (
     "Formula_1",
-    "Rugby_Mens_6N", "Rugby_Mens_Intl", "Rugby_Mens_Lions",
+    "Rugby_Mens_6N", "Rugby_Mens_Championship", "Rugby_Mens_Intl", "Rugby_Mens_Lions",
     "Rugby_Mens_Nations", "Rugby_Mens_Prem", "Rugby_Mens_World_Cup",
     "Rugby_Womens_6N", "Rugby_Womens_Intl", "Rugby_Womens_Lions",
     "Rugby_Womens_PWR", "Rugby_Womens_World_Cup", "Rugby_Womens_WXV",

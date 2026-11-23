@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Discover scheduled rugby and Formula 1 events, and index recordings from supported providers.
+- Discover scheduled rugby (including EPCR Investec Champions Cup) and Formula 1 events, and index recordings from supported providers.
 - Match releases to canonical events without mixing competitions, and preserve source metadata.
 - Acquire selected media, inspect recordings, and file episodes under the established sports directory structure.
 - Store event, release, and file metadata in the MongoDB Atlas `pvr` database.
@@ -23,3 +23,5 @@ Detailed behavior and commands are documented in `DASHBOARD.md`, `RUGBY_IMPORT.m
 World Rugby enrichment is rate-limited (sequential, 10 seconds, max 24 pages/run) and persists a 429/403/503 cooldown in Atlas when applying; see `RUGBY_CREW.md`.
 
 - `import_rugby_lineups` applies provider-specific per-run budgets, request spacing, and MongoDB-backed 429/403/503 cooldowns, documented in `RUGBY_LINEUPS.md`.
+
+- The Champions Cup scheduler in `schedulers/rugby/epcr.py` reads EPCR's public RugbyViz fixtures (compId 1008), projects schedule-only fields, numbers rounds 1–8 under `Rugby_Mens_Championship`, and saves official match IDs in Atlas. It neither discovers nor downloads video.

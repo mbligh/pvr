@@ -13,6 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # inferred from the external calendar or RugbyPass competition labels.
 DIRECTORIES = {
     "Rugby_Mens_6N": ("Rugby_Mens_6N", "Rugby Mens 6N"),
+    "Rugby_Mens_Championship": ("Rugby_Mens_Championship", "Rugby Mens Championship"),
     "Rugby_Mens_Intl": ("Rugby_Mens_Intl", "Rugby Mens Intl"),
     "Rugby_Mens_Lions": ("Rugby_Mens_Lions", "Rugby Mens Lions"),
     "Rugby_Mens_World_Cup": ("Rugby_Mens_World_Cup", "Rugby Mens World Cup"),

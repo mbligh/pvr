@@ -10,6 +10,7 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers originally copi
   Normalize all accepted fixture descriptions to `WXV` (not the API branding).
   The series slug `Rugby_Womens_WXV`, folder `Rugby_Womens_WXV`, canonical
   showtitle and original match/calendar UIDs remain unchanged.
+- Investec Champions Cup (Rugby_Mens_Championship): epcr.py uses the official EPCR RugbyViz/InCrowd fixture API (competition 1008). The 2026/27 campaign uses season code 202601. Only real team pairings are scheduled; unassigned knockout placeholders are skipped. Official match IDs are retained in external_ids.epcr. Public browser client headers can be overridden via EPCR_APP_ID, EPCR_API_KEY, EPCR_REALM if they rotate. Normal spoiler-safe merging does not backfill already-played matches on the first import.
 - PWR: pwr.py
 - Gallagher PREM: the official RugbyViz/InCrowd match API is the sole live source for Rugby_Mens_Prem. The public website X-APP-ID, X-API-KEY, and X-REALM client headers are included in the adapter; PREM_APP_ID, PREM_API_KEY and PREM_REALM are optional overrides if the public key rotates.
 - Existing Six Nations ICS feeds: filter.py
@@ -31,7 +32,7 @@ series ID and directory. Display names do not affect canonical identity.
 
 The PVR scheduler now uses directory names as canonical series slugs
 and has no redundant library_dir overrides.
-The canonical filer registers all twelve rugby directories in
+The canonical filer registers the rugby series directories in
 [FILING.md](FILING.md). A directory mapping does not create fixtures.
 
 **WXV migration is implemented and takes effect on the next live import.**

@@ -26,6 +26,7 @@ from . import filter as calendar_filter
 from . import plex_nfo
 from .pwr import fetch_pwr
 from .prem import fetch_prem
+from .epcr import fetch_epcr
 from .world_rugby import fetch_world_rugby
 from schedulers.series_ids import assert_migrated, canonicalize, CANONICAL_TO_LEGACY
 from schedulers.rugby.prem_identity import reconcile_uids, season_for
@@ -37,6 +38,7 @@ from schedulers.rugby.wxv import (
 LEGACY_BASE = "https://raw.githubusercontent.com/mbligh/calendar/main/docs/"
 UTC = dt.timezone.utc
 MENS_INTL = "Rugby_Mens_Intl"
+EPCR_SERIES = "Rugby_Mens_Championship"
 
 
 def strip_nations_from_intl(calendar):
@@ -88,6 +90,11 @@ def read_snapshot(db, slug):
     record = db.calendar_snapshots.find_one({"_id": slug}) if db is not None else None
     if record:
         return Calendar.from_ical(record["ics"].encode("utf-8"))
+    # A newly added official competition has no historical public ICS snapshot.
+    if slug == EPCR_SERIES:
+        empty = Calendar()
+        empty.add("version", "2.0")
+        return empty
     # Published historical snapshots predate the canonical directory slugs.
     # Fetch the old public URL for first bootstrap, retaining original UIDs.
     legacy = CANONICAL_TO_LEGACY.get(slug, slug)
@@ -113,6 +120,11 @@ def fetch_calendar(entry, now):
         season = season_for(now)
         separator = "&" if "?" in entry["url"] else "?"
         return fetch_prem(entry["url"] + f"{separator}season={season}",
+                          comp_id=entry["compId"], season=season)
+    if kind == "epcr":
+        season = season_for(now)
+        separator = "&" if "?" in entry["url"] else "?"
+        return fetch_epcr(entry["url"] + f"{separator}season={season}",
                           comp_id=entry["compId"], season=season)
     if kind == "world-rugby":
         return fetch_world_rugby(entry["group"], now)
@@ -204,8 +216,10 @@ def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
             "venue": fixture["venue"],
             "showtitle": fixture["showtitle"],
             "nfo_path": fixture["nfo"],
-            "metadata_provider": ("prem/official" if fixture["competition"] ==
-                                  "Rugby_Mens_Prem" else "calendar/rugby"),
+            "metadata_provider": (
+                "prem/official" if fixture["competition"] == "Rugby_Mens_Prem"
+                else "epcr/official" if fixture["competition"] == EPCR_SERIES
+                else "calendar/rugby"),
             "status": "scheduled",
         }
         # Official fixture IDs are scheduler metadata. Recording IDs belong
@@ -213,6 +227,10 @@ def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
         uid = fixture["id"].split(":", 1)[1]
         if fixture["competition"] == "Rugby_Mens_Prem" and uid in prem_metadata:
             record["external_ids"] = {"prem": prem_metadata[uid]["prem"]}
+        if fixture["competition"] == EPCR_SERIES and uid.startswith("epcr-"):
+            official_id = uid.split("@", 1)[0].removeprefix("epcr-")
+            if official_id.isdecimal():
+                record["external_ids"] = {"epcr": official_id}
         if fixture["nfo"]:
             record["nfo"] = output_files[fixture["nfo"]].decode("utf-8")
         episodes.append(record)
@@ -261,10 +279,15 @@ def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
                 "nfo_path": None,
                 "external_ids": (
                     {"prem": prem_metadata[uid]["prem"]}
-                    if slug == "Rugby_Mens_Prem" and uid in prem_metadata else {}
+                    if slug == "Rugby_Mens_Prem" and uid in prem_metadata
+                    else {"epcr": str(event.get("X-EPCR-ID"))}
+                    if slug == EPCR_SERIES and event.get("X-EPCR-ID")
+                    else {}
                 ),
-                "metadata_provider": ("prem/official" if slug ==
-                                      "Rugby_Mens_Prem" else "calendar/rugby"),
+                "metadata_provider": (
+                    "prem/official" if slug == "Rugby_Mens_Prem"
+                    else "epcr/official" if slug == EPCR_SERIES
+                    else "calendar/rugby"),
                 "status": "scheduled",
             }
             episodes.append(episode)
@@ -318,6 +341,9 @@ def persist(db, snapshots, manifest, episodes, now):
         prem_id = (episode.get("external_ids") or {}).get("prem")
         if prem_id is not None:
             fields["external_ids.prem"] = prem_id
+        epcr_id = (episode.get("external_ids") or {}).get("epcr")
+        if epcr_id is not None:
+            fields["external_ids.epcr"] = epcr_id
         fields["metadata_updated_at"] = now
         operations.append(UpdateOne({"_id": episode["_id"]}, {
             "$set": fields,

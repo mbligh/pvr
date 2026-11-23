@@ -18,6 +18,14 @@
       "legacy_slug": "rugby-nations"
     },
     {
+      "slug": "Rugby_Mens_Championship",
+      "name": "Rugby Mens Championship",
+      "type": "epcr",
+      "url": "https://rugby-union-feeds.incrowdsports.com/v1/matches?provider=rugbyviz&compId=1008&sort=date",
+      "compId": 1008,
+      "rounds": "epcr"
+    },
+    {
       "slug": "Rugby_Mens_Prem",
       "name": "Rugby Mens Prem",
       "url": "https://rugby-union-feeds.incrowdsports.com/v1/matches?provider=rugbyviz&compId=1011&sort=date",

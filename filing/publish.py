@@ -20,6 +20,7 @@ from inventory.scan import probe_video
 #         earliest accepted season).
 RUGBY_SERIES_PATHS = {
     "Rugby_Mens_6N": ("rugbymens6n", 1900),
+    "Rugby_Mens_Championship": ("rugbymenschampionship", 2026),
     "Rugby_Mens_Intl": ("rugbymensintl", 2026),
     "Rugby_Mens_Lions": ("rugbymenslions", 1900),
     "Rugby_Mens_World_Cup": ("rugbymensworldcup", 1900),
