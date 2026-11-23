@@ -189,7 +189,8 @@ def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
                 # already have a dedicated Nations Championship series.
                 merged = strip_nations_from_intl(merged)
             data = merged.to_ical()
-            if not merged.walk("VEVENT"):
+            if not merged.walk("VEVENT") and not (
+                    slug == EPCR_SERIES and not refresh):
                 raise ValueError("Empty rugby calendar: " + slug)
             snapshots[slug] = data.decode("utf-8")
             (docs / (slug + ".ics")).write_bytes(data)
