@@ -99,7 +99,7 @@ class DashboardTests(unittest.TestCase):
         return path
 
     def test_series_selector_exactly_matches_canonical_filing_series(self):
-        self.assertEqual(len(SERIES), 13)
+        self.assertEqual(len(SERIES), len(SERIES_PATHS))
         self.assertEqual(SERIES[0], "Formula_1")
         self.assertEqual(SERIES[-1], "Rugby_Womens_WXV")
         self.assertEqual(set(SERIES), set(SERIES_PATHS))
