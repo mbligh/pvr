@@ -52,6 +52,7 @@ def scan_rugbypass(*, script="~/tools/video/rugbypass", pages=5,
 
 def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
                      rugbypass_pages=5, rugby24_pages=2,
+                     rugby24_category="both",
                      rugbypass="~/tools/video/rugbypass",
                      yt_dlp="yt-dlp", bbc_discover=None, yt_discover=None,
                      rp_discover=scan_rugbypass, rugby24_discover=None):
@@ -72,7 +73,7 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
         elif source == "rugby24":
             adapter = load_file("pvr_refresh_rugby24", "indexers/rugby24")
             output[source] = (rugby24_discover or adapter.discover_all)(
-                pages=rugby24_pages)
+                pages=rugby24_pages, category=rugby24_category)
         else:
             raise ValueError(f"Unknown source: {source}")
     return output
@@ -80,6 +81,7 @@ def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
 
 def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
         bbc_pages=10, rugbypass_pages=5, rugby24_pages=2,
+        rugby24_category="both",
         rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
         discover=discover_sources, output=sys.stdout):
     sources = tuple(dict.fromkeys(sources))
@@ -88,6 +90,7 @@ def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
     results = discover(sources, youtube_limit=youtube_limit, bbc_pages=bbc_pages,
                        rugbypass_pages=rugbypass_pages,
                        rugby24_pages=rugby24_pages,
+                       rugby24_category=rugby24_category,
                        rugbypass=rugbypass, yt_dlp=yt_dlp)
     indexer = load_file("pvr_refresh_index_releases", "index_releases")
     matcher = load_file("pvr_refresh_match_releases", "match_releases")
@@ -148,6 +151,7 @@ def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
 
 def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
         bbc_pages=10, rugbypass_pages=5, rugby24_pages=2,
+        rugby24_category="both",
         rugbypass="~/tools/video/rugbypass", yt_dlp="yt-dlp",
         discover=discover_sources, output=sys.stdout, lock_root=None):
     """Hold each provider's indexer lock through discovery and Atlas matching.
@@ -166,6 +170,7 @@ def run(database, *, apply=False, sources=SOURCES, youtube_limit=100,
             database, apply=apply, sources=sources,
             youtube_limit=youtube_limit, bbc_pages=bbc_pages,
             rugbypass_pages=rugbypass_pages, rugby24_pages=rugby24_pages,
+            rugby24_category=rugby24_category,
             rugbypass=rugbypass,
             yt_dlp=yt_dlp, discover=discover, output=output)
 
@@ -178,6 +183,8 @@ def main(argv=None):
     parser.add_argument("--bbc-pages", type=int, default=10)
     parser.add_argument("--rugbypass-pages", type=int, default=5)
     parser.add_argument("--rugby24-pages", type=int, default=2)
+    parser.add_argument("--rugby24-category",
+                        choices=("both", "prem", "championship"), default="both")
     parser.add_argument("--rugbypass", default="~/tools/video/rugbypass")
     parser.add_argument("--yt-dlp", default="yt-dlp")
     parser.add_argument("--apply", action="store_true")
@@ -200,7 +207,9 @@ def main(argv=None):
             run(client[args.database], sources=args.source or SOURCES,
                 youtube_limit=args.youtube_limit, bbc_pages=args.bbc_pages,
                 rugbypass_pages=args.rugbypass_pages,
-                rugby24_pages=args.rugby24_pages, rugbypass=args.rugbypass,
+                rugby24_pages=args.rugby24_pages,
+                rugby24_category=args.rugby24_category,
+                rugbypass=args.rugbypass,
                 yt_dlp=args.yt_dlp, apply=args.apply, lock_root=args.lock_root)
     except LockBusy as exc:
         print(f"PVR source refresh busy: {exc}", file=sys.stderr)
