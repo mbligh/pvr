@@ -171,9 +171,23 @@ class RugbyRunTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rugby24 only"):
             runner.source_set("Rugby_Mens_Championship", ["youtube"])
 
+    def test_all_series_scans_rugby24_categories_independently(self):
+        self.assertEqual(self.invoke(apply=True, sources=["rugby24"]), 0)
+        refreshes = [cmd for cmd, _ in self.calls
+                     if Path(cmd[1]).name == "refresh_releases"]
+        self.assertEqual(len(refreshes), 2)
+        self.assertEqual([cmd[cmd.index("--rugby24-category") + 1]
+                          for cmd in refreshes], ["prem", "championship"])
+        self.assertEqual(
+            [call.args[0]["_id"] for call in
+             self.db.indexer_poll_state.update_one.call_args_list],
+            ["rugby24:prem", "rugby24:championship"])
+
     def test_championship_challenge_cooldown_and_force_discovery(self):
         def blocked(cmd, **kwargs):
             self.calls.append((cmd, kwargs))
+            if Path(cmd[1]).name == "acquire_rugby":
+                return Result(stderr='{"planned": 1}\n')
             return Result(code=1, stderr=(
                 "Rugby24 indexer: Rugby24 Cloudflare challenge (HTTP 403) "
                 "at /champions-cup\n"))

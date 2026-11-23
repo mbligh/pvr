@@ -207,6 +207,7 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                             "--database", database, "--lock-root", incoming_root]
                     if category:
                         args.extend(("--rugby24-category", category))
+                    result = None
                     try:
                         result = invoke("refresh_releases", *args)
                         if result.returncode == 75:
@@ -226,10 +227,11 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                     except Exception:
                         # The source wrapper reports Cloudflare's specific
                         # challenge without printing any session credentials.
-                        challenged = (source == "rugby24"
-                                      and "cloudflare" in result.stderr.casefold()
-                                      and "challenge" in result.stderr.casefold()) if (
-                                          "result" in locals()) else False
+                        challenged = (
+                            source == "rugby24" and result is not None
+                            and "cloudflare" in result.stderr.casefold()
+                            and "challenge" in result.stderr.casefold()
+                        )
                         polling.record_failure(
                             db, state_key, now=now,
                             reason="cloudflare_challenge" if challenged else None)

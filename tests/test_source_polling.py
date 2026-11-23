@@ -114,7 +114,9 @@ class PollingTests(unittest.TestCase):
                 state_keys={"rugby24": keys[category]})
             self.assertEqual(len(missing), 1)
             self.assertEqual(decisions["rugby24"]["due"], category == "championship")
-        self.assertEqual(set(db.states), set(keys.values()))
+        self.assertEqual(set(db.states), {keys["prem"]})
+        # Planning is read-only: Championship gets its own state document
+        # on its first actual success or failure.
 
     def test_cloudflare_backoff_is_long_and_survives_force_checks(self):
         db = Database([episode("Rugby_Mens_Championship",
