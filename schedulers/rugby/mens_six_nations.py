@@ -107,7 +107,8 @@ def _rsc_kickoffs(scripts):
     kickoffs = {}
     for script in scripts:
         for item in script.split("self.__next_f.push(")[1:]:
-            encoded = item.split(");", 1)[0]
+            # Next.js emits both push([...]) and push([...]); forms.
+            encoded = item.rsplit(")", 1)[0].rstrip(";")
             try:
                 frame = json.loads(encoded)
                 if frame[0] != 1 or not isinstance(frame[1], str):
