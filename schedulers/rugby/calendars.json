@@ -46,11 +46,11 @@
     {
       "slug": "Rugby_Womens_6N",
       "name": "Rugby Womens 6N",
-      "id": "vo97b4mr9uiv5lhp0ggqkqkvp6dq3an2@import.calendar.google.com",
-      "url": "https://data.rugbyfixture.io/ical/v1/six-nations-womens.ics?uid=qsadkjhi",
       "legacy_slug": "rugby-womens-6n",
       "season_mode": "calendar",
-      "rounds": "six-nations"
+      "rounds": "six-nations",
+      "type": "six-nations-womens",
+      "source": "https://www.sixnationsrugby.com/en/w6n/fixtures/202600"
     },
     {
       "slug": "Rugby_Womens_Intl",
