@@ -242,7 +242,7 @@ class InventoryCLITests(unittest.TestCase):
 
     def test_refuses_apply_without_probe(self):
         with self.assertRaisesRegex(ValueError, "requires ffprobe"):
-            cli.scan(self.db, apply=True, probe=False,
+            cli.scan(self.db, roots=[self.root], apply=True, probe=False,
                      stream=io.StringIO(), summary_stream=io.StringIO())
 
 
