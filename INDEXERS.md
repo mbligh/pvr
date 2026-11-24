@@ -152,6 +152,36 @@ currently listed episodes. The worker `run_rugby --apply` checks Atlas's per-sou
 before invoking source discovery and bounded downloads. See POLLING.md.
 See [ACQUISITION.md](ACQUISITION.md).
 
+## WXV replay playlist discovery
+
+The ordinary RugbyPass homepage carousel is not an exhaustive catalogue:
+in particular, 2026 WXV replay IDs appear in the dedicated
+[WXV Global Series replay playlist](https://rugbypass.tv/playlist/37547)
+even when absent from homepage sections.
+
+`refresh_releases --source rugbypass` uses the updated
+`~/tools/video/rugbypass --list-games --jsonl --pages N --playlist 37547`
+CLI, merges/deduplicates the playlist and homepage records, then runs
+`match_rugbypass`. The source's VOD-detail lookup retrieves the actual
+publication timestamp required to distinguish repeated home/away fixtures.
+It does not infer dates from video ID, artwork, or playlist ordering.
+The first 20 items of the dedicated playlist are read; deeper pages are
+currently not followed.
+
+On `slagg`, pull **both** `~/tools` and `~/pvr` before running a
+forced WXV refresh/acquisition:
+
+```sh
+cd ~/tools && git pull
+cd ~/pvr && git pull
+./run_rugby --series Rugby_Womens_WXV --season 2026 --source rugbypass --force-discovery --apply --limit 11
+```
+
+This command may download and file at most 11 eligible episodes using the
+existing acquisition locks and skip rules. It does not overwrite installed
+episodes. An offline CI success is not proof of a live authenticated fetch
+or completed downloads on the host.
+
 ## International RugbyPass matching
 
 After `refresh_releases --apply` imports the RugbyPass JSONL catalogue,
