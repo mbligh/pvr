@@ -1,193 +1,32 @@
 #!/usr/bin/env python3
-"""Inventory existing PWR video files against MongoDB episodes and releases.
+"""Inventory existing sports recordings across supported series.
 
-No file operations are performed. Default is preview-only; --apply persists
-only unambiguous, ffprobe-verified files to pvr.files.
+Preview by default; --apply records verified media and creates missing NFOs.
+Existing videos and NFOs are never renamed or overwritten.
 """
 import argparse
-import collections
-import datetime as dt
-import json
 import os
 import pathlib
-import socket
 import sys
 
-from inventory.scan import identify, make_indexes, probe_video, walk_videos
-from matchers.pwr import SERIES_ID
-
-DEFAULT_ROOT = "/data/sports/Rugby_Womens_PWR"
-
-
-def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
-         hostname=None, verbose=False, show_unseen=False, stream=sys.stdout,
-         summary_stream=sys.stderr):
-    roots = list(roots) if roots is not None else [DEFAULT_ROOT]
-    if not roots:
-        raise ValueError("At least one scan root is required")
-    if apply and not probe:
-        raise ValueError("--apply requires ffprobe verification")
-    hostname = hostname or socket.gethostname()
-    if not hostname or ":" in hostname or "/" in hostname:
-        raise ValueError("Invalid hostname for file identity")
-
-    episodes = list(database.episodes.find(
-        {"series_id": SERIES_ID, "season": {"$gte": 2025}},
-        {"_id": 1, "series_id": 1, "season": 1, "episode": 1,
-         "scheduled": 1, "nfo_path": 1}
-    ))
-    if not episodes:
-        raise ValueError("No PWR episodes found; import fixtures first")
-    releases = list(database.releases.find(
-        {"episode_id": {"$in": [ep["_id"] for ep in episodes]}},
-        {"_id": 1, "episode_id": 1}
-    ))
-    by_number, linked = make_indexes(episodes, releases)
-    counts = collections.Counter()
-    rows = []
-    now = dt.datetime.now(dt.timezone.utc)
-    files_per_episode = collections.Counter()
-    observed_episodes = set()
-
-    for path in walk_videos(roots):
-        counts["scanned"] += 1
-        episode, release_uri, evidence, reason = identify(path, by_number, linked)
-        item = {"path": str(path.absolute())}
-        if reason:
-            item.update(status="conflict", reason=reason)
-        elif episode is None:
-            item["status"] = "unmatched"
-        else:
-            item.update(status="present" if probe else "unprobed",
-                        episode_id=episode["_id"], season=episode["season"],
-                        episode=episode["episode"], evidence=evidence)
-            if release_uri:
-                item["release_uri"] = release_uri
-            try:
-                before = path.stat()
-                if not before.st_size:
-                    raise ValueError("Empty media file")
-                if probe:
-                    media = probe_video(path, binary=ffprobe)
-                    after = path.stat()
-                    if (before.st_size, before.st_mtime_ns, before.st_ino) != (
-                            after.st_size, after.st_mtime_ns, after.st_ino):
-                        raise ValueError("Media file changed while probing")
-                    item["media"] = media
-                item["bytes"] = before.st_size
-                item["mtime_ns"] = before.st_mtime_ns
-                if not probe:
-                    observed_episodes.add(episode["_id"])
-                if probe:
-                    data = {
-                        "_id": f"{hostname}:{path.absolute()}",
-                        "host": hostname,
-                        "path": str(path.absolute()),
-                        "episode_id": episode["_id"],
-                        "series_id": SERIES_ID,
-                        "season": episode["season"],
-                        "episode": episode["episode"],
-                        "match_evidence": evidence,
-                        "release_uri": release_uri,
-                        "size_bytes": before.st_size,
-                        "mtime_ns": before.st_mtime_ns,
-                        "media": media,
-                        "last_seen": now,
-                    }
-                    rows.append(data)
-                    files_per_episode[episode["_id"]] += 1
-                    observed_episodes.add(episode["_id"])
-            except (OSError, ValueError) as exc:
-                item["status"] = "probe_error"
-                item["reason"] = str(exc)
-                item.pop("media", None)
-        counts[item["status"]] += 1
-        if verbose or item["status"] != "unmatched":
-            print(json.dumps(item, ensure_ascii=False), file=stream)
-
-    # Absence is scoped to the supplied roots and scan time; it is not a
-    # claim that the fixture's recording does not exist somewhere else.
-    unseen = []
-    for episode in episodes:
-        scheduled = episode.get("scheduled")
-        if not isinstance(scheduled, dt.datetime):
-            continue
-        if scheduled.tzinfo is None:
-            scheduled = scheduled.replace(tzinfo=dt.timezone.utc)
-        if scheduled + dt.timedelta(hours=3) > now:
-            continue
-        if episode["_id"] not in observed_episodes:
-            unseen.append(episode)
-    if show_unseen:
-        for episode in sorted(unseen, key=lambda e: (
-                e["season"], e.get("episode") or -1, e["_id"])):
-            print(json.dumps({
-                "status": "not_found_in_roots",
-                "episode_id": episode["_id"],
-                "season": episode["season"],
-                "episode": episode.get("episode"),
-                "scheduled": episode["scheduled"].isoformat(),
-            }), file=stream)
-
-    # All filesystem observations are complete before any Atlas updates.
-    if apply and rows:
-        persist(database, rows, now=now)
-    report = {
-        "mode": "apply" if apply else "preview",
-        "series": SERIES_ID, "roots": [str(r) for r in roots],
-        "fixtures": len(episodes), "scanned": counts["scanned"],
-        "present": counts["present"], "unprobed": counts["unprobed"],
-        "unmatched": counts["unmatched"], "conflict": counts["conflict"],
-        "probe_error": counts["probe_error"],
-        "episodes_with_files": len(files_per_episode),
-        "past_episodes_not_found_in_roots": len(unseen),
-        "written": len(rows) if apply else 0,
-    }
-    print(json.dumps(report, sort_keys=True), file=summary_stream)
-    return report
+from inventory.library import scan as scan_library, persist, DEFAULT_ROOT
+from inventory.scan import probe_video
+from filing.publish import SERIES_PATHS
 
 
-def persist(database, rows, *, now=None):
-    """Idempotent, non-destructive upsert; refuse to reassign existing paths."""
-    from pymongo import UpdateOne
-
-    now = now or dt.datetime.now(dt.timezone.utc)
-    ids = [r["_id"] for r in rows]
-    if len(ids) != len(set(ids)):
-        raise ValueError("Duplicate local file identities")
-    previous = list(database.files.find({"_id": {"$in": ids}},
-                                        {"_id": 1, "episode_id": 1}))
-    expected = {r["_id"]: r["episode_id"] for r in rows}
-    conflicts = [r["_id"] for r in previous if r.get("episode_id") not in
-                 (None, expected[r["_id"]])]
-    if conflicts:
-        raise ValueError("Existing file associations conflict: " +
-                         ", ".join(conflicts[:5]))
-
-    database.files.create_index([("host", 1), ("path", 1)], unique=True)
-    database.files.create_index([("episode_id", 1)])
-    # A changed association between preflight and write triggers a duplicate
-    # key error instead of silently replacing somebody else's episode link.
-    operations = [
-        UpdateOne(
-            {"_id": row["_id"], "episode_id": {"$in": [None, row["episode_id"]]}},
-            {"$set": {k: v for k, v in row.items() if k != "_id"},
-             "$setOnInsert": {"first_seen": now}},
-            upsert=True,
-        )
-        for row in rows
-    ]
-    if operations:
-        database.files.bulk_write(operations, ordered=True)
-    return len(operations)
+def scan(database, **kwargs):
+    return scan_library(database, prober=probe_video, **kwargs)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", action="append", type=pathlib.Path,
-                        help="Directory to scan; repeatable (default: /data/sports/Rugby_Womens_PWR)")
+                        help="Directory to scan; repeatable (default: all supported series under sports root)")
+    parser.add_argument("--sports-root", default=DEFAULT_ROOT)
+    parser.add_argument("--series", action="append", choices=sorted(SERIES_PATHS),
+                        help="Restrict inventory to a series (repeatable)")
     parser.add_argument("--apply", action="store_true",
-                        help="Write verified files to Atlas; default previews only")
+                        help="Write verified files to Atlas and create missing NFOs; default previews only")
     parser.add_argument("--no-probe", action="store_true",
                         help="Preview filename/NFO matching without ffprobe; cannot --apply")
     parser.add_argument("--ffprobe", default="ffprobe",
@@ -217,7 +56,8 @@ def main(argv=None):
             scan(client[args.database], roots=args.root, apply=args.apply,
                  probe=not args.no_probe, ffprobe=args.ffprobe,
                  hostname=args.host, verbose=args.verbose,
-                 show_unseen=args.show_unseen)
+                 show_unseen=args.show_unseen, sports_root=args.sports_root,
+                 series_ids=args.series)
     except (OSError, ValueError) as exc:
         print(f"PVR inventory: {exc}", file=sys.stderr)
         return 1

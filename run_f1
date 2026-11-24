@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 from orchestration import polling
+from inventory import library as inventory
 from orchestration.locks import LockBusy, site_lock
 
 ROOT = Path(__file__).resolve().parent
@@ -55,6 +56,10 @@ def run(*, apply=False, pages=3, year=2026, limit=1,
             scope = contextlib.nullcontext(poll_db)
         with scope as connection:
             db = connection[database] if poll_db is None else connection
+            if apply:
+                inventory.scan(
+                    db, sports_root=sports_root, apply=True, series_ids=("Formula_1",),
+                    quiet=True, stream=output, summary_stream=output)
             decisions, missing = polling.plan(
                 db, sources=("reddit-teletz",), now=now,
                 sports_root=sports_root, season=None)

@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 from orchestration import polling
+from inventory import library as inventory
 from orchestration.locks import LockBusy
 from orchestration.source_registry import RUGBY_SERIES, RUGBY_SOURCES, sources_for
 from matchers.pwr import SERIES_ID
@@ -146,6 +147,12 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
             )
             state_keys = ({"rugby24": "rugby24:" + selected_category}
                           if selected_category and "rugby24" in sources else None)
+            if apply:
+                inventory.scan(
+                    db, sports_root=sports_root, apply=True, series_ids=(series,) if series else
+                               [name for name in inventory.SERIES_PATHS if name.startswith("Rugby_")],
+                    hostname=hostname, ffprobe=ffprobe,
+                    quiet=True, stream=output, summary_stream=output)
             decisions, missing = polling.plan(
                 db, sources=sources, now=now, sports_root=sports_root,
                 host=hostname, season=season,

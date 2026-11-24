@@ -15,8 +15,8 @@ from collections import defaultdict
 from matchers.pwr import SERIES_ID
 
 EXTENSIONS = {".mkv", ".mp4", ".m4v", ".ts", ".mov", ".webm"}
-SEASON_EPISODE = re.compile(r"(?i)(?<![a-z0-9])s(?P<season>20\d{2})e(?P<episode>\d{1,4})(?!\d)")
-FOLDER_SEASON = re.compile(r"(?i)^Season_(20\d{2})$")
+SEASON_EPISODE = re.compile(r"(?i)(?<![a-z0-9])s(?P<season>(?:19|20)\d{2})e(?P<episode>\d{1,4})(?!\d)")
+FOLDER_SEASON = re.compile(r"(?i)^Season_((?:19|20)\d{2})$")
 SERIES_DIR = "rugby_womens_pwr"
 SERIES_ALIASES = {"rugbywomenspwr", "premiershipwomensrugby"}
 
@@ -31,9 +31,32 @@ def is_pwr_path(path):
     )
 
 
+def normalize_series(text):
+    return re.sub(r"[^a-z0-9]", "", text.casefold())
+
+
+def series_identity(text):
+    # Lazy import avoids the publish -> scan dependency cycle.
+    from filing.publish import SERIES_PATHS
+    normalized = normalize_series(text)
+    if normalized in SERIES_ALIASES:
+        return SERIES_ID
+    for series, (showtitle, _) in SERIES_PATHS.items():
+        if normalized in (normalize_series(series), showtitle):
+            return series
+    return None
+
+
+def directory_series(path):
+    return {series for part in pathlib.Path(path).parts
+            if (series := series_identity(part))}
+
+
 def parse_nfo(path):
     """Read only episode identity fields; reject malformed/contradictory NFOs."""
     nfo = path.with_suffix(".nfo")
+    if nfo.is_symlink() or (os.path.lexists(nfo) and not nfo.is_file()):
+        raise ValueError(f"Unsafe sidecar {nfo}")
     if not nfo.is_file():
         return None
     try:
@@ -68,17 +91,13 @@ def ids_in_filename(name, linked_releases):
 
 
 def identify(path, by_number, linked_releases):
-    """Return (episode, source_uri, evidence, error).
-
-    Only matching authoritative identities are accepted. A contradictory
-    filename, NFO, folder, or release identity is an explicit conflict.
-    """
+    """Identify a recording by series/season/episode, never its title."""
     try:
         nfo = parse_nfo(path)
     except ValueError as exc:
         return None, None, [], str(exc)
-    filename = [(int(m.group("season")), int(m.group("episode")))
-                for m in SEASON_EPISODE.finditer(path.stem)]
+    matches = list(SEASON_EPISODE.finditer(path.stem))
+    filename = [(int(m.group("season")), int(m.group("episode"))) for m in matches]
     if len(set(filename)) > 1:
         return None, None, [], "Multiple different season/episode identities in filename"
     filename_key = filename[0] if filename else None
@@ -88,60 +107,59 @@ def identify(path, by_number, linked_releases):
     if len(folder_seasons) > 1:
         return None, None, [], "Conflicting Season_XXXX directories"
     folder_season = next(iter(folder_seasons)) if folder_seasons else None
-    evidence = []
     if filename_key and nfo_key and filename_key != nfo_key:
         return None, None, [], "Filename and NFO season/episode disagree"
     key = filename_key or nfo_key
     if key and folder_season is not None and key[0] != folder_season:
         return None, None, [], "Season directory disagrees with filename/NFO"
+    hints = directory_series(path.parent)
+    # Only the prefix before the episode token can identify a series.
+    if matches:
+        prefix = path.stem[:matches[0].start()].rstrip("-_ .")
+        if series := series_identity(prefix):
+            hints.add(series)
     nfo_title = nfo["showtitle"] if nfo else ""
-    if nfo_title and not series_hint(nfo_title):
-        if key or is_pwr_path(path):
-            return None, None, [], "NFO showtitle is not Rugby Womens PWR"
-        return None, None, [], None  # Out-of-scope file.
-    hinted = is_pwr_path(path) or (bool(nfo_title) and series_hint(nfo_title))
-    # A bare S2025E101 in a mixed incoming directory is not a PWR identity.
-    by_key = by_number.get(key) if key and hinted else None
-    if key and hinted:
-        if not by_key:
-            return None, None, [], "PWR season/episode not found in Atlas"
+    if nfo_title:
+        series = series_identity(nfo_title)
+        if not series:
+            if key or hints:
+                return None, None, [], "Unrecognized NFO showtitle"
+            return None, None, [], None
+        hints.add(series)
+    if len(hints) > 1:
+        return None, None, [], "Series directory, filename and NFO disagree"
+    series = next(iter(hints)) if hints else None
+    evidence = []
+    if key and series:
+        found = by_number.get((series, *key))
+        if not found:
+            return None, None, [], "Series season/episode not found in Atlas or ambiguous"
         if filename_key:
             evidence.append("filename")
         if nfo_key:
             evidence.append("nfo")
-    elif key and not hinted:
-        # Still permit a unique linked source ID below, but not a bare number.
-        pass
+        # The title suffix is arbitrary; do not mistake digits in a title
+        # or date for an unrelated provider release ID.
+        return found, None, evidence, None
 
+    # Existing incoming workflow: a unique linked release can identify an
+    # unnumbered filename, but never override a contradictory identity.
     source_hits = ids_in_filename(path.stem, linked_releases)
     episode_ids = {episode_id for _, episode_id in source_hits}
     if len(episode_ids) > 1:
         return None, None, [], "Filename identifies multiple different release episodes"
     linked_id = next(iter(episode_ids)) if episode_ids else None
-    if by_key and linked_id and by_key["_id"] != linked_id:
-        return None, None, [], "Release ID and season/episode point to different fixtures"
-    if linked_id and key and not hinted:
-        # If a title contains an episode number without identifying its series,
-        # accept only when its number agrees with the linked release.
-        # This guards against unrelated similarly-numbered programmes.
+    if linked_id and key and not series:
         return None, None, [], "Season/episode without series identity"
-    if linked_id:
-        evidence.append("release_id")
-    found = by_key or (linked_releases["__episodes__"].get(linked_id)
-                       if linked_id else None)
+    found = linked_releases["__episodes__"].get(linked_id) if linked_id else None
     if not found:
         return None, None, [], None
-    if found.get("series_id") != SERIES_ID or found.get("season", 0) < 2025:
-        return None, None, [], "Episode is outside supported PWR seasons"
+    if series and found["series_id"] != series:
+        return None, None, [], "Series directory disagrees with linked episode"
     if folder_season is not None and found["season"] != folder_season:
         return None, None, [], "Season directory disagrees with linked episode"
-    uri = None
-    if source_hits:
-        # More than one release of the same match might be named in the file;
-        # keep an episode match but no unambiguous release provenance.
-        uris = {u for u, ep_id in source_hits if ep_id == found["_id"]}
-        uri = next(iter(uris)) if len(uris) == 1 else None
-    return found, uri, evidence, None
+    uris = {u for u, ep_id in source_hits if ep_id == found["_id"]}
+    return found, next(iter(uris)) if len(uris) == 1 else None, ["release_id"], None
 
 
 def probe_video(path, *, binary="ffprobe", execute=subprocess.run, timeout=30):
@@ -230,12 +248,17 @@ def walk_videos(roots):
 def make_indexes(episodes, releases):
     by_number = defaultdict(list)
     by_id = {}
+    from filing.publish import SERIES_PATHS
     for ep in episodes:
-        if ep.get("series_id") != SERIES_ID or ep.get("season", 0) < 2025:
+        series = ep.get("series_id")
+        config = SERIES_PATHS.get(series)
+        if (not config or type(ep.get("season")) is not int
+                or ep["season"] < config[1]
+                or ep.get("status") in ("cancelled", "canceled", "superseded")):
             continue
         by_id[ep["_id"]] = ep
-        if isinstance(ep.get("episode"), int):
-            by_number[(ep["season"], ep["episode"])].append(ep)
+        if type(ep.get("episode")) is int:
+            by_number[(series, ep["season"], ep["episode"])].append(ep)
     # A duplicated season/episode number is unsafe to identify by filename.
     unique = {key: items[0] for key, items in by_number.items()
               if len(items) == 1}

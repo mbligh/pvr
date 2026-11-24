@@ -35,6 +35,8 @@ class RugbyRunTests(unittest.TestCase):
         self.stdout = io.StringIO()
         self.stderr = io.StringIO()
         self.db = MagicMock()
+        self.inventory = patch.object(runner.inventory, "scan").start()
+        self.addCleanup(patch.stopall)
         self.discovery = json.dumps({
             "mode": "apply",
             "sources": ["bbc"], "total_releases": 5
@@ -89,6 +91,7 @@ class RugbyRunTests(unittest.TestCase):
 
     def test_preview_calls_only_acquisition_with_no_apply(self):
         self.assertEqual(self.invoke(), 0)
+        self.inventory.assert_not_called()
         self.assertEqual(len(self.calls), 1)
         cmd = self.calls[0][0]
         self.assertEqual(Path(cmd[1]).name, "acquire_rugby")

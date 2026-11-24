@@ -380,6 +380,9 @@ class F1RunWrapperTests(unittest.TestCase):
         self.path = Path(self.tmp.name)
         self.calls = []
         self.db = MagicMock()
+        self.inventory_patch = patch.object(runner.inventory, "scan")
+        self.inventory = self.inventory_patch.start()
+        self.addCleanup(self.inventory_patch.stop)
         self.plan_patch = patch.object(runner.polling, "plan", side_effect=self.poll_plan)
         self.plan_patch.start()
         self.addCleanup(self.plan_patch.stop)
@@ -407,6 +410,7 @@ class F1RunWrapperTests(unittest.TestCase):
                             poll_db=self.db,
                             output=io.StringIO())
         self.assertEqual(result, 0)
+        self.inventory.assert_not_called()
         self.assertEqual(len(self.calls), 1)
         self.assertIn("acquire_f1", str(self.calls[0][0][1]))
         self.assertNotIn("--apply", self.calls[0][0])
