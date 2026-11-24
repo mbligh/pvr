@@ -24,8 +24,9 @@ DATES = ("02-05", "02-13", "02-20", "03-05", "03-13")
 
 def page(year=2027, *, missing=False, rsc=True, include_scores=False):
     markup = ["<html><body>"]
-    cards = []
+    rounds = []
     for round_no, games in enumerate(ROUNDS, 1):
+        cards = []
         markup.append(f'<div id="roundNumber-{round_no}">')
         for n, (home, away) in enumerate(games):
             if missing and round_no == 5 and n == 2:
@@ -40,7 +41,9 @@ def page(year=2027, *, missing=False, rsc=True, include_scores=False):
                 "children": [
                     {"format": "HH:mm", "date": f"{day}T20:10:00.000Z"},
                     {"data-testid": "fixture-card__match-centre-link",
-                     "href": href},
+                     "href": href, "title": f"{home} v {away} - Six Nations Rugby - {day_text}"},
+                    {"className": "fixturesResultsCard_stadium__eRJIL",
+                     "children": "Aviva Stadium"},
                 ],
             }
             cards.append(card)
@@ -53,8 +56,9 @@ def page(year=2027, *, missing=False, rsc=True, include_scores=False):
                 f'href="{href}">Match centre</a></article>'
             )
         markup.append("</div>")
+        rounds.append({"id": f"roundNumber-{round_no}", "children": cards})
     if rsc:
-        frame = [1, "26:" + json.dumps(["$", "section", None, {"children": cards}])]
+        frame = [1, "26:" + json.dumps(["$", "section", None, {"children": rounds}])]
         markup.append("<script>self.__next_f.push(" + json.dumps(frame) + ")</script>")
     markup.append("</body></html>")
     return "".join(markup)
@@ -76,6 +80,14 @@ class OfficialMensSixNationsTests(unittest.TestCase):
             dt.datetime(2027, 2, 5, 20, 10, tzinfo=UTC))
         self.assertEqual(len({str(e.get("UID")) for e in rows}), 15)
         self.assertTrue(all(e.decoded("DTSTART").year == 2027 for e in rows))
+
+    def test_plain_http_body_without_rendered_cards(self):
+        html = page()
+        # Non-browser clients receive fixture markup only in RSC scripts.
+        html = __import__("re").sub(
+            r'<article data-testid="fixture-card">.*?</article>',
+            "", html, flags=__import__("re").S)
+        self.assertEqual(len(matches(official.convert_mens(html, year=2027))), 15)
 
     def test_no_results_are_copied_into_episode_metadata(self):
         source = official.convert_mens(
