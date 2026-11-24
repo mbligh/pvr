@@ -97,7 +97,7 @@ class OfficialMensSixNationsTests(unittest.TestCase):
         self.assertNotIn("WIN", source.to_ical().decode())
 
     def test_2026_history_fallback_uses_venue_timezone(self):
-        html = page(2026, rsc=False)
+        html = page(2026, rsc=False).replace("/build-up", "/report")
         # Paris' 21:10 is 20:10 UTC in February.
         html = html.replace("france-v-wales-05022026-2010",
                             "france-v-wales-05022026-2110")
@@ -108,13 +108,43 @@ class OfficialMensSixNationsTests(unittest.TestCase):
                          dt.datetime(2026, 2, 5, 20, 10, tzinfo=UTC))
 
     def test_2026_rsc_only_completed_fixtures_have_no_score_dependency(self):
-        html = page(2026, rsc_times=False, include_scores=True)
+        html = page(2026, rsc_times=False, include_scores=True).replace("/build-up", "/report")
         html = __import__("re").sub(
             r'<article data-testid="fixture-card">.*?</article>',
             "", html, flags=__import__("re").S)
         source = official.convert_mens(html, year=2026)
         self.assertEqual(len(matches(source)), 15)
         self.assertNotIn("32-18", source.to_ical().decode())
+
+    def test_completed_future_seasons_use_competition_specific_clocks(self):
+        for year in (2027, 2028, 2035):
+            with self.subTest(year=year):
+                men = page(year, rsc_times=False).replace("/build-up", "/report")
+                men = men.replace(f"france-v-wales-0502{year}-2010",
+                                  f"france-v-wales-0502{year}-2110")
+                women = self.womens_page(year, rsc_times=False).replace("/build-up", "/report")
+                for convert, html, title in (
+                    (official.convert_mens, men, "France vs Wales"),
+                    (official.convert_womens, women, "France Women vs Wales Women"),
+                ):
+                    rows = matches(convert(html, year=year))
+                    self.assertEqual(len(rows), 15)
+                    event = next(e for e in rows if str(e["SUMMARY"]) == title)
+                    self.assertEqual(event.decoded("DTSTART"),
+                                     dt.datetime(year, 2, 5, 20, 10, tzinfo=UTC))
+
+    def test_mixed_completed_and_upcoming_cards(self):
+        # Completed report card no longer has a time; other cards still do.
+        html = page(2027)
+        old = 'ireland-v-england-05022027-2010/build-up'
+        html = html.replace(old, old.replace("build-up", "report"))
+        marker = json.dumps({"format": "HH:mm", "date": "2027-02-05T20:10:00.000Z"}) + ", "
+        escaped = json.dumps(marker)[1:-1]
+        self.assertIn(escaped, html)
+        html = html.replace(escaped, "", 1)
+        rows = matches(official.convert_mens(html, year=2027))
+        self.assertEqual(len(rows), 15)
+        self.assertEqual(rows[0].decoded("DTSTART"), dt.datetime(2027, 2, 5, 20, 10, tzinfo=UTC))
 
     def test_no_guessing_incomplete_rounds_or_future_kickoffs(self):
         with self.assertRaisesRegex(ValueError, "Incomplete"):
@@ -190,7 +220,7 @@ class OfficialMensSixNationsTests(unittest.TestCase):
 
     def test_womens_historical_url_clock_is_utc(self):
         source = official.convert_womens(
-            self.womens_page(2026, rsc_times=False), year=2026)
+            self.womens_page(2026, rsc_times=False).replace("/build-up", "/report"), year=2026)
         france = next(e for e in matches(source)
                       if str(e["SUMMARY"]) == "France Women vs Wales Women")
         self.assertEqual(france.decoded("DTSTART"),
