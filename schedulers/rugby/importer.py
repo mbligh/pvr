@@ -27,7 +27,7 @@ from . import plex_nfo
 from .pwr import fetch_pwr
 from .prem import fetch_prem
 from .epcr import fetch_epcr
-from .mens_six_nations import fetch_mens, preserve_uids
+from .mens_six_nations import fetch_mens, fetch_womens, preserve_uids
 from .world_rugby import fetch_world_rugby
 from schedulers.series_ids import assert_migrated, canonicalize, CANONICAL_TO_LEGACY
 from schedulers.rugby.prem_identity import reconcile_uids, season_for
@@ -124,6 +124,8 @@ def fetch_calendar(entry, now):
                           comp_id=entry["compId"], season=season)
     if kind == "six-nations-mens":
         return fetch_mens(now=now)
+    if kind == "six-nations-womens":
+        return fetch_womens(now=now)
     if kind == "epcr":
         season = season_for(now)
         separator = "&" if "?" in entry["url"] else "?"
@@ -182,14 +184,14 @@ def build_catalogue(db, config, now, refresh, *, backfill_prem_2026=False):
                 source = fetch_calendar(entry, now)
                 if slug == "Rugby_Mens_Prem":
                     source, prem_metadata = reconcile_uids(source, previous)
-                if slug == "Rugby_Mens_6N":
+                if slug in ("Rugby_Mens_6N", "Rugby_Womens_6N"):
                     source = preserve_uids(source, previous)
                 merged = calendar_filter.merge(
                     source, previous, now, zone, entry["name"],
                     # EPCR's adapter deliberately strips results before the
                     # merger sees historical fixtures. Other feeds retain the
                     # normal first-seen-after-kickoff prohibition.
-                    allow_new_past=(slug in (EPCR_SERIES, "Rugby_Mens_6N")))
+                    allow_new_past=(slug in (EPCR_SERIES, "Rugby_Mens_6N", "Rugby_Womens_6N")))
                 if slug == prem_history.SERIES and backfill_prem_2026:
                     merged, _ = prem_history.add_history(source, merged, now)
             else:
