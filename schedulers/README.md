@@ -11,7 +11,7 @@ schedulers/
     nations_history.py    July 2026 Nations historical import (preview-first)
     nations.py            verified Nations Championship rounds 1-7
     six_nations.py        validate complete tournament round numbering
-    mens_six_nations.py  official Men's Six Nations 2026+ fixture pages
+    mens_six_nations.py  official men's and women's Six Nations 2026+ fixture pages
     calendars.json         competition/source configuration
     filter.py              spoiler-free calendar merge
     plex_nfo.py            round numbering and NFO generation
