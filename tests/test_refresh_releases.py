@@ -110,6 +110,23 @@ class RefreshTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-JSON"):
             CLI.scan_rugbypass(execute=lambda *args, **kw: Result(stdout="not json"))
 
+    def test_rugbypass_scans_dedicated_wxv_playlist(self):
+        calls = []
+        class Result:
+            returncode = 0
+            stdout = ('{"source":"rugbypass","id":"1043880","uri":"rugbypass:1043880",'
+                      '"title":"South Africa v Ireland | WXV Global Series 2026 | Full Match Replay",'
+                      '"published":"2026-10-31T18:22:00Z"}\n')
+            stderr = ""
+        def execute(cmd, **kw):
+            calls.append(cmd)
+            return Result()
+        releases = CLI.scan_rugbypass(execute=execute, pages=5)
+        self.assertEqual(len(releases), 1)
+        self.assertEqual(releases[0]["id"], "1043880")
+        self.assertEqual(calls[0][-2:], ["--playlist", "37547"])
+        self.assertEqual(calls[0][1:5], ["--list-games", "--jsonl", "--pages", "5"])
+
     def test_youtube_refresh_uses_combined_pwr_indexer(self):
         calls = []
         def fake_youtube(**kwargs):
