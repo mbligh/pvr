@@ -163,13 +163,12 @@ class OfficialMensSixNationsTests(unittest.TestCase):
         import re
         html = page(year, rsc_times=rsc_times)
         html = html.replace("/en/m6n/", "/en/w6n/")
-        html = re.sub(r"([a-z]+)-v-([a-z]+)-(\\d{8})",
-                      r"\\1-women-v-\\2-women-\\3", html)
+        html = re.sub(r"([a-z]+)-v-([a-z]+)-(\d{8})",
+                      r"\1-women-v-\2-women-\3", html)
         html = html.replace(" - Six Nations Rugby - ", " - Women's Six Nations Rugby - ")
         html = html.replace("Aviva Stadium", "TBD")
         if not titles:
-            # Future women's match cards omit title in the RSC payload.
-            html = re.sub(r'(?<=\\\\")([A-Z][a-z]+ v [A-Z][a-z]+ - Women\'s Six Nations Rugby - [^"\\\\]+)(?=\\\\")',
+            html = re.sub(r"[A-Z][a-z]+ v [A-Z][a-z]+ - Women's Six Nations Rugby - \d{2} [A-Za-z]+ \d{4}",
                           "$undefined", html)
         return html
 
@@ -185,10 +184,7 @@ class OfficialMensSixNationsTests(unittest.TestCase):
             official.convert_mens(self.womens_page(), year=2027)
 
     def test_womens_missing_future_titles(self):
-        import re
-        html = self.womens_page()
-        html = re.sub(r'(?<=\\\\")([A-Z][a-z]+ v [A-Z][a-z]+ - Women\'s Six Nations Rugby - [^"\\\\]+)(?=\\\\")',
-                      "$undefined", html)
+        html = self.womens_page(titles=False)
         self.assertIn("$undefined", html)
         self.assertEqual(len(matches(official.convert_womens(html, year=2027))), 15)
 
