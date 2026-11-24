@@ -1,9 +1,8 @@
-"""Official, score-free Guinness Men's Six Nations fixtures (2026 onward).
+"""Official, score-free men's and women's Six Nations fixtures (2026 onward).
 
 Read the public server-rendered fixture cards at sixnationsrugby.com. Their
 Next.js payload also provides UTC kickoffs for upcoming matches. Completed
-2026 cards omit kickoff timestamps; their link slugs contain venue-local
-times, used only for that explicitly requested historical season.
+2026 cards omit kickoff timestamps; their link slugs contain kickoff times, venue-local for men and UTC for women.
 
 No results, scores, standings, or match-report data are copied into events.
 """
@@ -20,6 +19,8 @@ from zoneinfo import ZoneInfo
 from icalendar import Calendar, Event
 
 BASE = "https://www.sixnationsrugby.com/en/m6n/fixtures/"
+WOMENS_BASE = "https://www.sixnationsrugby.com/en/w6n/fixtures/"
+COMPETITIONS = {"m6n": (BASE, "Men's"), "w6n": (WOMENS_BASE, "Women's")}
 MIN_YEAR = 2026
 UTC = dt.timezone.utc
 TEAMS = {"england": "England", "france": "France", "ireland": "Ireland",
@@ -27,12 +28,13 @@ TEAMS = {"england": "England", "france": "France", "ireland": "Ireland",
 HOME_ZONES = {"france": "Europe/Paris", "italy": "Europe/Rome",
               "ireland": "Europe/Dublin"}
 LINK = re.compile(
-    r"^/en/m6n/fixtures/(?P<season>\d{4})00/"
-    r"(?P<home>[a-z]+)-v-(?P<away>[a-z]+)-"
+    r"^/en/(?P<competition>m6n|w6n)/fixtures/(?P<season>\d{4})00/"
+    r"(?P<home>[a-z]+)(?P<home_suffix>-women)?-v-"
+    r"(?P<away>[a-z]+)(?P<away_suffix>-women)?-"
     r"(?P<date>\d{8})-(?P<time>\d{4})/(?:build-up|report)/?$"
 )
 TITLE = re.compile(
-    r"^([A-Za-z]+) v ([A-Za-z]+) - Six Nations Rugby - "
+    r"^([A-Za-z]+) v ([A-Za-z]+) - (Women's )?Six Nations Rugby - "
     r"(\d{2} [A-Za-z]+ \d{4})$"
 )
 VERSUS = re.compile(r"\s+(?:vs?\.?|versus)\s+", re.I)
@@ -179,8 +181,12 @@ def _validate(matches):
         raise ValueError("Repeated or missing Six Nations team pairing")
 
 
-def convert_mens(html, *, year):
+def convert_fixtures(html, *, year, competition):
     """Convert one official page into 15 safe events; reject incomplete pages."""
+    if competition not in COMPETITIONS:
+        raise ValueError("Unknown Six Nations competition")
+    _, label = COMPETITIONS[competition]
+    womens = competition == "w6n"
     if year < MIN_YEAR:
         raise ValueError("Six Nations history before 2026 is not supported")
     page = _FixturePage()
@@ -191,16 +197,28 @@ def convert_mens(html, *, year):
     for card in cards:
         href = urllib.parse.urlsplit(card.get("href") or "").path
         match = LINK.fullmatch(href)
-        title = TITLE.fullmatch(card.get("title") or "")
-        if not match or not title or int(match["season"]) != year:
+        raw_title = card.get("title")
+        title = TITLE.fullmatch(raw_title or "")
+        if (not match or int(match["season"]) != year or
+                match["competition"] != competition or
+                bool(match["home_suffix"]) != womens or
+                bool(match["away_suffix"]) != womens):
             raise ValueError("Unexpected official Six Nations fixture link")
         home, away = match["home"], match["away"]
-        if (home not in TEAMS or away not in TEAMS or home == away or
-                (title[1].casefold(), title[2].casefold()) != (home, away)):
+        if home not in TEAMS or away not in TEAMS or home == away:
             raise ValueError("Unexpected Six Nations teams")
         day = dt.datetime.strptime(match["date"], "%d%m%Y").date()
-        title_day = dt.datetime.strptime(title[3], "%d %B %Y").date()
-        if day != title_day or day.year != year:
+        # The 2027 women's cards have no title while venues are TBD.
+        # The competition-specific URL and full UTC timestamp still agree.
+        if title:
+            title_day = dt.datetime.strptime(title[4], "%d %B %Y").date()
+            if (bool(title[3]) != womens or
+                    (title[1].casefold(), title[2].casefold()) != (home, away) or
+                    day != title_day):
+                raise ValueError("Six Nations fixture title disagrees with link")
+        elif not (womens and raw_title in (None, "", "$undefined") and card.get("kickoff")):
+            raise ValueError("Missing or invalid official Six Nations fixture title")
+        if day.year != year:
             raise ValueError("Six Nations fixture date disagrees with page")
         if href in ids:
             raise ValueError("Duplicate Six Nations fixture link")
@@ -210,10 +228,10 @@ def convert_mens(html, *, year):
             if year != 2026:
                 raise ValueError("Missing official UTC kickoff: " + href)
             # Only for completed 2026 fixtures: these pages now display
-            # scores instead of the pre-match UTC time. The URL encodes
-            # the originally published venue-local kick-off.
+            # scores instead of the pre-match UTC time. Verified historical
+            # women\'s URL clocks are UTC; men\'s are venue-local.
             clock = dt.datetime.strptime(match["time"], "%H%M").time()
-            zone = ZoneInfo(HOME_ZONES.get(home, "Europe/London"))
+            zone = UTC if womens else ZoneInfo(HOME_ZONES.get(home, "Europe/London"))
             kickoff = dt.datetime.combine(day, clock, tzinfo=zone).astimezone(UTC)
         elif abs((kickoff.date() - day).days) > 1:
             raise ValueError("Official fixture timestamp/date mismatch")
@@ -223,21 +241,22 @@ def convert_mens(html, *, year):
         matches.append({
             "home": TEAMS[home], "away": TEAMS[away], "round": round_no,
             "kickoff": kickoff, "venue": card["venue"].strip(),
-            "uid": f"sixnations-m6n-{year}-{home}-{away}@mbligh.github.io",
+            "uid": f"sixnations-{competition}-{year}-{home}-{away}@mbligh.github.io",
         })
     _validate(matches)
     calendar = Calendar()
-    calendar.add("prodid", "-//mbligh/pvr//Official Men's Six Nations//EN")
+    calendar.add("prodid", f"-//mbligh/pvr//Official {label} Six Nations//EN")
     calendar.add("version", "2.0")
     for match in sorted(matches, key=lambda m: (m["kickoff"], m["uid"])):
         event = Event()
         event.add("uid", match["uid"])
-        event.add("summary", f"{match['home']} vs {match['away']}")
+        suffix = " Women" if womens else ""
+        event.add("summary", f"{match['home']}{suffix} vs {match['away']}{suffix}")
         event.add("dtstart", match["kickoff"])
         event.add("dtend", match["kickoff"] + dt.timedelta(hours=2))
-        event.add("description", f"Men's Six Nations - Round {match['round']}")
+        event.add("description", f"{label} Six Nations - Round {match['round']}")
         event.add("x-six-nations-round", match["round"])
-        if match["venue"]:
+        if match["venue"] and match["venue"].casefold() not in ("tbd", "tbc", "to be confirmed"):
             event.add("location", match["venue"])
         calendar.add_component(event)
     return calendar
@@ -283,19 +302,20 @@ def preserve_uids(source, previous):
     return source
 
 
-def fetch_mens(*, now):
+def fetch_fixtures(*, now, competition):
     """Fetch current and following calendar years, never before 2026.
 
     An as-yet-unpublished next season may be absent. A partially published
     season fails validation rather than silently deleting/renumbering matches.
     Each run performs at most two requests.
     """
+    base, label = COMPETITIONS[competition]
     current = max(MIN_YEAR, now.astimezone(UTC).year)
     combined = Calendar()
-    combined.add("prodid", "-//mbligh/pvr//Official Men's Six Nations//EN")
+    combined.add("prodid", f"-//mbligh/pvr//Official {label} Six Nations//EN")
     combined.add("version", "2.0")
     for year in (current, current + 1):
-        url = BASE + f"{year}00"
+        url = base + f"{year}00"
         request = urllib.request.Request(url, headers={
             "User-Agent": "mbligh-pvr/1.0",
             "Accept": "text/html",
@@ -308,7 +328,7 @@ def fetch_mens(*, now):
                 continue
             raise RuntimeError(f"Six Nations fixtures HTTP {exc.code} ({year})") from exc
         try:
-            season = convert_mens(page, year=year)
+            season = convert_fixtures(page, year=year, competition=competition)
         except ValueError as exc:
             # A future year may have a valid page shell before its fixtures
             # are published; do not treat a partly published season as safe.
@@ -320,3 +340,19 @@ def fetch_mens(*, now):
     if not combined.walk("VEVENT"):
         raise ValueError("No official Six Nations fixtures")
     return combined
+
+
+def convert_mens(html, *, year):
+    return convert_fixtures(html, year=year, competition="m6n")
+
+
+def convert_womens(html, *, year):
+    return convert_fixtures(html, year=year, competition="w6n")
+
+
+def fetch_mens(*, now):
+    return fetch_fixtures(now=now, competition="m6n")
+
+
+def fetch_womens(*, now):
+    return fetch_fixtures(now=now, competition="w6n")
