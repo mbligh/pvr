@@ -1,4 +1,4 @@
-"""Conservative RugbyPass replay matching for international/Nations/WXV fixtures.
+"""Conservative RugbyPass replay matching for international/Nations/WXV/Six Nations fixtures.
 
 A release is linked only when its *competition label* identifies one series,
 the home/away national sides match exactly after documented aliases, and its
@@ -14,7 +14,9 @@ MENS = "Rugby_Mens_Intl"
 WOMENS = "Rugby_Womens_Intl"
 WXV = "Rugby_Womens_WXV"
 NATIONS = "Rugby_Mens_Nations"
-SERIES = (MENS, WOMENS, NATIONS, WXV)
+MENS_6N = "Rugby_Mens_6N"
+WOMENS_6N = "Rugby_Womens_6N"
+SERIES = (MENS, WOMENS, NATIONS, WXV, MENS_6N, WOMENS_6N)
 METHOD = "rugbypass-national-teams-date-v1"
 
 # Explicit aliases, not substring matching, so Australia A and England A
@@ -40,6 +42,10 @@ WOMENS_LABEL = re.compile(
     re.IGNORECASE)
 WXV_LABEL = re.compile(r"\bwxv\b", re.IGNORECASE)
 NATIONS_LABEL = re.compile(r"\bnations championship\b", re.IGNORECASE)
+SIX_NATIONS_LABEL = re.compile(r"\b(?:six|6)\s+nations\b", re.I)
+WOMENS_6N_LABEL = re.compile(r"\bwomen(?:[’\']?s)?\b", re.I)
+MENS_6N_LABEL = re.compile(r"\bmen(?:[’\']?s)?\b", re.I)
+AGE_GRADE_LABEL = re.compile(r"\b(?:u\s*\d{2}|under[- ]?\d{2}|summer series)\b", re.I)
 
 
 def normalize_team(value):
@@ -69,7 +75,18 @@ def identify_replay(title):
     if not home or not away or home == away:
         return None
     label = " | ".join(categories)
-    if NATIONS_LABEL.search(label):
+    if SIX_NATIONS_LABEL.search(label):
+        if AGE_GRADE_LABEL.search(label):
+            return None
+        if WOMENS_6N_LABEL.search(label):
+            series = WOMENS_6N
+        elif MENS_6N_LABEL.search(label):
+            series = MENS_6N
+        else:
+            # The unqualified competition name conventionally denotes the
+            # men's tournament, but a genderless label is not safe evidence.
+            return None
+    elif NATIONS_LABEL.search(label):
         series = NATIONS
     elif WXV_LABEL.search(label):
         # WXV has its own existing media-library directory. Do not silently
