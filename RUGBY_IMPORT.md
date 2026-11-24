@@ -13,11 +13,23 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers originally copi
 - Investec Champions Cup (Rugby_Mens_Championship): epcr.py uses the official EPCR RugbyViz/InCrowd fixture API (competition 1008). The 2026/27 campaign uses season code 202601. Only real team pairings are scheduled; unassigned knockout placeholders are skipped. Official match IDs are retained in external_ids.epcr. Public browser client headers can be overridden via EPCR_APP_ID, EPCR_API_KEY, EPCR_REALM if they rotate. The schedule-only adapter allows previously unknown *current-season* completed fixtures (e.g. October 2026 round one) to be imported as Missing without scores. Existing imported fixtures remain frozen after kickoff. This does not fetch previous EPCR seasons.
 - PWR: pwr.py
 - Gallagher PREM: the official RugbyViz/InCrowd match API is the sole live source for Rugby_Mens_Prem. The public website X-APP-ID, X-API-KEY, and X-REALM client headers are included in the adapter; PREM_APP_ID, PREM_API_KEY and PREM_REALM are optional overrides if the public key rotates.
-- Existing Six Nations ICS feeds: filter.py
-  Men's and women's Six Nations both use calendar-year seasons and
-  conservative round-number validation in schedulers/rugby/six_nations.py.
-  Complete 15-match six-team fixture sets receive episodes 101..503;
-  incomplete sets remain unnumbered unless a prior episode was assigned.
+- Men's Six Nations (Rugby_Mens_6N): mens_six_nations.py fetches the official
+  sixnationsrugby.com/en/m6n/fixtures/YYYY00 pages, starting with 2026 and
+  refreshing the current and following years (at most two requests). It reads
+  only the complete five-round, 15-fixture schedule, strips all results and
+  scores, validates each team's round-robin coverage and extracts UTC kickoffs
+  from the site's server-rendered fixture data. Completed 2026 matches use
+  venue-local fixture URL times where the source no longer renders timestamps.
+  Existing third-party ICS UIDs are reconciled by year/home/away, so Atlas
+  episode IDs, recordings and stored numbering survive the source migration.
+  Unknown current-season completed fixtures may be added from score-free
+  official metadata, but already accepted kickoffs stay frozen. No seasons
+  before 2026 are scraped; previously retained history is not deleted.
+- Women's Six Nations still uses its existing ICS feed. Both championships use
+  calendar-year seasons and conservative round-number validation in
+  schedulers/rugby/six_nations.py. Complete 15-match six-team fixtures receive
+  episodes 101..503; incomplete sets remain unnumbered unless a prior episode
+  was assigned.
 - Existing episode numbering and NFO generation: plex_nfo.py
 
 All supported fixture calendars are imported, including fixtures without a trustworthy season episode number (episode = null).
