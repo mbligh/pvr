@@ -2,7 +2,8 @@
 """Inventory existing sports recordings across supported series.
 
 Preview by default; --apply records verified media and creates missing NFOs.
-Existing videos and NFOs are never renamed or overwritten.
+Installed recordings and their NFOs are renamed to canonical filenames;
+existing destinations are never overwritten.
 """
 import argparse
 import os
@@ -26,7 +27,7 @@ def main(argv=None):
     parser.add_argument("--series", action="append", choices=sorted(SERIES_PATHS),
                         help="Restrict inventory to a series (repeatable)")
     parser.add_argument("--apply", action="store_true",
-                        help="Write verified files to Atlas and create missing NFOs; default previews only")
+                        help="Write inventory, canonicalize filenames and create missing NFOs; default previews only")
     parser.add_argument("--no-probe", action="store_true",
                         help="Preview filename/NFO matching without ffprobe; cannot --apply")
     parser.add_argument("--ffprobe", default="ffprobe",

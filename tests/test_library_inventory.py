@@ -30,6 +30,8 @@ class LibraryInventoryTests(unittest.TestCase):
         self.db.episodes.find.return_value = [self.w, self.f]
         self.db.releases.find.return_value = []
         self.db.files.find.return_value = []
+        self.db.files.find_one.return_value = None
+        self.db.files.update_one.return_value.matched_count = 1
         self.probe = MagicMock(return_value={"video": {"height": 1080},
                                              "duration_seconds": 7200})
 
@@ -50,10 +52,15 @@ class LibraryInventoryTests(unittest.TestCase):
         report = self.run_scan(apply=True)
         self.assertEqual(report["written"], 2)
         self.assertEqual(report["nfo_created"], 2)
-        self.assertEqual(w.with_suffix(".nfo").read_text(), self.w["nfo"])
-        self.assertEqual(f.with_suffix(".nfo").read_text(), self.f["nfo"])
-        self.assertTrue(w.exists())
-        self.assertTrue(f.exists())
+        self.assertEqual(report["renamed"], 2)
+        w_target = self.root / self.w["nfo_path"]
+        f_target = self.root / self.f["nfo_path"]
+        self.assertEqual(w_target.read_text(), self.w["nfo"])
+        self.assertEqual(f_target.read_text(), self.f["nfo"])
+        self.assertTrue(w_target.with_suffix(".mkv").exists())
+        self.assertTrue(f_target.with_suffix(".mp4").exists())
+        self.assertFalse(w.exists())
+        self.assertFalse(f.exists())
         updates = self.db.files.bulk_write.call_args.args[0]
         self.assertEqual({x._doc["$set"]["episode_id"] for x in updates},
                          {self.w["_id"], self.f["_id"]})
@@ -78,7 +85,7 @@ class LibraryInventoryTests(unittest.TestCase):
         self.assertIn("ambiguous", identify(path, index, links)[3])
 
     def test_unchanged_recording_reuses_probe_and_preserves_provenance(self):
-        path = self.video("Rugby_Womens_WXV", "s2026e304.mkv")
+        path = self.video("Rugby_Womens_WXV", pathlib.Path(self.w["nfo_path"]).with_suffix(".mkv").name)
         sidecar = path.with_suffix(".nfo")
         sidecar.write_text(self.w["nfo"])
         st = path.stat()
@@ -94,6 +101,40 @@ class LibraryInventoryTests(unittest.TestCase):
         self.assertEqual(report["written"], 0)
         self.probe.assert_not_called()
         self.db.files.bulk_write.assert_not_called()
+
+    def test_existing_nfo_is_moved_without_rewriting(self):
+        path = self.video("Rugby_Womens_WXV", "s2026e304.mkv")
+        sidecar = path.with_suffix(".nfo")
+        original = self.w["nfo"].replace("Canonical title", "My metadata")
+        sidecar.write_text(original)
+        report = self.run_scan(apply=True)
+        target = self.root / self.w["nfo_path"]
+        self.assertEqual(report["renamed"], 1)
+        self.assertEqual(report["nfo_created"], 0)
+        self.assertEqual(target.read_text(), original)
+        self.assertFalse(sidecar.exists())
+        self.assertFalse(path.exists())
+        row = self.db.files.insert_one.call_args.args[0]
+        self.assertEqual(row["path"], str(target.with_suffix(".mkv")))
+        self.assertEqual(row["previous_file_id"], f"slagg:{path}")
+
+    def test_existing_canonical_video_is_not_overwritten(self):
+        path = self.video("Rugby_Womens_WXV", "s2026e304.mkv")
+        target = self.video("Rugby_Womens_WXV",
+                            pathlib.Path(self.w["nfo_path"]).with_suffix(".mp4").name)
+        target.write_bytes(b"existing canonical video")
+        report = self.run_scan(apply=True)
+        self.assertEqual(report["renamed"], 0)
+        self.assertTrue(path.exists())
+        self.assertEqual(target.read_bytes(), b"existing canonical video")
+
+    def test_atlas_failure_preserves_original(self):
+        path = self.video("Rugby_Womens_WXV", "s2026e304.mkv")
+        self.db.files.insert_one.side_effect = RuntimeError("Atlas unavailable")
+        with self.assertRaisesRegex(RuntimeError, "Atlas unavailable"):
+            self.run_scan(apply=True)
+        self.assertTrue(path.exists())
+        self.assertTrue((self.root / self.w["nfo_path"]).with_suffix(".mkv").exists())
 
     def test_only_selected_series_is_scanned(self):
         self.video("Rugby_Womens_WXV", "s2026e304.mkv")

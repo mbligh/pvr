@@ -59,7 +59,8 @@ def run(*, apply=False, pages=3, year=2026, limit=1,
             if apply:
                 inventory.scan(
                     db, sports_root=sports_root, apply=True, series_ids=("Formula_1",),
-                    quiet=True, stream=output, summary_stream=output)
+                    quiet=True, stream=output, summary_stream=output,
+                    lock_root=incoming_root)
             decisions, missing = polling.plan(
                 db, sources=("reddit-teletz",), now=now,
                 sports_root=sports_root, season=None)

@@ -8,8 +8,10 @@ import socket
 import sys
 
 from inventory.scan import identify, make_indexes, probe_video, walk_videos
-from inventory.scan import directory_series, parse_nfo
-from filing.publish import SERIES_PATHS, validate_nfo, _write_exclusive, stat_identity
+from inventory.scan import directory_series, parse_nfo, EXTENSIONS, series_identity
+from filing.publish import (SERIES_PATHS, validate_nfo, canonical_paths,
+                            _write_exclusive, stat_identity)
+from orchestration.locks import episode_lock, LockBusy
 
 DEFAULT_ROOT = "/data/sports"
 
@@ -17,7 +19,7 @@ DEFAULT_ROOT = "/data/sports"
 def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
          hostname=None, verbose=False, show_unseen=False, stream=sys.stdout,
          summary_stream=sys.stderr, sports_root=DEFAULT_ROOT, series_ids=None,
-         prober=probe_video, quiet=False):
+         prober=probe_video, quiet=False, lock_root=None):
     selected = set(series_ids if series_ids is not None else SERIES_PATHS)
     if not selected or not selected <= SERIES_PATHS.keys():
         raise ValueError("Unsupported inventory series")
@@ -65,6 +67,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
     files_per_episode = collections.Counter()
     observed_episodes = set()
     sidecars = []
+    renames = []
 
     for path in walk_videos(roots):
         counts["scanned"] += 1
@@ -99,6 +102,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                     item["media"] = media
                 nfo_path = path.with_suffix(".nfo")
                 nfo_bytes = None
+                rename_target = None
                 # Only installed recordings in a recognized series directory
                 # get a sidecar. Incoming files are still inventoried normally.
                 if episode["series_id"] in directory_series(path.parent):
@@ -111,6 +115,25 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                             item["nfo"] = "missing"
                     else:
                         item["nfo"] = "present"
+                    try:
+                        # Use the Atlas filename but preserve the actual container.
+                        # Only rename within the established season directory.
+                        canonical, canonical_nfo = canonical_paths(episode, sports_root)
+                        target = canonical.with_suffix(path.suffix)
+                        canonical_xml = validate_nfo(episode)
+                        if path.absolute().parent == target.parent and path.absolute() != target:
+                            occupied = any(os.path.lexists(canonical.with_suffix(ext))
+                                           for ext in EXTENSIONS | {path.suffix})
+                            if occupied or any(p.stem == canonical.stem and p.suffix.lower() in EXTENSIONS
+                                               for p in target.parent.iterdir()) or os.path.lexists(canonical_nfo):
+                                item["rename"] = "destination_exists"
+                            else:
+                                rename_target = target
+                                item["rename"] = "planned"
+                                item["destination"] = str(target)
+                    except (ValueError, KeyError):
+                        # Legacy episodes may lack valid canonical metadata.
+                        pass
                 item["bytes"] = before.st_size
                 item["mtime_ns"] = before.st_mtime_ns
                 if not probe:
@@ -138,7 +161,10 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                         rows.append(data)
                     else:
                         counts["cached"] += 1
-                    if apply and nfo_bytes is not None:
+                    if apply and rename_target is not None:
+                        renames.append((path.absolute(), snapshot, rename_target, data,
+                                        canonical_xml, episode, nfo_bytes is not None))
+                    elif apply and nfo_bytes is not None:
                         sidecars.append((path, snapshot, nfo_path, nfo_bytes, episode))
                     files_per_episode[episode["_id"]] += 1
                     observed_episodes.add(episode["_id"])
@@ -149,7 +175,8 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         counts[item["status"]] += 1
         if verbose or (item["status"] != "unmatched" and
                        (not quiet or item["status"] != "present" or not cached
-                        or item.get("nfo") == "missing" or item.get("nfo_error"))):
+                        or item.get("nfo") == "missing" or item.get("nfo_error")
+                        or item.get("rename"))):
             print(json.dumps(item, ensure_ascii=False), file=stream)
 
     # Absence is scoped to the supplied roots and scan time; it is not a
@@ -179,6 +206,25 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
     # All filesystem observations are complete before any Atlas updates.
     if apply and rows:
         persist(database, rows, now=now)
+    for path, snapshot, target, data, content, episode, missing_nfo in renames:
+        lock_dir = pathlib.Path(lock_root) if lock_root else (
+            pathlib.Path("/data/incoming") if pathlib.Path("/data/incoming").is_dir()
+            else pathlib.Path(sports_root))
+        try:
+            with episode_lock(lock_dir, episode["_id"]):
+                result = rename_recording(database, path, snapshot, target, data,
+                                          content, episode)
+        except LockBusy:
+            result = "episode_busy"
+        counts["renamed" if result == "renamed" else "rename_skipped"] += 1
+        if result == "renamed":
+            if missing_nfo:
+                counts["nfo_created"] += 1
+        elif result == "destination_exists" and not os.path.lexists(path.with_suffix(".nfo")):
+            sidecars.append((path, snapshot, path.with_suffix(".nfo"), content, episode))
+        print(json.dumps({"type": "inventory_rename", "status": result,
+                          "source": str(path), "destination": str(target)}, sort_keys=True),
+              file=stream)
     for path, snapshot, nfo_path, content, episode in sidecars:
         if stat_identity(path) != snapshot:
             raise ValueError(f"Recording changed before NFO generation: {path}")
@@ -200,13 +246,94 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         "present": counts["present"], "unprobed": counts["unprobed"],
         "unmatched": counts["unmatched"], "conflict": counts["conflict"],
         "probe_error": counts["probe_error"], "cached": counts["cached"],
-        "nfo_created": counts["nfo_created"],
+        "nfo_created": counts["nfo_created"], "renamed": counts["renamed"],
+        "rename_skipped": counts["rename_skipped"],
         "episodes_with_files": len(files_per_episode),
         "past_episodes_not_found_in_roots": len(unseen),
         "written": len(rows) if apply else 0,
     }
     print(json.dumps(report, sort_keys=True), file=summary_stream)
     return report
+
+
+def rename_recording(database, source, snapshot, target, data, nfo_xml, episode):
+    """Publish new names without clobbering; retire old paths only after Atlas.
+
+    A database failure leaves both copies for operator reconciliation rather
+    than losing the original. The same-directory hardlink avoids copying video.
+    """
+    source_nfo, target_nfo = source.with_suffix(".nfo"), target.with_suffix(".nfo")
+    if source.parent != target.parent or source.parent.is_symlink():
+        raise ValueError("Unsafe inventory rename directory")
+    if stat_identity(source) != snapshot:
+        raise ValueError("Recording changed before canonical rename")
+    if (os.path.lexists(target_nfo) or any(
+            os.path.lexists(target.with_suffix(ext)) for ext in EXTENSIONS | {target.suffix})
+            or any(p.stem == target.stem and p.suffix.lower() in EXTENSIONS
+                   for p in target.parent.iterdir())):
+        return "destination_exists"
+    dest_id = f"{data['host']}:{target}"
+    existing = database.files.find_one({"_id": dest_id})
+    if existing is not None:
+        return "destination_exists"
+    source_nfo_snapshot = None
+    if os.path.lexists(source_nfo):
+        identity = parse_nfo(source)
+        if not identity:
+            raise ValueError("Existing NFO cannot be read")
+        if (identity["key"] is not None and
+                identity["key"] != (episode["season"], episode["episode"])):
+            raise ValueError("Existing NFO episode disagrees")
+        if identity["showtitle"] and series_identity(identity["showtitle"]) != episode["series_id"]:
+            raise ValueError("Existing NFO series disagrees")
+        source_nfo_snapshot = stat_identity(source_nfo)
+
+    created_video = created_nfo = False
+    try:
+        os.link(source, target, follow_symlinks=False)
+        created_video = True
+        if source_nfo_snapshot is not None:
+            os.link(source_nfo, target_nfo, follow_symlinks=False)
+        else:
+            _write_exclusive(target_nfo, nfo_xml)
+        created_nfo = True
+        if stat_identity(source) != snapshot or stat_identity(target) != snapshot:
+            raise ValueError("Recording changed during canonical rename")
+        if source_nfo_snapshot is not None and (
+                stat_identity(source_nfo) != source_nfo_snapshot or
+                stat_identity(target_nfo) != source_nfo_snapshot):
+            raise ValueError("NFO changed during canonical rename")
+    except BaseException:
+        if created_nfo:
+            target_nfo.unlink(missing_ok=True)
+        if created_video:
+            target.unlink(missing_ok=True)
+        raise
+
+    # Once Atlas writes start, retain both originals on any uncertain failure.
+    now = dt.datetime.now(dt.timezone.utc)
+    # Retain provenance and any other metadata from the current source row.
+    old = database.files.find_one({"_id": data["_id"]}) or data
+    destination = dict(old, **data)
+    for field in ("file_state", "moved_to", "moved_at"):
+        destination.pop(field, None)
+    destination.update(_id=dest_id, path=str(target), nfo_path=str(target_nfo),
+                       previous_file_id=data["_id"], last_seen=now)
+    database.files.insert_one(destination)
+    changed = database.files.update_one(
+        {"_id": data["_id"], "episode_id": episode["_id"],
+         "path": str(source), "file_state": {"$ne": "moved"}},
+        {"$set": {"file_state": "moved", "moved_to": dest_id, "moved_at": now}})
+    if changed.matched_count != 1:
+        raise ValueError("Inventory changed during rename; retained both copies")
+    if stat_identity(source) != snapshot:
+        raise ValueError("Original recording changed; retained both copies")
+    if source_nfo_snapshot is not None:
+        if stat_identity(source_nfo) != source_nfo_snapshot:
+            raise ValueError("Original NFO changed; retained both copies")
+        source_nfo.unlink()
+    source.unlink()
+    return "renamed"
 
 
 def persist(database, rows, *, now=None):

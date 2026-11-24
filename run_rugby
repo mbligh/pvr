@@ -152,7 +152,8 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                     db, sports_root=sports_root, apply=True, series_ids=(series,) if series else
                                [name for name in inventory.SERIES_PATHS if name.startswith("Rugby_")],
                     hostname=hostname, ffprobe=ffprobe,
-                    quiet=True, stream=output, summary_stream=output)
+                    quiet=True, stream=output, summary_stream=output,
+                    lock_root=incoming_root)
             decisions, missing = polling.plan(
                 db, sources=sources, now=now, sports_root=sports_root,
                 host=hostname, season=season,
