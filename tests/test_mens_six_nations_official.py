@@ -159,7 +159,70 @@ class OfficialMensSixNationsTests(unittest.TestCase):
         self.assertEqual(requested, [
             official.BASE + "202600", official.BASE + "202700"])
 
-    def test_importer_uses_official_adapter_for_men_only(self):
+    def womens_page(self, year=2027, *, titles=True, rsc_times=True):
+        import re
+        html = page(year, rsc_times=rsc_times)
+        html = html.replace("/en/m6n/", "/en/w6n/")
+        html = re.sub(r"([a-z]+)-v-([a-z]+)-(\\d{8})",
+                      r"\\1-women-v-\\2-women-\\3", html)
+        html = html.replace(" - Six Nations Rugby - ", " - Women's Six Nations Rugby - ")
+        html = html.replace("Aviva Stadium", "TBD")
+        if not titles:
+            # Future women's match cards omit title in the RSC payload.
+            html = re.sub(r'(?<=\\\\")([A-Z][a-z]+ v [A-Z][a-z]+ - Women\'s Six Nations Rugby - [^"\\\\]+)(?=\\\\")',
+                          "$undefined", html)
+        return html
+
+    def test_womens_2027_source_and_provisional_venues(self):
+        rows = matches(official.convert_womens(self.womens_page(), year=2027))
+        self.assertEqual(len(rows), 15)
+        self.assertEqual(str(rows[0]["SUMMARY"]), "Ireland Women vs England Women")
+        self.assertTrue(all("sixnations-w6n-" in str(e["UID"]) for e in rows))
+        self.assertTrue(all("LOCATION" not in e for e in rows))
+        self.assertEqual(rows[0].decoded("DTSTART"),
+                         dt.datetime(2027, 2, 5, 20, 10, tzinfo=UTC))
+        with self.assertRaises(ValueError):
+            official.convert_mens(self.womens_page(), year=2027)
+
+    def test_womens_missing_future_titles(self):
+        import re
+        html = self.womens_page()
+        html = re.sub(r'(?<=\\\\")([A-Z][a-z]+ v [A-Z][a-z]+ - Women\'s Six Nations Rugby - [^"\\\\]+)(?=\\\\")',
+                      "$undefined", html)
+        self.assertIn("$undefined", html)
+        self.assertEqual(len(matches(official.convert_womens(html, year=2027))), 15)
+
+    def test_womens_historical_url_clock_is_utc(self):
+        source = official.convert_womens(
+            self.womens_page(2026, rsc_times=False), year=2026)
+        france = next(e for e in matches(source)
+                      if str(e["SUMMARY"]) == "France Women vs Wales Women")
+        self.assertEqual(france.decoded("DTSTART"),
+                         dt.datetime(2026, 2, 5, 20, 10, tzinfo=UTC))
+
+    def test_womens_fetch_and_uid_reconciliation(self):
+        now = dt.datetime(2026, 11, 24, tzinfo=UTC)
+        with patch.object(official.urllib.request, "urlopen", side_effect=[
+                io.BytesIO(self.womens_page(2026, rsc_times=False).encode()),
+                io.BytesIO(self.womens_page().encode())]) as get:
+            source = official.fetch_womens(now=now)
+        self.assertEqual(len(matches(source)), 30)
+        self.assertEqual([c.args[0].full_url for c in get.call_args_list],
+                         [official.WOMENS_BASE + "202600", official.WOMENS_BASE + "202700"])
+        old = Calendar()
+        event = Event()
+        event.add("uid", "previous-womens-uid")
+        event.add("summary", "Ireland Women 🇮🇪 vs England Women")
+        event.add("dtstart", dt.datetime(2027, 2, 5, 20, 10, tzinfo=UTC))
+        old.add_component(event)
+        official.preserve_uids(source, old)
+        self.assertIn("previous-womens-uid", [str(e["UID"]) for e in matches(source)])
+        with patch.object(importer, "fetch_womens", return_value="official") as call:
+            self.assertEqual(importer.fetch_calendar(
+                {"type": "six-nations-womens"}, now), "official")
+            call.assert_called_once_with(now=now)
+
+    def test_importer_uses_official_adapter_for_men(self):
         now = dt.datetime(2026, 11, 24, tzinfo=UTC)
         with patch.object(importer, "fetch_mens", return_value="official") as call:
             self.assertEqual(importer.fetch_calendar(
