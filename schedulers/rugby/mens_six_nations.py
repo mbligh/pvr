@@ -2,7 +2,9 @@
 
 Read the public server-rendered fixture cards at sixnationsrugby.com. Their
 Next.js payload also provides UTC kickoffs for upcoming matches. Completed
-2026 cards omit kickoff timestamps; their link slugs contain kickoff times, venue-local for men and UTC for women.
+cards omit kickoff timestamps; their report link slugs contain kickoff times,
+venue-local for men and UTC for women. Previously accepted past events are
+frozen by the calendar merge.
 
 No results, scores, standings, or match-report data are copied into events.
 """
@@ -31,7 +33,7 @@ LINK = re.compile(
     r"^/en/(?P<competition>m6n|w6n)/fixtures/(?P<season>\d{4})00/"
     r"(?P<home>[a-z]+)(?P<home_suffix>-women)?-v-"
     r"(?P<away>[a-z]+)(?P<away_suffix>-women)?-"
-    r"(?P<date>\d{8})-(?P<time>\d{4})/(?:build-up|report)/?$"
+    r"(?P<date>\d{8})-(?P<time>\d{4})/(?P<stage>build-up|report)/?$"
 )
 TITLE = re.compile(
     r"^([A-Za-z]+) v ([A-Za-z]+) - (Women's )?Six Nations Rugby - "
@@ -225,11 +227,11 @@ def convert_fixtures(html, *, year, competition):
         ids.add(href)
         kickoff = card.get("kickoff")
         if kickoff is None:
-            if year != 2026:
+            if match["stage"] != "report":
                 raise ValueError("Missing official UTC kickoff: " + href)
-            # Only for completed 2026 fixtures: these pages now display
-            # scores instead of the pre-match UTC time. Verified historical
-            # women\'s URL clocks are UTC; men\'s are venue-local.
+            # Completed fixtures may drop the explicit time from the card.
+            # Report URLs retain the kickoff: UTC for women, venue-local for
+            # men. Never infer an upcoming fixture time from its URL.
             clock = dt.datetime.strptime(match["time"], "%H%M").time()
             zone = UTC if womens else ZoneInfo(HOME_ZONES.get(home, "Europe/London"))
             kickoff = dt.datetime.combine(day, clock, tzinfo=zone).astimezone(UTC)
