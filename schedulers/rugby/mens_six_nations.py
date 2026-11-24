@@ -97,17 +97,59 @@ def _walk(value):
             yield from _walk(item)
 
 
-def _rsc_kickoffs(scripts):
-    """Extract timestamp/link pairs from React Server Component fixture cards.
+def _rsc_cards(scripts):
+    """Extract complete fixture cards directly from public Next.js RSC data.
 
-    We deliberately parse the structured JSON tree rather than matching a
-    date near unrelated score or article text. RSC format is optional for
-    completed 2026 games, but mandatory for future kickoffs.
+    Direct HTTP GETs currently render the fixture list *only* in the
+    embedded server-component scripts, whereas a hydrated browser also
+    produces HTML articles. Both paths yield the same score-free fields.
     """
-    kickoffs = {}
+    cards = []
+
+    def visit(node, round_no=None):
+        if isinstance(node, list):
+            for item in node:
+                visit(item, round_no)
+            return
+        if not isinstance(node, dict):
+            return
+        identifier = node.get("id")
+        if isinstance(identifier, str) and identifier.startswith("roundNumber-"):
+            label = identifier.removeprefix("roundNumber-")
+            round_no = int(label) if label.isdecimal() else None
+        if node.get("data-testid") == "fixture-card":
+            links = []
+            dates = set()
+            venue = ""
+            for child in _walk(node):
+                if not isinstance(child, dict):
+                    continue
+                if child.get("data-testid") == "fixture-card__match-centre-link":
+                    links.append(child)
+                if ("fixturesResultsCard_stadium" in child.get("className", "")
+                        and isinstance(child.get("children"), str)):
+                    venue = child["children"]
+                if child.get("format") == "HH:mm" and child.get("date"):
+                    dates.add(child["date"])
+            if len(links) != 1 or len(dates) > 1:
+                raise ValueError("Ambiguous Six Nations server fixture card")
+            kickoff = None
+            if dates:
+                kickoff = dt.datetime.fromisoformat(dates.pop().replace("Z", "+00:00"))
+                if kickoff.tzinfo is None:
+                    raise ValueError("Naive official Six Nations kickoff")
+            cards.append({
+                "round": round_no, "venue": venue,
+                "href": links[0].get("href"), "title": links[0].get("title"),
+                "kickoff": kickoff.astimezone(UTC) if kickoff else None,
+            })
+            return
+        for child in node.values():
+            visit(child, round_no)
+
     for script in scripts:
         for item in script.split("self.__next_f.push(")[1:]:
-            # Next.js emits both push([...]) and push([...]); forms.
+            # Next.js uses push([...]) with or without a semicolon.
             encoded = item.rsplit(")", 1)[0].rstrip(";")
             try:
                 frame = json.loads(encoded)
@@ -116,29 +158,8 @@ def _rsc_kickoffs(scripts):
                 payload = json.loads(frame[1].split(":", 1)[1])
             except (ValueError, IndexError, TypeError):
                 continue
-            for node in _walk(payload):
-                if not (isinstance(node, dict) and
-                        node.get("data-testid") == "fixture-card"):
-                    continue
-                hrefs = set()
-                dates = set()
-                for nested in _walk(node):
-                    if not isinstance(nested, dict):
-                        continue
-                    if (nested.get("data-testid") ==
-                            "fixture-card__match-centre-link"):
-                        hrefs.add(urllib.parse.urlsplit(nested.get("href", "")).path)
-                    if nested.get("format") == "HH:mm" and nested.get("date"):
-                        dates.add(nested["date"])
-                if len(hrefs) == 1 and len(dates) == 1:
-                    href = hrefs.pop()
-                    value = dt.datetime.fromisoformat(dates.pop().replace("Z", "+00:00"))
-                    if value.tzinfo is None:
-                        raise ValueError("Naive Six Nations kickoff in RSC")
-                    if href in kickoffs and kickoffs[href] != value:
-                        raise ValueError("Conflicting Six Nations kickoffs")
-                    kickoffs[href] = value.astimezone(UTC)
-    return kickoffs
+            visit(payload)
+    return cards
 
 
 def _validate(matches):
@@ -164,10 +185,10 @@ def convert_mens(html, *, year):
         raise ValueError("Six Nations history before 2026 is not supported")
     page = _FixturePage()
     page.feed(html)
-    kickoffs = _rsc_kickoffs(page.scripts)
+    cards = _rsc_cards(page.scripts) or page.cards
     matches = []
     ids = set()
-    for card in page.cards:
+    for card in cards:
         href = urllib.parse.urlsplit(card.get("href") or "").path
         match = LINK.fullmatch(href)
         title = TITLE.fullmatch(card.get("title") or "")
@@ -184,7 +205,7 @@ def convert_mens(html, *, year):
         if href in ids:
             raise ValueError("Duplicate Six Nations fixture link")
         ids.add(href)
-        kickoff = kickoffs.get(href)
+        kickoff = card.get("kickoff")
         if kickoff is None:
             if year != 2026:
                 raise ValueError("Missing official UTC kickoff: " + href)
@@ -286,10 +307,14 @@ def fetch_mens(*, now):
             if year > current and exc.code == 404:
                 continue
             raise RuntimeError(f"Six Nations fixtures HTTP {exc.code} ({year})") from exc
-        # Next year's site may resolve successfully to an unpopulated page.
-        if year > current and 'data-testid="fixture-card"' not in page:
-            continue
-        season = convert_mens(page, year=year)
+        try:
+            season = convert_mens(page, year=year)
+        except ValueError as exc:
+            # A future year may have a valid page shell before its fixtures
+            # are published; do not treat a partly published season as safe.
+            if year > current and str(exc) == "Incomplete Six Nations season: 0/15 fixtures":
+                continue
+            raise
         for event in season.walk("VEVENT"):
             combined.add_component(event)
     if not combined.walk("VEVENT"):
