@@ -36,7 +36,11 @@ class RefreshTests(unittest.TestCase):
         indexer = CLI.load_file("pvr_state_indexer", "index_releases")
         indexer.upsert_releases = MagicMock()
         def load(name, path):
-            return indexer if path == "index_releases" else MagicMock()
+            if path == "index_releases":
+                return indexer
+            matcher = MagicMock()
+            matcher.run.return_value = {"linked": 0}
+            return matcher
         with patch.object(CLI, "load_file", side_effect=load):
             return CLI.run(self.db, discover=self.discover,
                            output=io.StringIO(), **kwargs)
