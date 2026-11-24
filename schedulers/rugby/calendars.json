@@ -37,11 +37,11 @@
     {
       "slug": "Rugby_Mens_6N",
       "name": "Rugby Mens 6N",
-      "id": "vltlimfim9horepqch3uve5tdntn7nen@import.calendar.google.com",
-      "url": "https://data.rugbyfixture.io/ical/v1/six-nations.ics?uid=qsadkjhi",
       "legacy_slug": "rugby-mens-6n",
       "season_mode": "calendar",
-      "rounds": "six-nations"
+      "rounds": "six-nations",
+      "type": "six-nations-mens",
+      "source": "https://www.sixnationsrugby.com/en/m6n/fixtures/202600"
     },
     {
       "slug": "Rugby_Womens_6N",
