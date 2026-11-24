@@ -35,7 +35,10 @@ def load_file(name, path):
 def scan_rugbypass(*, script="~/tools/video/rugbypass", pages=5,
                    execute=subprocess.run):
     cmd = [str(pathlib.Path(script).expanduser()),
-           "--list-games", "--jsonl", "--pages", str(pages)]
+           "--list-games", "--jsonl", "--pages", str(pages),
+           # The WXV replays playlist is not expanded by homepage discovery.
+           # This is a stable RugbyPass playlist ID, not an individual video.
+           "--playlist", "37547"]
     result = execute(cmd, capture_output=True, text=True, check=False)
     if result.returncode:
         # The source tool can log authenticated URLs; avoid propagating them.
