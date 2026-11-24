@@ -78,8 +78,8 @@ class PollingTests(unittest.TestCase):
 
     def test_registry_routes_mens_prem_to_rugby24_only(self):
         self.assertEqual(sources_for("Rugby_Mens_Prem"), ("rugby24",))
-        self.assertEqual(sources_for("Rugby_Mens_6N"), ())
-        self.assertEqual(sources_for("Rugby_Womens_6N"), ())
+        self.assertEqual(sources_for("Rugby_Mens_6N"), ("rugbypass",))
+        self.assertEqual(sources_for("Rugby_Womens_6N"), ("rugbypass",))
         self.assertEqual(sources_for("Rugby_Womens_PWR"),
                          ("bbc", "youtube", "rugbypass"))
         self.assertEqual(sources_for("Rugby_Mens_Intl"), ("rugbypass",))
