@@ -41,6 +41,7 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(result["mode"], "preview")
         self.db.releases.bulk_write.assert_not_called()
         self.db.releases.update_one.assert_not_called()
+        self.db.indexer_poll_state.update_one.assert_not_called()
 
     def test_source_mismatch_aborts_before_any_writes(self):
         self.releases["bbc"][0]["source"] = "youtube"
@@ -131,6 +132,72 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(seen[0], {existing["_id"]: existing})
         self.db.releases.find.assert_called_once()
         self.db.releases.bulk_write.assert_not_called()
+
+
+    def test_successful_rugby24_apply_clears_only_scanned_category(self):
+        for category, target in (
+            ("prem", "rugby24:prem"),
+            ("championship", "rugby24:championship"),
+        ):
+            with self.subTest(category=category):
+                self.db.reset_mock()
+                report = CLI.run(
+                    self.db, sources=("rugby24",), apply=True,
+                    rugby24_category=category, discover=self.discover,
+                    output=io.StringIO())
+                self.assertEqual(report["mode"], "apply")
+                self.assertEqual(report["total_releases"], 1)
+                self.db.indexer_poll_state.update_one.assert_called_once()
+                args, kwargs = self.db.indexer_poll_state.update_one.call_args
+                self.assertEqual(args[0], {"_id": target})
+                self.assertEqual(args[1]["$set"]["failures"], 0)
+                self.assertEqual(args[1]["$set"]["last_success"],
+                                 args[1]["$set"]["last_attempt"])
+                self.assertEqual(args[1]["$unset"],
+                                 {"retry_not_before": "", "failure_reason": ""})
+                self.assertTrue(kwargs["upsert"])
+
+    def test_successful_both_categories_clears_both_backoffs(self):
+        self.assertEqual(CLI.run(
+            self.db, sources=("rugby24",), apply=True,
+            rugby24_category="both", discover=self.discover,
+            output=io.StringIO())["mode"], "apply")
+        self.assertEqual([
+            call.args[0]["_id"] for call in
+            self.db.indexer_poll_state.update_one.call_args_list
+        ], ["rugby24:prem", "rugby24:championship"])
+
+    def test_rugby24_preview_and_other_source_apply_do_not_clear_backoff(self):
+        CLI.run(self.db, sources=("rugby24",), apply=False,
+                rugby24_category="championship", discover=self.discover,
+                output=io.StringIO())
+        self.db.indexer_poll_state.update_one.assert_not_called()
+        CLI.run(self.db, sources=("bbc",), apply=True,
+                discover=self.discover, output=io.StringIO())
+        self.db.indexer_poll_state.update_one.assert_not_called()
+
+    def test_failed_rugby24_refresh_does_not_clear_any_backoff(self):
+        def failing_discovery(sources, **kwargs):
+            raise RuntimeError("Cloudflare challenge")
+        with self.assertRaisesRegex(RuntimeError, "Cloudflare challenge"):
+            CLI.run(self.db, sources=("rugby24",), apply=True,
+                    rugby24_category="both", discover=failing_discovery,
+                    output=io.StringIO())
+        self.db.indexer_poll_state.update_one.assert_not_called()
+
+        indexer = CLI.load_file("pvr_test_indexer", "index_releases")
+        indexer.upsert_releases = MagicMock()
+        matcher = MagicMock()
+        prem = MagicMock()
+        championship = MagicMock()
+        championship.run.side_effect = RuntimeError("Matching failed")
+        with patch.object(CLI, "load_file", side_effect=[
+                indexer, matcher, prem, championship]):
+            with self.assertRaisesRegex(RuntimeError, "Matching failed"):
+                CLI.run(self.db, sources=("rugby24",), apply=True,
+                        rugby24_category="both", discover=self.discover,
+                        output=io.StringIO())
+        self.db.indexer_poll_state.update_one.assert_not_called()
 
     def test_provider_argument_validation(self):
         with self.assertRaises(ValueError):

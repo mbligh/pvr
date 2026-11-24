@@ -244,6 +244,15 @@ recordings. Ordinary `refresh_releases` scans still reuse stored valid
 embeds, avoiding unnecessary article requests and respecting the
 per-category failure backoff.
 
+After Cloudflare access has been restored, a successful manual
+`./refresh_releases --source rugby24 --rugby24-category championship --apply`
+clears the **Champions Cup** polling failure backoff (and records the
+success timestamp), without altering the Premiership cooldown. Use
+`--rugby24-category prem` for Premiership or omit the category to
+clear both after a complete successful scan. Preview-only refreshes and
+failed or partially completed runs never reset the cooldown; acquisition
+is still handled separately by `run_rugby`.
+
 To scan Champions Cup without touching the independently protected
 Premiership category, use `--category championship` (or
 `--rugby24-category championship` on `refresh_releases`).
