@@ -31,6 +31,16 @@ class RefreshTests(unittest.TestCase):
                          "title": "Northampton v Gloucester - Full Match Replay"}],
         }
 
+    def run_with_mock_matchers(self, **kwargs):
+        """Test refresh state transitions without requiring fixture imports."""
+        indexer = CLI.load_file("pvr_state_indexer", "index_releases")
+        indexer.upsert_releases = MagicMock()
+        def load(name, path):
+            return indexer if path == "index_releases" else MagicMock()
+        with patch.object(CLI, "load_file", side_effect=load):
+            return CLI.run(self.db, discover=self.discover,
+                           output=io.StringIO(), **kwargs)
+
     def discover(self, sources, **kwargs):
         return {key: self.releases[key] for key in sources}
 
@@ -141,10 +151,9 @@ class RefreshTests(unittest.TestCase):
         ):
             with self.subTest(category=category):
                 self.db.reset_mock()
-                report = CLI.run(
-                    self.db, sources=("rugby24",), apply=True,
-                    rugby24_category=category, discover=self.discover,
-                    output=io.StringIO())
+                report = self.run_with_mock_matchers(
+                    sources=("rugby24",), apply=True,
+                    rugby24_category=category)
                 self.assertEqual(report["mode"], "apply")
                 self.assertEqual(report["total_releases"], 1)
                 self.db.indexer_poll_state.update_one.assert_called_once()
@@ -158,10 +167,9 @@ class RefreshTests(unittest.TestCase):
                 self.assertTrue(kwargs["upsert"])
 
     def test_successful_both_categories_clears_both_backoffs(self):
-        self.assertEqual(CLI.run(
-            self.db, sources=("rugby24",), apply=True,
-            rugby24_category="both", discover=self.discover,
-            output=io.StringIO())["mode"], "apply")
+        self.assertEqual(self.run_with_mock_matchers(
+            sources=("rugby24",), apply=True,
+            rugby24_category="both")["mode"], "apply")
         self.assertEqual([
             call.args[0]["_id"] for call in
             self.db.indexer_poll_state.update_one.call_args_list
@@ -172,8 +180,7 @@ class RefreshTests(unittest.TestCase):
                 rugby24_category="championship", discover=self.discover,
                 output=io.StringIO())
         self.db.indexer_poll_state.update_one.assert_not_called()
-        CLI.run(self.db, sources=("bbc",), apply=True,
-                discover=self.discover, output=io.StringIO())
+        self.run_with_mock_matchers(sources=("bbc",), apply=True)
         self.db.indexer_poll_state.update_one.assert_not_called()
 
     def test_failed_rugby24_refresh_does_not_clear_any_backoff(self):
