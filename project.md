@@ -19,6 +19,7 @@
 - `dashboard/` implements a standard-library HTTP server at port 8787; it reads Atlas and filesystem state, serves its own static CSS, JavaScript and `favicon.ico`, and does not modify recordings. Series navigation has three separate horizontal rows: Formula 1, men's rugby and women's rugby, with horizontal scrolling within rows on narrow screens.
 - Deployment is through pulling the Git repository on slagg and restarting the existing dashboard process; no automatic restart is configured.
 
+- RugbyPass WXV Global Series 2026 full-match replay discovery reads dedicated playlist 37547 in addition to featured homepage carousels, using the shared `mbligh/tools/video/rugbypass` CLI. Individual authenticated VOD-detail requests provide actual publication times for unambiguous matching across repeat fixtures; playlist listing alone does not provide dates. The playlist discovery currently covers its first 20 entries. Both repos must be pulled on slagg before applied WXV acquisition.
 Detailed behavior and commands are documented in `DASHBOARD.md`, `RUGBY_IMPORT.md`, `INDEXERS.md`, `ACQUISITION.md`, `MATCHING.md`, and `F1_AUTOMATION.md`.
 
 - `import_rugby_crew` enriches existing rugby episodes from World Rugby, PWR and ICDb, with provenance and broadcast-specific commentary. See `RUGBY_CREW.md`.
