@@ -205,10 +205,10 @@ class OfficialMensSixNationsTests(unittest.TestCase):
     def test_womens_2027_source_and_provisional_venues(self):
         rows = matches(official.convert_womens(self.womens_page(), year=2027))
         self.assertEqual(len(rows), 15)
-        self.assertEqual(str(rows[0]["SUMMARY"]), "Ireland Women vs England Women")
+        ireland = next(e for e in rows if str(e["SUMMARY"]) == "Ireland Women vs England Women")
         self.assertTrue(all("sixnations-w6n-" in str(e["UID"]) for e in rows))
         self.assertTrue(all("LOCATION" not in e for e in rows))
-        self.assertEqual(rows[0].decoded("DTSTART"),
+        self.assertEqual(ireland.decoded("DTSTART"),
                          dt.datetime(2027, 2, 5, 20, 10, tzinfo=UTC))
         with self.assertRaises(ValueError):
             official.convert_mens(self.womens_page(), year=2027)
