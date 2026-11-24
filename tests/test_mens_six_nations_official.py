@@ -229,7 +229,7 @@ class OfficialMensSixNationsTests(unittest.TestCase):
     def test_womens_fetch_and_uid_reconciliation(self):
         now = dt.datetime(2026, 11, 24, tzinfo=UTC)
         with patch.object(official.urllib.request, "urlopen", side_effect=[
-                io.BytesIO(self.womens_page(2026, rsc_times=False).encode()),
+                io.BytesIO(self.womens_page(2026, rsc_times=False).replace("/build-up", "/report").encode()),
                 io.BytesIO(self.womens_page().encode())]) as get:
             source = official.fetch_womens(now=now)
         self.assertEqual(len(matches(source)), 30)
