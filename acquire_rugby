@@ -12,6 +12,7 @@ supports per-episode candidate comparison.
 """
 import argparse
 import contextlib
+import datetime as dt
 import importlib.machinery
 import importlib.util
 import io
@@ -57,22 +58,41 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
     if min_age_hours < 0 or retry_after_hours < 0:
         raise ValueError("Negative age/retry delay")
     hostname = host_name(hostname)
-    if series_id not in RUGBY_SERIES:
+    if series_id is not None and series_id not in RUGBY_SERIES:
         raise ValueError("Unsupported acquisition series")
-    sources = tuple(dict.fromkeys(sources if sources is not None else sources_for(series_id)))
-    if not sources or any(source not in sources_for(series_id) for source in sources):
+    allowed = SOURCES if series_id is None else sources_for(series_id)
+    sources = tuple(dict.fromkeys(sources if sources is not None else allowed))
+    if not sources or any(source not in allowed for source in sources):
         raise ValueError("International/Nations acquisition supports RugbyPass only"
-                         if sources_for(series_id) == ("rugbypass",)
+                         if series_id is not None and
+                         sources_for(series_id) == ("rugbypass",)
                          else "Source not supported for selected series")
 
     def execute():
-        rows, info = planning_rows(
-            database, sports_root=sports_root, incoming_root=incoming_root,
-            season=season, round_no=round_no,
-            episode_number=episode_number, series_id=series_id,
-            hostname=hostname, min_age_hours=min_age_hours,
-            retry_after_hours=retry_after_hours,
-            max_candidates=max_candidates, sources=sources, now=now)
+        # Assemble one queue rather than granting each competition its own
+        # download budget. A series-scoped run uses the identical ordering.
+        targets = (series_id,) if series_id is not None else RUGBY_SERIES
+        rows = []
+        info = {"fixtures": 0, "due": 0}
+        for name in targets:
+            eligible_sources = tuple(source for source in sources
+                                     if source in sources_for(name))
+            if not eligible_sources:
+                continue
+            planned, counts = planning_rows(
+                database, sports_root=sports_root, incoming_root=incoming_root,
+                season=season, round_no=round_no,
+                episode_number=episode_number, series_id=name,
+                hostname=hostname, min_age_hours=min_age_hours,
+                retry_after_hours=retry_after_hours,
+                max_candidates=max_candidates, sources=eligible_sources, now=now)
+            rows.extend(dict(row, series_id=name) for row in planned)
+            info["fixtures"] += counts["fixtures"]
+            info["due"] += counts["due"]
+        # ISO timestamps are timezone-aware; use actual kickoff, not a
+        # series' newest fixture. ID breaks simultaneous-kickoff ties.
+        rows.sort(key=lambda row: (dt.datetime.fromisoformat(row["scheduled"]),
+                                   row["episode_id"]), reverse=True)
         actionable = [r for r in rows if r["action"] != "skip"]
         count = 0
         totals = {"filed": 0, "downloaded": 0, "failed": 0, "skipped_on_apply": 0}
@@ -95,10 +115,13 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
                     fresh_rows, _ = planning_rows(
                         database, sports_root=sports_root, incoming_root=incoming_root,
                         season=row["season"], round_no=round_no,
-                        episode_number=row["episode"], series_id=series_id,
+                        episode_number=row["episode"], series_id=row["series_id"],
                         hostname=hostname, min_age_hours=min_age_hours,
                         retry_after_hours=retry_after_hours,
-                        max_candidates=max_candidates, sources=sources, now=now)
+                        max_candidates=max_candidates,
+                        sources=tuple(source for source in sources
+                                      if source in sources_for(row["series_id"])),
+                        now=now)
                     latest = next((item for item in fresh_rows
                                    if item["episode_id"] == row["episode_id"]), None)
                     if latest is None or latest["action"] == "skip":
@@ -205,11 +228,13 @@ def run(database, *, apply=False, limit=1, season=None, round_no=None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--series", choices=RUGBY_SERIES,
-                        default=SERIES_ID,
-                        help="Fixture series (default Rugby_Womens_PWR)")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--series", choices=RUGBY_SERIES,
+                           help="Fixture series (default Rugby_Womens_PWR)")
+    selection.add_argument("--all-series", action="store_true",
+                           help="Acquire across all eligible rugby series, newest kickoff first")
     parser.add_argument("--season", "--year", type=int, dest="season",
-                        help="Season to acquire (alias --year); default latest first")
+                        help="Filter by season (alias --year); always newest first")
     parser.add_argument("--round", type=int, dest="round_no",
                         help="Only fixtures in this competition round")
     parser.add_argument("--episode", type=int, dest="episode_number",
@@ -258,8 +283,10 @@ def main(argv=None):
             report = run(
                 client[args.database], apply=args.apply,
                 limit=args.limit, season=args.season, round_no=args.round_no,
-                episode_number=args.episode_number, series_id=args.series,
-                sources=args.source or sources_for(args.series),
+                episode_number=args.episode_number,
+                series_id=(None if args.all_series else args.series or SERIES_ID),
+                sources=args.source or (SOURCES if args.all_series
+                                        else sources_for(args.series or SERIES_ID)),
                 max_candidates=args.max_candidates,
                 sports_root=args.sports_root, incoming_root=args.incoming_root,
                 hostname=args.host, min_age_hours=args.min_age_hours,

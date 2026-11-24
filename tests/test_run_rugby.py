@@ -54,7 +54,7 @@ class RugbyRunTests(unittest.TestCase):
             report = json.loads(self.discovery)
             report["sources"] = [source]
             return Result(stdout=json.dumps(report) + "\n")
-        series = cmd[cmd.index("--series") + 1]
+        series = cmd[cmd.index("--series") + 1] if "--series" in cmd else None
         count = self.planned_by_series.get(series, 1)
         return Result(stdout='{"mode": "apply"}\n',
                       stderr=json.dumps({"planned": count}) + "\n")
@@ -332,7 +332,7 @@ class RugbyRunTests(unittest.TestCase):
             ["refresh_releases", "refresh_releases", "refresh_releases"])
         self.assertEqual(self.db.indexer_poll_state.update_one.call_count, 3)
 
-    def test_auto_targets_all_rugby_series_with_global_episode_budget(self):
+    def test_all_series_acquires_in_one_globally_budgeted_worker(self):
         recent = self.finished + dt.timedelta(minutes=10)
         self.missing = [
             {"series_id": "Rugby_Womens_PWR", "episode_id": "pwr:1",
@@ -340,19 +340,21 @@ class RugbyRunTests(unittest.TestCase):
             {"series_id": "Rugby_Mens_Intl", "episode_id": "intl:1",
              "finished": recent},
         ]
-        self.planned_by_series["Rugby_Mens_Intl"] = 0
-        self.planned_by_series["Rugby_Womens_PWR"] = 1
-        self.assertEqual(self.invoke(apply=True, skip_discovery=True, limit=1), 0)
-        self.assertEqual(
-            [c[0][c[0].index("--series") + 1] for c in self.calls],
-            ["Rugby_Mens_Intl", "Rugby_Womens_PWR"])
-        self.assertTrue(all(c[0][c[0].index("--limit") + 1] == "1"
-                            for c in self.calls))
-        # When first series consumed the budget, the second is never invoked.
-        self.calls.clear()
-        self.planned_by_series["Rugby_Mens_Intl"] = 1
         self.assertEqual(self.invoke(apply=True, skip_discovery=True, limit=1), 0)
         self.assertEqual(len(self.calls), 1)
+        cmd = self.calls[0][0]
+        self.assertIn("--all-series", cmd)
+        self.assertNotIn("--series", cmd)
+        self.assertEqual(cmd[cmd.index("--limit") + 1], "1")
+        self.assertIn("--apply", cmd)
+
+    def test_single_series_does_not_use_global_worker(self):
+        self.assertEqual(self.invoke(apply=True, skip_discovery=True,
+                                     series="Rugby_Mens_Intl", limit=4), 0)
+        cmd = self.calls[-1][0]
+        self.assertNotIn("--all-series", cmd)
+        self.assertEqual(cmd[cmd.index("--series") + 1], "Rugby_Mens_Intl")
+        self.assertEqual(cmd[cmd.index("--limit") + 1], "4")
 
     def test_cli_rejects_contradictory_flags_and_has_help(self):
         with contextlib.redirect_stderr(io.StringIO()):

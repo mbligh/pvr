@@ -138,10 +138,14 @@ missing (Phase A) and improving (Phase B) event counts. The runner's
 acquisition candidate list still includes missing files with usable
 linked releases, even when the indexer is in Phase B. Atlas access is required in both preview and apply mode.
 
-run_rugby checks all five currently supported rugby series by default,
-rather than PWR only. --series limits manual work to one series.
---limit is shared across all selected rugby series. Recent missing
-events are considered first, irrespective of series.
+run_rugby checks all supported rugby series by default, rather than PWR
+only. --series limits manual work to one series. Its single acquisition
+worker builds one globally sorted queue across eligible series, by
+scheduled kickoff descending (newest first), with stable episode-ID
+tie-breaking. --limit is shared across all selected rugby series; it
+cannot be exhausted by an older competition before a newer fixture.
+--season filters the queue but never reverses its ordering. The standalone
+acquire_rugby --all-series option uses the same behavior.
 
 ## Five-minute cron example
 

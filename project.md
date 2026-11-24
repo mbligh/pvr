@@ -13,6 +13,7 @@
 ## High-level implementation
 
 - Command-line entry points (including `import_rugby`, `run_rugby`, `run_f1` and `pvr_dashboard`) drive workflows.
+- Rugby acquisition uses one globally newest-first queue across selected series (even when `--season` is set), with one episode budget and per-episode locking/revalidation; `acquire_rugby --all-series` supports direct acquisition without discovery.
 - `indexers/`, `matchers/`, `orchestration/`, `schedulers/`, `downloaders/`, `inventory/`, and `filing/` separate discovery, matching, acquisition, inspection, and publishing.
 - `dashboard/` implements a standard-library HTTP server at port 8787; it reads Atlas and filesystem state, serves its own static CSS, JavaScript and `favicon.ico`, and does not modify recordings. Series navigation has three separate horizontal rows: Formula 1, men's rugby and women's rugby, with horizontal scrolling within rows on narrow screens.
 - Deployment is through pulling the Git repository on slagg and restarting the existing dashboard process; no automatic restart is configured.

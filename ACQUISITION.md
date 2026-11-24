@@ -76,6 +76,14 @@ For apply against previously indexed releases only, use
 `./run_rugby --skip-discovery --apply` or
 `./acquire_rugby --apply`.
 
+Unscoped `run_rugby` acquires from one global newest-first fixture queue,
+not one competition at a time: a single `--limit` is applied across all
+eligible series. `acquire_rugby --all-series` exposes the same planner
+without discovery. With or without `--season`, newest scheduled kickoffs
+are processed first (ties use stable episode IDs). `--series` still narrows
+to one competition when requested.
+
+
 Continue the historical **YouTube-only** backfill without involving new
 providers:
 

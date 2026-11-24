@@ -96,6 +96,97 @@ class AcquisitionTests(unittest.TestCase):
             "round": 1, "episode": 101,
         })
 
+    def test_globally_sorted_preview_includes_multiple_series_with_season(self):
+        fixture_rows = {
+            "Rugby_Womens_PWR": [
+                {"episode_id": "pwr:new", "scheduled": "2026-11-20T18:00:00+00:00",
+                 "season": 2026, "episode": 302, "action": "download_then_file",
+                 "source_uri": URI, "incoming": "/tmp/pwr.mkv"},
+                {"episode_id": "pwr:old", "scheduled": "2026-11-10T18:00:00+00:00",
+                 "season": 2026, "episode": 301, "action": "download_then_file",
+                 "source_uri": URI, "incoming": "/tmp/pwr-old.mkv"},
+            ],
+            "Rugby_Mens_Prem": [
+                {"episode_id": "prem:new", "scheduled": "2026-11-19T18:00:00+00:00",
+                 "season": 2026, "episode": 403, "action": "download_then_file",
+                 "source_uri": "rugby24:prem-1", "incoming": "/tmp/prem.mkv"},
+            ],
+            "Rugby_Mens_Championship": [
+                {"episode_id": "champ:new", "scheduled": "2026-11-21T12:00:00+00:00",
+                 "season": 2026, "episode": 201, "action": "download_then_file",
+                 "source_uri": "rugby24:champ-1", "incoming": "/tmp/champ.mkv"},
+            ],
+        }
+        observed = []
+        def fake_planner(db, *, series_id, season=None, episode_number=None,
+                         sources, **kw):
+            self.assertEqual(season, 2026)
+            self.assertTrue(set(sources).issubset(set(
+                __import__("orchestration.source_registry", fromlist=["sources_for"])
+                .sources_for(series_id))))
+            observed.append(series_id)
+            rows = [dict(r) for r in fixture_rows.get(series_id, ())
+                    if episode_number is None or r["episode"] == episode_number]
+            return rows, {"fixtures": len(rows), "due": len(rows)}
+        out = io.StringIO()
+        with unittest.mock.patch.object(CLI, "planning_rows", side_effect=fake_planner):
+            summary = CLI.run(
+                self.db, series_id=None, season=2026, limit=4,
+                sports_root=str(self.sports), incoming_root=str(self.incoming),
+                stream=out, summary_stream=io.StringIO(), now=NOW)
+        rows = [__import__("json").loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual([row["episode_id"] for row in rows],
+                         ["champ:new", "pwr:new", "prem:new", "pwr:old"])
+        self.assertEqual(summary["planned"], 4)
+        self.assertEqual(summary["actionable"], 4)
+        self.assertIn("Rugby_Mens_Prem", observed)
+        self.assertIn("Rugby_Mens_Championship", observed)
+
+    def test_globally_sorted_apply_respects_one_limit_across_series(self):
+        rows = {
+            "Rugby_Womens_PWR": [
+                {"episode_id": "pwr:1", "scheduled": "2026-11-20T12:00:00+00:00",
+                 "season": 2026, "episode": 101, "action": "download_then_file",
+                 "source_uri": URI, "incoming": str(self.incoming / "pwr.mkv")},
+            ],
+            "Rugby_Mens_Championship": [
+                {"episode_id": "champ:1", "scheduled": "2026-11-21T12:00:00+00:00",
+                 "season": 2026, "episode": 201, "action": "download_then_file",
+                 "source_uri": "rugby24:champ", "incoming": str(self.incoming / "champ.mkv")},
+            ],
+            "Rugby_Mens_Prem": [
+                {"episode_id": "prem:1", "scheduled": "2026-11-19T12:00:00+00:00",
+                 "season": 2026, "episode": 301, "action": "download_then_file",
+                 "source_uri": "rugby24:prem", "incoming": str(self.incoming / "prem.mkv")},
+            ],
+        }
+        def fake_planner(db, *, series_id, episode_number=None, **kwargs):
+            subset = [dict(x) for x in rows.get(series_id, ())
+                      if episode_number is None or x["episode"] == episode_number]
+            return subset, {"fixtures": len(subset), "due": len(subset)}
+        downloaded = []
+        with unittest.mock.patch.object(CLI, "planning_rows", side_effect=fake_planner):
+            summary = self.run_cli(
+                apply=True, series_id=None, season=2026, limit=2,
+                downloader=lambda db, uri, path, **kw: (
+                    downloaded.append(uri) or {"status": "downloaded"}),
+                filer=lambda *a, **kw: {"status": "filed"})
+        self.assertEqual(downloaded, ["rugby24:champ", URI])
+        self.assertEqual(summary["planned"], 2)
+        self.assertEqual(summary["filed"], 2)
+
+    def test_single_series_explicit_season_still_sorts_newest_first(self):
+        new = dict(EP, _id=EPID + ":new", episode=102,
+                   scheduled=dt.datetime(2025, 11, 14, 18, 30,
+                                         tzinfo=dt.timezone.utc))
+        new["nfo"] = EP["nfo"].replace("<episode>101</episode>",
+                                       "<episode>102</episode>")
+        new["nfo_path"] = EP["nfo_path"].replace("e101", "e102")
+        self.episodes.append(new)
+        rows = self.rows(season=2025)
+        self.assertEqual([row["episode_id"] for row in rows],
+                         [new["_id"], EPID])
+
     def test_preview_is_read_only(self):
         row, = self.rows()
         self.assertEqual(row["action"], "download_then_file")

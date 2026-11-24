@@ -140,7 +140,7 @@ def planning_rows(database, *, sports_root="/data/sports",
     episodes = list(database.episodes.find(query))
     episodes.sort(key=lambda ep: (
         aware(ep.get("scheduled")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
-        ep.get("_id", "")), reverse=season is None)
+        ep.get("_id", "")), reverse=True)
     due = [
         ep for ep in episodes
         if isinstance(ep.get("episode"), int)

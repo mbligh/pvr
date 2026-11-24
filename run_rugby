@@ -80,65 +80,51 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
         return result
 
     def run_acquisitions(missing, *, apply):
-        # No --series means all supported rugby series. Prioritize the most
-        # recently finished missing fixtures, then use a stable registry order.
-        target = [series] if series else [
-            name for name in RUGBY_SERIES
-            if any(event["series_id"] == name for event in missing)
-            and any(source in sources_for(name) for source in sources)
-        ]
-        if not target:
+        # One acquisition worker builds a globally newest-first fixture
+        # queue. Per-series runs use the same worker with a narrower scope.
+        if not any(event["series_id"] in RUGBY_SERIES
+                   and any(source in sources_for(event["series_id"])
+                           for source in sources)
+                   for event in missing):
             return 0
-        newest = {
-            name: max((ev["finished"] for ev in missing
-                       if ev["series_id"] == name), default=None)
-            for name in target
-        }
-        target.sort(key=lambda name: (
-            newest[name] is not None,
-            newest[name].timestamp() if newest[name] else -1,
-        ), reverse=True)
-
-        remaining = limit
-        for name in target:
-            args = ["--series", name, "--limit", remaining,
-                    "--max-candidates", max_candidates,
-                    "--sports-root", sports_root, "--incoming-root", incoming_root,
-                    "--min-age-hours", min_age_hours,
-                    "--retry-after-hours", retry_after_hours,
-                    "--yt-dlp", yt_dlp, "--get-iplayer", get_iplayer,
-                    "--rugbypass", rugbypass,
-                    "--ffmpeg", ffmpeg, "--ffprobe", ffprobe,
-                    "--database", database]
-            if season is not None:
-                args.extend(("--season", season))
-            if round_no is not None:
-                args.extend(("--round", round_no))
-            if episode_number is not None:
-                args.extend(("--episode", episode_number))
-            if hostname is not None:
-                args.extend(("--host", hostname))
-            if show_skipped:
-                args.append("--show-skipped")
-            for source in sources:
-                if source in sources_for(name):
-                    args.extend(("--source", source))
-            result = invoke("acquire_rugby", *args, *(["--apply"] if apply else []))
-            if result.returncode:
-                return result.returncode
-            # Enforce one global --limit across all series. Each worker
-            # reports planned episode count on stderr.
-            try:
-                reports = [json.loads(line) for line in result.stderr.splitlines()
-                           if line.strip().startswith("{")]
-                count = reports[-1]["planned"]
-                if type(count) is not int or not 0 <= count <= remaining:
-                    raise ValueError("Invalid planned count")
-            except (ValueError, IndexError, KeyError, TypeError) as exc:
-                raise RuntimeError("Rugby acquisition summary missing; refusing further work") from exc
-            remaining -= count
-            if remaining == 0:
-                break
+        args = ["--limit", limit,
+                "--max-candidates", max_candidates,
+                "--sports-root", sports_root, "--incoming-root", incoming_root,
+                "--min-age-hours", min_age_hours,
+                "--retry-after-hours", retry_after_hours,
+                "--yt-dlp", yt_dlp, "--get-iplayer", get_iplayer,
+                "--rugbypass", rugbypass,
+                "--ffmpeg", ffmpeg, "--ffprobe", ffprobe,
+                "--database", database]
+        if series is None:
+            args.append("--all-series")
+        else:
+            args.extend(("--series", series))
+        if season is not None:
+            args.extend(("--season", season))
+        if round_no is not None:
+            args.extend(("--round", round_no))
+        if episode_number is not None:
+            args.extend(("--episode", episode_number))
+        if hostname is not None:
+            args.extend(("--host", hostname))
+        if show_skipped:
+            args.append("--show-skipped")
+        for source in sources:
+            if series is None or source in sources_for(series):
+                args.extend(("--source", source))
+        result = invoke("acquire_rugby", *args, *([ "--apply" ] if apply else []))
+        if result.returncode:
+            return result.returncode
+        # A single worker owns the global --limit and reports attempts.
+        try:
+            reports = [json.loads(line) for line in result.stderr.splitlines()
+                       if line.strip().startswith("{")]
+            count = reports[-1]["planned"]
+            if type(count) is not int or not 0 <= count <= limit:
+                raise ValueError("Invalid planned count")
+        except (ValueError, IndexError, KeyError, TypeError) as exc:
+            raise RuntimeError("Rugby acquisition summary missing") from exc
         return 0
 
     def work():
@@ -262,7 +248,7 @@ def main(argv=None):
     parser.add_argument("--series", choices=RUGBY_SERIES,
                         help="Restrict to one series (default: all supported rugby)")
     parser.add_argument("--season", "--year", type=int, dest="season",
-                        help="Season to acquire; default latest first")
+                        help="Filter by season; fixtures always acquired newest first")
     parser.add_argument("--round", type=int, dest="round_no")
     parser.add_argument("--episode", type=int, dest="episode_number")
     parser.add_argument("--limit", type=int, default=1)
