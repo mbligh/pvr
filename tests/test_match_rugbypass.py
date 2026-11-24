@@ -22,6 +22,8 @@ def fixture(series, home, away, scheduled, *, number=501, season=2026,
         rb.WOMENS: ("Rugby_Womens_Intl", "Rugby Womens Intl"),
         rb.WXV: ("Rugby_Womens_WXV", "Rugby Womens WXV"),
         rb.NATIONS: ("Rugby_Mens_Nations", "Rugby Nations Championships"),
+        rb.MENS_6N: ("Rugby_Mens_6N", "Rugby Mens 6N"),
+        rb.WOMENS_6N: ("Rugby_Womens_6N", "Rugby Womens 6N"),
     }[series]
     root, title = show
     filename = f"{root}-s{season}e{number:03d}-{home.replace(' ', '_')}_v_{away.replace(' ', '_')}_20261113.nfo"
@@ -85,6 +87,25 @@ class MatchNationalReplays(unittest.TestCase):
                       dt.datetime(2026, 11, 14, 13, tzinfo=UTC))
         title = "Georgia v Tonga | Nations Cup 2026 | Round 5 | Full Match Replay"
         self.assertEqual(rb.match_release(release(title, "2026-11-14T16:00:00Z"), [cup])["episode_id"], cup["_id"])
+
+    def test_six_nations_explicit_competition_and_gender(self):
+        t = dt.datetime(2026, 4, 11, 11, 25, tzinfo=UTC)
+        women = fixture(rb.WOMENS_6N, "France Women", "Italy Women", t)
+        men = fixture(rb.MENS_6N, "France", "Italy", t)
+        intl = fixture(rb.WOMENS, "France", "Italy", t)
+        for label, expected in [
+            ("Guinness Women's Six Nations 2026", women),
+            ("Women's 6 Nations", women),
+            ("Men’s Six Nations 2026", men),
+        ]:
+            vod = release(f"France v Italy | {label} | Full Match Replay",
+                          "2026-04-11T14:00:00Z")
+            self.assertEqual(rb.match_release(vod, [women, men, intl])["episode_id"],
+                             expected["_id"])
+        for label in ("Six Nations", "U20 Six Nations", "Women's Six Nations U20",
+                      "Men's Six Nations Under-18"):
+            self.assertIsNone(rb.identify_replay(
+                f"France v Italy | {label} | Full Match Replay"))
 
     def test_country_suffix_a_and_xv_are_not_dropped(self):
         self.assertNotEqual(rb.normalize_team("England A"), rb.normalize_team("England"))
