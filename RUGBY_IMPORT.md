@@ -19,9 +19,11 @@ The rugby scraping, spoiler filtering, numbering and NFO helpers originally copi
   refreshing the current and following years (at most two requests). It reads
   only the complete five-round, 15-fixture schedule, strips all results and
   scores, validates each team's round-robin coverage and extracts UTC kickoffs
-  from the site's server-rendered fixture data. Completed 2026 matches use
+  from the site's server-rendered fixture data. Completed matches in any supported season use
   fixture URL times where the source no longer renders timestamps (venue-local
-  for men, UTC for women). For 2027 women's fixtures without titles, validated
+  for men, UTC for women). This fallback is restricted to report links;
+  upcoming fixtures still require explicit UTC kickoff metadata. Existing
+  accepted past kickoffs remain frozen. For 2027 women's fixtures without titles, validated
   competition-specific links and UTC times are accepted; TBD venues are omitted.
   Existing third-party ICS UIDs are reconciled by year/home/away, so Atlas
   episode IDs, recordings and stored numbering survive the source migration.
