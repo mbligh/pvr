@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Match RugbyPass full replays to numbered international/Nations/WXV fixtures.
+"""Match RugbyPass full replays to numbered international/Nations/WXV/Six Nations fixtures.
 
 Read-only by default. --apply links only one unambiguous team/competition/date
 match. Existing release associations are never changed, even if incorrect.
@@ -72,7 +72,7 @@ def run(database, *, apply=False, series_ids=SERIES, verbose=False,
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--series", action="append", choices=SERIES,
-                        help="Target series; repeat for multiple (default all four)")
+                        help="Target series; repeat for multiple (default all supported)")
     parser.add_argument("--max-delay-days", type=int, default=3,
                         help="Max replay publishing delay after fixture, 0..7 days")
     parser.add_argument("--verbose", action="store_true")
