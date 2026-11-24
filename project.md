@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Discover scheduled rugby (including EPCR Investec Champions Cup) and Formula 1 events, and index recordings from supported providers.
+- Discover scheduled rugby (including EPCR Investec Champions Cup and official 2026-onward Men's Six Nations) and Formula 1 events, and index recordings from supported providers.
 - Match releases to canonical events without mixing competitions, and preserve source metadata. For PWR, use an explicit UK fixture date from the video title ahead of later YouTube upload timestamps when unambiguous.
 - Acquire selected media, inspect recordings, and file episodes under the established sports directory structure.
 - Discover official PWR full-match recordings from both YouTube channel streams and the curated full-match playlist, deduplicating by video ID and avoiding repeated metadata fetches.
@@ -16,6 +16,7 @@
 - Rugby acquisition uses one globally newest-first queue across selected series (even when `--season` is set), with one episode budget and per-episode locking/revalidation; `acquire_rugby --all-series` supports direct acquisition without discovery.
 - A successful applied Rugby24 refresh resets only the independently scanned category polling state(s), clearing stale Cloudflare failure cooldowns; previews and failed refreshes never reset them.
 - `indexers/`, `matchers/`, `orchestration/`, `schedulers/`, `downloaders/`, `inventory/`, and `filing/` separate discovery, matching, acquisition, inspection, and publishing.
+- `schedulers/rugby/mens_six_nations.py` parses the official Six Nations 2026+ men's fixture cards and server-component UTC kickoff metadata, requiring 15 fixtures in five complete rounds. It fetches no seasons before 2026, preserves legacy ICS fixture UIDs, excludes results, and leaves women's Six Nations on its separate ICS source.
 - `dashboard/` implements a standard-library HTTP server at port 8787; it reads Atlas and filesystem state, serves its own static CSS, JavaScript and `favicon.ico`, and does not modify recordings. Series navigation has three separate horizontal rows: Formula 1, men's rugby and women's rugby, with horizontal scrolling within rows on narrow screens.
 - Deployment is through pulling the Git repository on slagg and restarting the existing dashboard process; no automatic restart is configured.
 
