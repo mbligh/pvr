@@ -22,7 +22,7 @@ ROUNDS = (
 DATES = ("02-05", "02-13", "02-20", "03-05", "03-13")
 
 
-def page(year=2027, *, missing=False, rsc=True, include_scores=False):
+def page(year=2027, *, missing=False, rsc=True, rsc_times=True, include_scores=False):
     markup = ["<html><body>"]
     rounds = []
     for round_no, games in enumerate(ROUNDS, 1):
@@ -38,13 +38,14 @@ def page(year=2027, *, missing=False, rsc=True, include_scores=False):
             href = f"/en/m6n/fixtures/{year}00/{slug}/build-up"
             card = {
                 "data-testid": "fixture-card",
-                "children": [
-                    {"format": "HH:mm", "date": f"{day}T20:10:00.000Z"},
+                "children": (
+                    ([{"format": "HH:mm", "date": f"{day}T20:10:00.000Z"}]
+                     if rsc_times else []) + [
                     {"data-testid": "fixture-card__match-centre-link",
                      "href": href, "title": f"{home} v {away} - Six Nations Rugby - {day_text}"},
                     {"className": "fixturesResultsCard_stadium__eRJIL",
                      "children": "Aviva Stadium"},
-                ],
+                ]),
             }
             cards.append(card)
             markup.append(
@@ -105,6 +106,15 @@ class OfficialMensSixNationsTests(unittest.TestCase):
                       if str(e.get("SUMMARY")) == "France vs Wales")
         self.assertEqual(france.decoded("DTSTART"),
                          dt.datetime(2026, 2, 5, 20, 10, tzinfo=UTC))
+
+    def test_2026_rsc_only_completed_fixtures_have_no_score_dependency(self):
+        html = page(2026, rsc_times=False, include_scores=True)
+        html = __import__("re").sub(
+            r'<article data-testid="fixture-card">.*?</article>',
+            "", html, flags=__import__("re").S)
+        source = official.convert_mens(html, year=2026)
+        self.assertEqual(len(matches(source)), 15)
+        self.assertNotIn("32-18", source.to_ical().decode())
 
     def test_no_guessing_incomplete_rounds_or_future_kickoffs(self):
         with self.assertRaisesRegex(ValueError, "Incomplete"):
