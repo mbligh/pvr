@@ -19,7 +19,8 @@ import sys
 from orchestration import polling
 from inventory import library as inventory
 from orchestration.locks import LockBusy
-from orchestration.source_registry import RUGBY_SERIES, RUGBY_SOURCES, sources_for
+from orchestration.source_registry import (RUGBY_SERIES, RUGBY_SOURCES,
+                                           RUGBY24_CATEGORY_SERIES, sources_for)
 from matchers.pwr import SERIES_ID
 
 ROOT = Path(__file__).resolve().parent
@@ -38,6 +39,8 @@ def source_set(series, sources):
     if not values or any(item not in allowed for item in values):
         if series in ("Rugby_Mens_Prem", "Rugby_Mens_Championship"):
             raise ValueError("Rugby24 only for the selected series")
+        if series == "Rugby_Mens_6N":
+            raise ValueError("RugbyPass or Rugby24 only for men’s Six Nations")
         raise ValueError("RugbyPass only for international series; source not supported for selected series")
     return values
 
@@ -137,10 +140,7 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
             scope = contextlib.nullcontext(poll_db)
         with scope as connection:
             db = connection[database] if poll_db is None else connection
-            category_series = (
-                ("prem", "Rugby_Mens_Prem"),
-                ("championship", "Rugby_Mens_Championship"),
-            )
+            category_series = RUGBY24_CATEGORY_SERIES.items()
             selected_category = next(
                 (category for category, name in category_series if name == series),
                 None,

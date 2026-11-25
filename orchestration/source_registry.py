@@ -3,6 +3,11 @@
 Fixture scheduling (import_rugby/import_f1) is independent of this mapping.
 A series absent from this registry is deliberately *not* polled.
 """
+RUGBY24_CATEGORY_SERIES = {
+    "prem": "Rugby_Mens_Prem",
+    "championship": "Rugby_Mens_Championship",
+    "sixnations": "Rugby_Mens_6N",
+}
 SOURCE_SERIES = {
     "bbc": ("Rugby_Womens_PWR",),
     "youtube": ("Rugby_Womens_PWR",),
@@ -15,7 +20,7 @@ SOURCE_SERIES = {
         "Rugby_Mens_6N",
         "Rugby_Womens_6N",
     ),
-    "rugby24": ("Rugby_Mens_Prem", "Rugby_Mens_Championship"),
+    "rugby24": tuple(RUGBY24_CATEGORY_SERIES.values()),
     "reddit-teletz": ("Formula_1",),
 }
 RUGBY_SOURCES = ("bbc", "youtube", "rugbypass", "rugby24")

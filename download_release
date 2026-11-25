@@ -25,6 +25,7 @@ from downloaders.transfernow_pvr import (download as download_transfernow,
                                         share_from_release, source_id as transfernow_id)
 from matchers.pwr import SERIES_ID
 from matchers.rugbypass import SERIES as INTERNATIONAL_SERIES
+from orchestration.source_registry import series_for
 from orchestration.locks import site_lock
 
 
@@ -44,7 +45,7 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         adapter = "rugbypass"
     elif uri.startswith("rugby24:"):
         rugby24_id(uri)
-        expected_series = ("Rugby_Mens_Prem", "Rugby_Mens_Championship")
+        expected_series = series_for("rugby24")
         adapter = "rugby24"
     elif uri.startswith("reddit-teletz:"):
         transfernow_id(uri)
@@ -87,11 +88,12 @@ def plan(database, uri, destination, *, hostname=None, allow_existing_episode=Fa
         raise ValueError("Cannot download an unnumbered episode")
     if adapter == "rugby24":
         # The episode_id can be assigned manually in Atlas. Never let a
-        # mislinked Premiership/Champions Cup article cross series boundaries.
+        # mislinked Rugby24 article cross series boundaries.
         kind = (release.get("metadata") or {}).get("competition")
         category = {
             "Rugby_Mens_Prem": "league",
             "Rugby_Mens_Championship": "champions-cup",
+            "Rugby_Mens_6N": "sixnations",
         }[episode["series_id"]]
         if kind != category:
             raise ValueError("Rugby24 release competition does not match episode series")

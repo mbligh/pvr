@@ -174,17 +174,28 @@ class RugbyRunTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rugby24 only"):
             runner.source_set("Rugby_Mens_Championship", ["youtube"])
 
+    def test_mens_sixnations_routes_to_both_sources(self):
+        self.assertEqual(runner.source_set("Rugby_Mens_6N", None),
+                         ("rugbypass", "rugby24"))
+        self.assertEqual(self.invoke(apply=True, series="Rugby_Mens_6N",
+                                     sources=["rugby24"]), 0)
+        refresh, acquire = (x[0] for x in self.calls)
+        self.assertEqual(refresh[refresh.index("--rugby24-category") + 1], "sixnations")
+        self.assertEqual(acquire[acquire.index("--source") + 1], "rugby24")
+        self.assertEqual(self.db.indexer_poll_state.update_one.call_args.args[0]["_id"],
+                         "rugby24:sixnations")
+
     def test_all_series_scans_rugby24_categories_independently(self):
         self.assertEqual(self.invoke(apply=True, sources=["rugby24"]), 0)
         refreshes = [cmd for cmd, _ in self.calls
                      if Path(cmd[1]).name == "refresh_releases"]
-        self.assertEqual(len(refreshes), 2)
+        self.assertEqual(len(refreshes), 3)
         self.assertEqual([cmd[cmd.index("--rugby24-category") + 1]
-                          for cmd in refreshes], ["prem", "championship"])
+                          for cmd in refreshes], ["prem", "championship", "sixnations"])
         self.assertEqual(
             [call.args[0]["_id"] for call in
              self.db.indexer_poll_state.update_one.call_args_list],
-            ["rugby24:prem", "rugby24:championship"])
+            ["rugby24:prem", "rugby24:championship", "rugby24:sixnations"])
 
     def test_failed_prem_check_does_not_block_championship_refresh(self):
         def partial_failure(cmd, **kwargs):
@@ -204,11 +215,11 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual(
             [cmd[cmd.index("--rugby24-category") + 1] for cmd, _ in
              self.calls if Path(cmd[1]).name == "refresh_releases"],
-            ["prem", "championship"])
+            ["prem", "championship", "sixnations"])
         self.assertEqual(
             [call.args[0]["_id"] for call in
              self.db.indexer_poll_state.update_one.call_args_list],
-            ["rugby24:prem", "rugby24:championship"])
+            ["rugby24:prem", "rugby24:championship", "rugby24:sixnations"])
 
     def test_championship_challenge_cooldown_and_force_discovery(self):
         def blocked(cmd, **kwargs):

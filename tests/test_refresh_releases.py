@@ -80,8 +80,10 @@ class RefreshTests(unittest.TestCase):
         prem.run.return_value = {"linked": 4, "fixtures": 79}
         championship = MagicMock()
         championship.run.return_value = {"linked": 7, "fixtures": 48}
+        sixnations = MagicMock()
+        sixnations.run.return_value = {"linked": 3}
         with patch.object(CLI, "load_file", side_effect=[
-                indexer, matcher, national, prem, championship]):
+                indexer, matcher, national, prem, championship, sixnations]):
             report = CLI.run(self.db, apply=True, rugby24_category="all", discover=self.discover,
                              output=io.StringIO())
         self.assertEqual(indexer.upsert_releases.call_count, 4)
@@ -89,6 +91,8 @@ class RefreshTests(unittest.TestCase):
         national.run.assert_called_once()
         prem.run.assert_called_once()
         championship.run.assert_called_once()
+        sixnations.run.assert_called_once()
+        self.assertEqual(report["sixnations_matching"]["linked"], 3)
         self.assertTrue(matcher.run.call_args.kwargs["apply"])
         self.assertTrue(national.run.call_args.kwargs["apply"])
         self.assertEqual(report["matching"]["linked"], 2)
@@ -169,6 +173,7 @@ class RefreshTests(unittest.TestCase):
         for category, target in (
             ("prem", "rugby24:prem"),
             ("championship", "rugby24:championship"),
+            ("sixnations", "rugby24:sixnations"),
         ):
             with self.subTest(category=category):
                 self.db.reset_mock()
@@ -194,7 +199,7 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual([
             call.args[0]["_id"] for call in
             self.db.indexer_poll_state.update_one.call_args_list
-        ], ["rugby24:prem", "rugby24:championship"])
+        ], ["rugby24:prem", "rugby24:championship", "rugby24:sixnations"])
 
     def test_rugby24_preview_and_other_source_apply_do_not_clear_backoff(self):
         CLI.run(self.db, sources=("rugby24",), apply=False,

@@ -16,10 +16,11 @@ The source registry is orchestration/source_registry.py:
 | RugbyPass | Rugby_Womens_PWR, Rugby_Mens_Intl, Rugby_Womens_Intl, Rugby_Mens_Nations, Rugby_Womens_WXV |
 | Reddit/teletz | Formula_1 |
 
-Men's Premiership and EPCR Champions Cup use Rugby24. Men's and women's
-Six Nations have **no supported recording indexer**. These fixtures never
-trigger the BBC/YouTube PWR indexers. Rugby24 keeps distinct Atlas poll
-states `rugby24:prem` and `rugby24:championship` so one category's
+Men's Premiership and EPCR Champions Cup use Rugby24. Men's Six Nations
+uses Rugby24 and RugbyPass; women's Six Nations uses RugbyPass only.
+These fixtures never trigger the BBC/YouTube PWR indexers. Rugby24 keeps
+distinct Atlas poll states `rugby24:prem`, `rugby24:championship` and
+`rugby24:sixnations` so one category's
 successful check or Cloudflare challenge never resets the other category's
 schedule. The previous shared `rugby24` state is unused after migration. Multiple missing fixtures on one source
 result in one provider check, not one check per fixture.
@@ -78,9 +79,9 @@ then at most 60 minutes until success. For Rugby24 Cloudflare
 manual `refresh_releases` invocation still permits deliberate testing.
 A successful `refresh_releases --apply --source rugby24` with an explicit
 `--rugby24-category` clears the failure backoff and resets the successful-check
-timestamp for only the Rugby24 categories it scanned: `prem` or
-`championship` clears the corresponding state, while explicitly selecting
-`both` clears both **only if the entire scan and matching succeed**.
+timestamp for only the Rugby24 categories it scanned: `prem`,
+`championship` or `sixnations` clears the corresponding state, while explicitly selecting
+`all` clears all three **only if the entire scan and matching succeed**.
 A preview never changes polling state, and a failed refresh never clears
 a cooldown. A successful scan with zero new recordings still counts as
 success. Failure does not change last-success time.

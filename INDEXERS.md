@@ -128,10 +128,10 @@ importer, then runs the existing conservative PWR fixture matcher.
 
 ```sh
 # Discovery-only preview (queries providers; does not write Atlas):
-python3 refresh_releases --rugby24-category both
+python3 refresh_releases --rugby24-category all
 
 # Refresh and match unambiguous releases:
-python3 refresh_releases --rugby24-category both --apply
+python3 refresh_releases --rugby24-category all --apply
 
 # Refresh just YouTube with 100 videos:
 python3 refresh_releases --source youtube --youtube-limit 100 --apply
@@ -194,25 +194,28 @@ limited to accessible/featured full-match sections. For detailed matching
 rules and preview commands see [MATCHING.md](MATCHING.md).
 
 
-## Rugby24 men's Premiership and Champions Cup replay indexer
+## Rugby24 men's Premiership, Champions Cup and Six Nations replay indexer
 
-`indexers/rugby24` supports Premiership (`/premiership-rugby`) and
-EPCR Champions Cup (`/champions-cup`). Select `--category prem`,
-`--category championship`, or explicitly `--category both`; there is no
+`indexers/rugby24` supports Premiership (`/premiership-rugby`),
+EPCR Champions Cup (`/champions-cup`) and men's Six Nations (`/six-nations`).
+Select `--category prem`, `--category championship`, `--category sixnations`,
+or explicitly `--category all`; there is no
 default competition. An explicit `--url` is also supported. Each category has its own
 `--pages` budget (`?page2` etc). It visits full-match articles and emits
 stable `rugby24:<article-slug>` release URIs only when they carry a
 validated `https://ok.ru/videoembed/<id>` iframe.
 
 Titles are classified as `league`, `cup` (Premiership Rugby Cup), or
-`champions-cup`. Highlights and Challenge Cup entries are excluded.
+`champions-cup`, or `sixnations`. Highlights and Challenge Cup entries are excluded.
 Only `league` can match `Rugby_Mens_Prem`, and only `champions-cup` can
-match `Rugby_Mens_Championship`. Matches require exactly one fixture
+match `Rugby_Mens_Championship`. `sixnations` matches only `Rugby_Mens_6N`;
+women's and age-grade titles are excluded. Matches require exactly one fixture
 with home/away team aliases and a ±2-day date window; ambiguous cases are
 not linked. The public site may block requests with HTTP 403.
 
-    ./indexers/rugby24 --category both --pages 2 | ./index_releases --dry-run
+    ./indexers/rugby24 --category all --pages 2 | ./index_releases --dry-run
     ./indexers/rugby24 --category championship --pages 2
+    ./indexers/rugby24 --category sixnations --pages 2
     ./refresh_releases --source rugby24 --rugby24-category championship --rugby24-pages 2 --apply
     ./match_prem              # preview PREM fixture links
     ./match_championship      # preview Champions Cup fixture links
@@ -280,8 +283,9 @@ After Cloudflare access has been restored, a successful manual
 `./refresh_releases --source rugby24 --rugby24-category championship --apply`
 clears the **Champions Cup** polling failure backoff (and records the
 success timestamp), without altering the Premiership cooldown. Use
-`--rugby24-category prem` for Premiership or explicitly select
-`--rugby24-category both` to clear both after a complete successful scan. Preview-only refreshes and
+`--rugby24-category prem` for Premiership, `--rugby24-category sixnations`
+for men's Six Nations, or explicitly select
+`--rugby24-category all` to clear all three after a complete successful scan. Preview-only refreshes and
 failed or partially completed runs never reset the cooldown; acquisition
 is still handled separately by `run_rugby`.
 

@@ -44,10 +44,10 @@ cd ~/pvr
 git pull
 
 # Inspect provider catalogue sizes without modifying Atlas:
-python3 refresh_releases --rugby24-category both
+python3 refresh_releases --rugby24-category all
 
 # Refresh the Atlas source catalogue and link unambiguous matches:
-python3 refresh_releases --rugby24-category both --apply
+python3 refresh_releases --rugby24-category all --apply
 
 # Preview acquisition (may show several source downloads for one episode):
 ./acquire_rugby --limit 3
@@ -70,7 +70,7 @@ To preview from currently indexed releases:
 
 Like run_f1, this preview **does not discover new recordings**. To
 inspect a plan using newly discovered sources, first run
-`./refresh_releases --rugby24-category both --apply`, then preview
+`./refresh_releases --rugby24-category all --apply`, then preview
 `./acquire_rugby`.
 For apply against previously indexed releases only, use
 `./run_rugby --skip-discovery --apply` or
@@ -168,7 +168,7 @@ series is restricted to RugbyPass: using `--source youtube` or
 ## Rugby24 Champions Cup
 
 The existing Rugby24 OK.ru embed downloader now also accepts matched
-`Rugby_Mens_Championship` fixtures. The indexer scans both Rugby24
+`Rugby_Mens_Championship` fixtures. The indexer scans the supported Rugby24
 Premiership and Champions Cup category pages by default, while matchers
 keep Premiership Rugby Cup replays distinct from European Champions Cup.
 As always, downloads are preview-only unless `--apply` is supplied.
@@ -329,3 +329,17 @@ in a temporary directory before atomic MKV publication.
 
 Existing `./run_rugby --apply` cron automatically includes this source,
 subject to the global episode limit. No cron changes are required.
+
+## Men's Six Nations (Rugby24)
+
+Rugby24 is an additional source for `Rugby_Mens_6N`, alongside RugbyPass.
+The matcher accepts senior men's Six Nations full-match titles with exact
+national teams and an unambiguous fixture date within two days. Women's
+and age-grade titles are excluded. The existing Rugby24 downloader is reused.
+
+```sh
+./indexers/rugby24 --category sixnations --pages 1
+./refresh_releases --source rugby24 --rugby24-category sixnations --apply
+./match_sixnations
+./run_rugby --series Rugby_Mens_6N --source rugby24 --apply
+```

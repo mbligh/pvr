@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from downloaders import rugby24
+from matchers.sixnations import match_release as match_sixnations
 from matchers.prem import match_release
 from matchers.championship import match_release as match_championship
 
@@ -26,6 +27,11 @@ TITLE = "Northampton Saints v Gloucester - Full Match Replay - PREM Rugby - 31 O
 CUP_TITLE = "Bristol Bears v Bath - Full Match Replay - Premiership Rugby Cup - 20 November 2026"
 CHAMP_SLUG = "gloucester-v-bordeaux-begles-full-match-replay-16-october-2026-european-champions-cup-rugby"
 CHAMP_TITLE = "Gloucester v Bordeaux Begles - Full Match Replay - 16 October 2026 - European Champions Cup Rugby"
+SIX_TITLE = "France vs England Six Nations Rugby Full Match Replay 14 March 2026"
+SIX_SLUG = "france-vs-england-six-nations-rugby-full-match-replay-14-march-2026"
+SIX_FIXTURE = {"_id": "Rugby_Mens_6N:abc", "series_id": "Rugby_Mens_6N",
+               "home": "France", "away": "England", "season": 2026, "episode": 501,
+               "scheduled": dt.datetime(2026, 3, 14, 20, tzinfo=dt.timezone.utc)}
 CHAMP_FIXTURE = {
     "_id": "Rugby_Mens_Championship:epcr-293316@mbligh.github.io",
     "series_id": "Rugby_Mens_Championship",
@@ -64,7 +70,7 @@ class IndexerTests(unittest.TestCase):
         self.assertIn(indexer.PREM_URL + "?page2", seen)
         self.assertEqual(indexer.article_slug("https://not-rugby24.net/foo"), None)
 
-    def test_two_categories_and_no_cup_cross_contamination(self):
+    def test_all_categories_and_no_cup_cross_contamination(self):
         prem = indexer.PREM_URL
         champions = indexer.CHAMPIONS_URL
         pages = {
@@ -76,23 +82,44 @@ class IndexerTests(unittest.TestCase):
             BASE + LEAGUE_SLUG: '<iframe src="https://ok.ru/videoembed/12345678901"></iframe>',
             BASE + CUP_SLUG: '<iframe src="https://ok.ru/videoembed/16552117471956"></iframe>',
             BASE + CHAMP_SLUG: '<iframe src="//ok.ru/videoembed/12345678902"></iframe>',
+            indexer.SIXNATIONS_URL: '<h3><a href="/' + SIX_SLUG + '">' + SIX_TITLE + '</a></h3>',
+            BASE + SIX_SLUG: '<iframe src="//ok.ru/videoembed/12345678903"></iframe>',
         }
         seen = []
         def fetch(url):
             seen.append(url)
             return pages[url]
         rows = indexer.discover_all(category="all", pages=1, fetch=fetch)
-        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(rows), 4)
         self.assertEqual({x["metadata"]["competition"] for x in rows},
-                         {"league", "cup", "champions-cup"})
+                         {"league", "cup", "champions-cup", "sixnations"})
         self.assertEqual(rows[2]["published"], "2026-10-16")
         self.assertEqual(rows[2]["metadata"]["embed_url"],
                          "https://ok.ru/videoembed/12345678902")
         self.assertEqual(seen[0], prem)
         self.assertEqual(seen[3], champions)
+        self.assertEqual(seen[5], indexer.SIXNATIONS_URL)
         self.assertEqual(indexer.competition("Challenge Cup Full Match Replay"), "unknown")
         self.assertEqual(indexer.competition(CHAMP_TITLE), "champions-cup")
         self.assertEqual(indexer.competition(CUP_TITLE), "cup")
+
+    def test_sixnations_only_and_matcher(self):
+        pages = {
+            indexer.SIXNATIONS_URL:
+                '<h3><a href="/' + SIX_SLUG + '">' + SIX_TITLE + '</a></h3>'
+                '<h3><a href="/women">France vs England Women’s Six Nations Full Match Replay 14 March 2026</a></h3>'
+                '<h3><a href="/u20">France vs England U20 Six Nations Full Match Replay 14 March 2026</a></h3>',
+            BASE + SIX_SLUG: '<iframe src="//ok.ru/videoembed/12345678903"></iframe>',
+        }
+        rows = indexer.discover_all(category="sixnations", pages=1, fetch=pages.__getitem__)
+        self.assertEqual(len(rows), 1)
+        release = rows[0]
+        self.assertEqual(release["metadata"]["competition"], "sixnations")
+        self.assertEqual(match_sixnations(release, [SIX_FIXTURE])["status"], "candidate")
+        self.assertEqual(match_sixnations(release, [dict(SIX_FIXTURE, series_id="Rugby_Womens_6N")])["status"], "no_fixture")
+        self.assertEqual(match_sixnations(release, [SIX_FIXTURE, dict(SIX_FIXTURE, _id="other")])["status"], "ambiguous")
+        self.assertEqual(match_sixnations(dict(release, title=SIX_TITLE.replace("Six Nations", "U20 Six Nations")), [SIX_FIXTURE])["status"], "not_sixnations")
+        self.assertEqual(match_sixnations(dict(release, title="France v England - Full Match Replay - Six Nations - 14 March 2026"), [SIX_FIXTURE])["status"], "candidate")
 
     def test_competition_selection_is_required(self):
         with self.assertRaises(TypeError):

@@ -78,7 +78,7 @@ class PollingTests(unittest.TestCase):
 
     def test_registry_routes_mens_prem_to_rugby24_only(self):
         self.assertEqual(sources_for("Rugby_Mens_Prem"), ("rugby24",))
-        self.assertEqual(sources_for("Rugby_Mens_6N"), ("rugbypass",))
+        self.assertEqual(sources_for("Rugby_Mens_6N"), ("rugbypass", "rugby24"))
         self.assertEqual(sources_for("Rugby_Womens_6N"), ("rugbypass",))
         self.assertEqual(sources_for("Rugby_Womens_PWR"),
                          ("bbc", "youtube", "rugbypass"))
@@ -87,7 +87,7 @@ class PollingTests(unittest.TestCase):
         self.assertNotIn("Rugby_Mens_Prem", series_for("bbc"))
         self.assertEqual(sources_for("Rugby_Mens_Championship"), ("rugby24",))
         self.assertEqual(series_for("rugby24"), (
-            "Rugby_Mens_Prem", "Rugby_Mens_Championship"))
+            "Rugby_Mens_Prem", "Rugby_Mens_Championship", "Rugby_Mens_6N"))
 
     def test_rugby24_polling_uses_prem_fixtures(self):
         prem = episode("Rugby_Mens_Prem", NOW - dt.timedelta(minutes=30))
