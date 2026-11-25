@@ -14,10 +14,10 @@ import time
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
-DEFAULT_URL = "https://rugby24.net/premiership-rugby"
+PREM_URL = "https://rugby24.net/premiership-rugby"
 CHAMPIONS_URL = "https://rugby24.net/champions-cup"
-CATEGORY_URLS = (DEFAULT_URL, CHAMPIONS_URL)
-CATEGORIES = {"prem": DEFAULT_URL, "championship": CHAMPIONS_URL}
+CATEGORY_URLS = (PREM_URL, CHAMPIONS_URL)
+CATEGORIES = {"prem": PREM_URL, "championship": CHAMPIONS_URL}
 CHAMPIONS = re.compile(r"\b(?:european\s+)?champions\s+cup\b", re.I)
 CHALLENGE = re.compile(r"\bchallenge\s+cup\b", re.I)
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -313,7 +313,7 @@ def match_date(title):
         return None
 
 
-def discover(url=DEFAULT_URL, *, pages=2, fetch=None, cached=None, now=None):
+def discover(url, *, pages=2, fetch=None, cached=None, now=None):
     if not 1 <= pages <= 25:
         raise ValueError("Rugby24 pages must be between 1 and 25")
     if urlsplit(url).scheme != "https" or urlsplit(url).hostname != "rugby24.net":
@@ -399,7 +399,7 @@ def discover(url=DEFAULT_URL, *, pages=2, fetch=None, cached=None, now=None):
     return releases
 
 
-def discover_all(*, pages=2, category="both", fetch=None, cached=None, now=None):
+def discover_all(*, category, pages=2, fetch=None, cached=None, now=None):
     """Scan selected categories, sharing site cookies and a request budget.
 
     Each category is fetched independently and only validated full-match
@@ -436,15 +436,14 @@ def discover_all(*, pages=2, category="both", fetch=None, cached=None, now=None)
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", help="Optional one-category URL (default: both supported categories)")
-    parser.add_argument("--category", choices=("both", "prem", "championship"),
-                        default="both")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--url", help="Explicit Rugby24 competition listing URL")
+    selection.add_argument("--category", choices=("both", "prem", "championship"),
+                           help="Competition to scan (both explicitly selects both)")
     parser.add_argument("--pages", type=int, default=2,
                         help="Pages per category, not total pages")
     parser.add_argument("--search", help="Only output titles containing this text")
     args = parser.parse_args(argv)
-    if args.url and args.category != "both":
-        parser.error("--url and --category cannot be combined")
     try:
         rows = (discover(args.url, pages=args.pages) if args.url
                 else discover_all(pages=args.pages, category=args.category))

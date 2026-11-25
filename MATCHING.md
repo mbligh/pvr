@@ -144,7 +144,7 @@ Rules for automatic matches:
   teams, published and scheduled timestamps, publication delay and matching
   method in Atlas `match_details`.
 
-`refresh_releases --apply` now runs this matcher after importing the
+`refresh_releases --source rugbypass --apply` now runs this matcher after importing the
 RugbyPass catalogue, in addition to the existing PWR matcher. The source
 catalogue is not an exhaustive historical replay listing; matches absent
 from its accessible sections remain undiscovered. An unnumbered Nations

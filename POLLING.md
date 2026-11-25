@@ -76,10 +76,10 @@ then at most 60 minutes until success. For Rugby24 Cloudflare
 12h, 24h, 48h, then at most 72h per category. Even
 `run_rugby --force-discovery` respects active failure cooldowns; a
 manual `refresh_releases` invocation still permits deliberate testing.
-A successful `refresh_releases --apply --source rugby24` clears the
-failure backoff and resets the successful-check timestamp for only the
-Rugby24 categories it scanned: `--rugby24-category prem` or
-`championship` clears the corresponding state, while the default
+A successful `refresh_releases --apply --source rugby24` with an explicit
+`--rugby24-category` clears the failure backoff and resets the successful-check
+timestamp for only the Rugby24 categories it scanned: `prem` or
+`championship` clears the corresponding state, while explicitly selecting
 `both` clears both **only if the entire scan and matching succeed**.
 A preview never changes polling state, and a failed refresh never clears
 a cooldown. A successful scan with zero new recordings still counts as

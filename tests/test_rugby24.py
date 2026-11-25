@@ -42,9 +42,9 @@ FIXTURE = {"_id": "Rugby_Mens_Prem:abc", "series_id": "Rugby_Mens_Prem",
 class IndexerTests(unittest.TestCase):
     def test_list_and_embeds_include_cup_but_do_not_misclassify(self):
         pages = {
-            indexer.DEFAULT_URL:
+            indexer.PREM_URL:
                 '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>',
-            indexer.DEFAULT_URL + "?page2":
+            indexer.PREM_URL + "?page2":
                 '<h3><a href="/' + CUP_SLUG + '">' + CUP_TITLE + '</a></h3>',
             BASE + LEAGUE_SLUG: '<iframe src="//ok.ru/videoembed/12345678901"></iframe>',
             BASE + CUP_SLUG: '<iframe src="https://ok.ru/videoembed/16552117471956"></iframe>',
@@ -53,7 +53,7 @@ class IndexerTests(unittest.TestCase):
         def fetch(url):
             seen.append(url)
             return pages[url]
-        rows = indexer.discover(pages=2, fetch=fetch)
+        rows = indexer.discover(indexer.PREM_URL, pages=2, fetch=fetch)
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["published"], "2026-10-31")
         self.assertEqual(rows[0]["metadata"]["competition"], "league")
@@ -61,11 +61,11 @@ class IndexerTests(unittest.TestCase):
                          "https://ok.ru/videoembed/12345678901")
         self.assertEqual(rows[1]["metadata"]["competition"], "cup")
         self.assertEqual(rows[1]["published"], "2026-11-20")
-        self.assertIn(indexer.DEFAULT_URL + "?page2", seen)
+        self.assertIn(indexer.PREM_URL + "?page2", seen)
         self.assertEqual(indexer.article_slug("https://not-rugby24.net/foo"), None)
 
     def test_two_categories_and_no_cup_cross_contamination(self):
-        prem = indexer.DEFAULT_URL
+        prem = indexer.PREM_URL
         champions = indexer.CHAMPIONS_URL
         pages = {
             prem: '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>'
@@ -81,7 +81,7 @@ class IndexerTests(unittest.TestCase):
         def fetch(url):
             seen.append(url)
             return pages[url]
-        rows = indexer.discover_all(pages=1, fetch=fetch)
+        rows = indexer.discover_all(category="both", pages=1, fetch=fetch)
         self.assertEqual(len(rows), 3)
         self.assertEqual({x["metadata"]["competition"] for x in rows},
                          {"league", "cup", "champions-cup"})
@@ -93,6 +93,18 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(indexer.competition("Challenge Cup Full Match Replay"), "unknown")
         self.assertEqual(indexer.competition(CHAMP_TITLE), "champions-cup")
         self.assertEqual(indexer.competition(CUP_TITLE), "cup")
+
+    def test_competition_selection_is_required(self):
+        with self.assertRaises(TypeError):
+            indexer.discover()
+        with self.assertRaises(TypeError):
+            indexer.discover_all()
+        with self.assertRaises(SystemExit) as exc:
+            indexer.main([])
+        self.assertEqual(exc.exception.code, 2)
+        with self.assertRaises(SystemExit) as exc:
+            indexer.main(["--category", "both", "--url", indexer.PREM_URL])
+        self.assertEqual(exc.exception.code, 2)
 
     def test_championship_only_never_fetches_premiership(self):
         url = indexer.CHAMPIONS_URL
@@ -130,7 +142,7 @@ class IndexerTests(unittest.TestCase):
 
     def test_known_article_embed_is_reused_without_refetching(self):
         now = dt.datetime(2026, 11, 23, tzinfo=dt.timezone.utc)
-        prem = indexer.DEFAULT_URL
+        prem = indexer.PREM_URL
         article = BASE + LEAGUE_SLUG
         page = '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>'
         cache = {"rugby24:" + LEAGUE_SLUG: {
@@ -144,7 +156,7 @@ class IndexerTests(unittest.TestCase):
             if url == prem:
                 return page
             raise AssertionError("known article should not be fetched")
-        rows = indexer.discover(pages=1, fetch=fetch, cached=cache, now=now)
+        rows = indexer.discover(indexer.PREM_URL, pages=1, fetch=fetch, cached=cache, now=now)
         self.assertEqual(calls, [prem])
         self.assertEqual(rows[0]["metadata"]["embed_url"],
                          "https://ok.ru/videoembed/12345678901")
@@ -164,13 +176,13 @@ class IndexerTests(unittest.TestCase):
         fetched = []
         def fetch(url):
             fetched.append(url)
-            if url == indexer.DEFAULT_URL:
+            if url == indexer.PREM_URL:
                 return '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>'
             if url == article:
                 return '<iframe src="//ok.ru/videoembed/12345678902"></iframe>'
             raise AssertionError(url)
-        rows = indexer.discover(pages=1, fetch=fetch, cached=cached, now=now)
-        self.assertEqual(fetched, [indexer.DEFAULT_URL, article])
+        rows = indexer.discover(indexer.PREM_URL, pages=1, fetch=fetch, cached=cached, now=now)
+        self.assertEqual(fetched, [indexer.PREM_URL, article])
         self.assertEqual(rows[0]["metadata"]["embed_url"],
                          "https://ok.ru/videoembed/12345678902")
 
@@ -181,23 +193,23 @@ class IndexerTests(unittest.TestCase):
                          "embed_url": "https://evil.example/videoembed/123",
                          "competition": "league"}}}
         pages = {
-            indexer.DEFAULT_URL: '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>',
+            indexer.PREM_URL: '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>',
             BASE + LEAGUE_SLUG: '<iframe src="//ok.ru/videoembed/12345678902"></iframe>',
         }
         fetched = []
         def fetch(url):
             fetched.append(url)
             return pages[url]
-        rows = indexer.discover(pages=1, fetch=fetch, cached=cached)
-        self.assertEqual(fetched, [indexer.DEFAULT_URL, BASE + LEAGUE_SLUG])
+        rows = indexer.discover(indexer.PREM_URL, pages=1, fetch=fetch, cached=cached)
+        self.assertEqual(fetched, [indexer.PREM_URL, BASE + LEAGUE_SLUG])
         self.assertEqual(rows[0]["metadata"]["embed_url"],
                          "https://ok.ru/videoembed/12345678902")
 
     def test_indexer_fails_on_empty_or_unplayable_pages(self):
         with self.assertRaisesRegex(ValueError, "no full-match"):
-            indexer.discover(pages=1, fetch=lambda url: "<html></html>")
+            indexer.discover(indexer.PREM_URL, pages=1, fetch=lambda url: "<html></html>")
         with self.assertRaisesRegex(ValueError, "OK.ru embeds"):
-            indexer.discover(pages=1, fetch=lambda url:
+            indexer.discover(indexer.PREM_URL, pages=1, fetch=lambda url:
                 '<h3><a href="/' + LEAGUE_SLUG + '">' + TITLE + '</a></h3>')
         self.assertIsNone(indexer.embed_url('<iframe src="https://evil.tld/videoembed/123456"></iframe>'))
 
@@ -262,7 +274,7 @@ class IndexerTests(unittest.TestCase):
                     unittest.mock.patch.object(pathlib.Path, "is_file", autospec=True, side_effect=is_file), \
                     unittest.mock.patch.object(os, "access", side_effect=access), \
                     unittest.mock.patch.object(indexer.shutil, "which", side_effect=AssertionError("PATH lookup should not occur")):
-                result = indexer.fetch_page(indexer.DEFAULT_URL,
+                result = indexer.fetch_page(indexer.PREM_URL,
                     cookie_jar=pathlib.Path(temporary) / "unused.txt",
                     execute=execute)
         self.assertEqual(result, "<html>Debian packaged solver</html>")
@@ -285,7 +297,7 @@ class IndexerTests(unittest.TestCase):
             with unittest.mock.patch.dict(os.environ, {}, clear=True), \
                     unittest.mock.patch.object(pathlib.Path, "is_file", autospec=True, side_effect=is_file), \
                     unittest.mock.patch.object(indexer.shutil, "which", side_effect=AssertionError("PATH lookup should not occur")):
-                result = indexer.fetch_page(indexer.DEFAULT_URL,
+                result = indexer.fetch_page(indexer.PREM_URL,
                     cookie_jar=pathlib.Path(temporary) / "unused.txt",
                     execute=execute)
         self.assertEqual(result, "<html>legacy fallback</html>")
@@ -301,14 +313,14 @@ class IndexerTests(unittest.TestCase):
                     command, 1, "", "cf-curl: Cloudflare challenge detected; cfsolve failed")
             with unittest.mock.patch.dict(os.environ, {"RUGBY24_CF_CURL": str(wrapper)}):
                 with self.assertRaisesRegex(RuntimeError, "Cloudflare challenge"):
-                    indexer.fetch_page(indexer.DEFAULT_URL,
+                    indexer.fetch_page(indexer.PREM_URL,
                                       cookie_jar=root / "unused.txt", execute=failed)
                 def oversized(command, **kwargs):
                     pathlib.Path(command[command.index("-o") + 1]).write_bytes(
                         b"x" * (indexer.MAX_HTML_BYTES + 1))
                     return subprocess.CompletedProcess(command, 0, "", "")
                 with self.assertRaisesRegex(ValueError, "page too large"):
-                    indexer.fetch_page(indexer.DEFAULT_URL,
+                    indexer.fetch_page(indexer.PREM_URL,
                                       cookie_jar=root / "unused.txt", execute=oversized)
 
     def test_cf_curl_missing_explicit_path_and_legacy_opt_out(self):
@@ -318,7 +330,7 @@ class IndexerTests(unittest.TestCase):
             with unittest.mock.patch.dict(os.environ, {
                     "RUGBY24_CF_CURL": str(root / "missing")}):
                 with self.assertRaisesRegex(RuntimeError, "is missing"):
-                    indexer.fetch_page(indexer.DEFAULT_URL, cookie_jar=jar)
+                    indexer.fetch_page(indexer.PREM_URL, cookie_jar=jar)
             def old_curl(command, **kwargs):
                 self.assertEqual(command[0], "curl")
                 pathlib.Path(command[command.index("--output") + 1]).write_text(
@@ -326,7 +338,7 @@ class IndexerTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0,
                                                    "200|" + command[-1], "")
             with unittest.mock.patch.dict(os.environ, {"RUGBY24_CF_CURL": "off"}):
-                page = indexer.fetch_page(indexer.DEFAULT_URL,
+                page = indexer.fetch_page(indexer.PREM_URL,
                                           cookie_jar=jar, execute=old_curl)
             self.assertEqual(page, "<html>legacy</html>")
 
@@ -361,7 +373,7 @@ class IndexerTests(unittest.TestCase):
                                    execute=execute)
             with self.assertRaisesRegex(RuntimeError,
                 "Cloudflare challenge \\(HTTP 403\\) at /premiership-rugby"):
-                indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
+                indexer.fetch_html(indexer.PREM_URL, cookie_jar=cookie_jar,
                                    execute=execute)
             self.assertEqual(len(seen), 1)
 
@@ -373,7 +385,7 @@ class IndexerTests(unittest.TestCase):
                     command, 0, "200|" + command[-1], ""
                 )
             self.assertIn(
-                "<html>", indexer.fetch_html(indexer.DEFAULT_URL,
+                "<html>", indexer.fetch_html(indexer.PREM_URL,
                                               cookie_jar=cookie_jar, execute=ok)
             )
 
@@ -386,7 +398,7 @@ class IndexerTests(unittest.TestCase):
                     command, 0, "200|https://other.example/", ""
                 )
             with self.assertRaisesRegex(RuntimeError, "redirected"):
-                indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
+                indexer.fetch_html(indexer.PREM_URL, cookie_jar=cookie_jar,
                                    execute=redirect)
 
             def failed(command, **kwargs):
@@ -394,7 +406,7 @@ class IndexerTests(unittest.TestCase):
                     command, 60, "", "SSL certificate problem"
                 )
             with self.assertRaisesRegex(RuntimeError, "SSL certificate"):
-                indexer.fetch_html(indexer.DEFAULT_URL, cookie_jar=cookie_jar,
+                indexer.fetch_html(indexer.PREM_URL, cookie_jar=cookie_jar,
                                    execute=failed)
 
 
@@ -419,11 +431,11 @@ class IndexerTests(unittest.TestCase):
                 header_path.write_text("HTTP/2 200\r\n")
                 body_path.write_text("<html>rugby replays</html>")
                 return subprocess.CompletedProcess(command, 0, "200|" + current, "")
-            body = indexer.fetch_html(indexer.DEFAULT_URL,
+            body = indexer.fetch_html(indexer.PREM_URL,
                                       cookie_jar=cookie_jar, execute=execute)
             self.assertEqual(body, "<html>rugby replays</html>")
             self.assertEqual(calls, [
-                indexer.DEFAULT_URL,
+                indexer.PREM_URL,
                 "http://rugby24.net/premiership-rugby/",
             ])
 
@@ -446,9 +458,9 @@ class IndexerTests(unittest.TestCase):
                         command, 0, "301|" + command[-1], "")
                 with self.subTest(target=target):
                     with self.assertRaisesRegex(RuntimeError, "different host"):
-                        indexer.fetch_html(indexer.DEFAULT_URL,
+                        indexer.fetch_html(indexer.PREM_URL,
                                            cookie_jar=jar, execute=execute)
-                    self.assertEqual(calls, [indexer.DEFAULT_URL])
+                    self.assertEqual(calls, [indexer.PREM_URL])
 
             # A genuinely cyclic HTTPS -> HTTP -> HTTPS redirect still fails,
             # but a single HTTPS -> HTTP hop is permitted.
@@ -457,15 +469,15 @@ class IndexerTests(unittest.TestCase):
                 current = command[-1]
                 calls.append(current)
                 target = ("http://rugby24.net/premiership-rugby"
-                          if current.startswith("https:") else indexer.DEFAULT_URL)
+                          if current.startswith("https:") else indexer.PREM_URL)
                 pathlib.Path(command[command.index("--dump-header") + 1]).write_text(
                     "HTTP/1.1 302\r\nLocation: " + target + "\r\n")
                 return subprocess.CompletedProcess(command, 0,
                                                    "302|" + current, "")
             with self.assertRaisesRegex(RuntimeError, "redirect loop"):
-                indexer.fetch_html(indexer.DEFAULT_URL,
+                indexer.fetch_html(indexer.PREM_URL,
                                    cookie_jar=jar, execute=cycle)
-            self.assertEqual(calls, [indexer.DEFAULT_URL,
+            self.assertEqual(calls, [indexer.PREM_URL,
                                      "http://rugby24.net/premiership-rugby"])
 
     def test_championship_matching_strict_teams_date_and_competition(self):

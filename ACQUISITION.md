@@ -3,7 +3,7 @@
 Three one-shot commands separate rugby discovery and acquisition:
 
 - **refresh_releases** discovers BBC iPlayer, YouTube PWR and RugbyPass
-  releases, validates their IDs, indexes them in Atlas, and links recordings
+  and Rugby24 releases, validates their IDs, indexes them in Atlas, and links recordings
   to already scheduled fixtures. Preview makes no writes; --apply imports
   and matches. It never downloads media.
 - **acquire_rugby** uses only releases *already linked in Atlas*, evaluates
@@ -44,10 +44,10 @@ cd ~/pvr
 git pull
 
 # Inspect provider catalogue sizes without modifying Atlas:
-python3 refresh_releases
+python3 refresh_releases --rugby24-category both
 
 # Refresh the Atlas source catalogue and link unambiguous matches:
-python3 refresh_releases --apply
+python3 refresh_releases --rugby24-category both --apply
 
 # Preview acquisition (may show several source downloads for one episode):
 ./acquire_rugby --limit 3
@@ -70,7 +70,7 @@ To preview from currently indexed releases:
 
 Like run_f1, this preview **does not discover new recordings**. To
 inspect a plan using newly discovered sources, first run
-`./refresh_releases --apply`, then preview
+`./refresh_releases --rugby24-category both --apply`, then preview
 `./acquire_rugby`.
 For apply against previously indexed releases only, use
 `./run_rugby --skip-discovery --apply` or
@@ -174,7 +174,7 @@ keep Premiership Rugby Cup replays distinct from European Champions Cup.
 As always, downloads are preview-only unless `--apply` is supplied.
 
 ```sh
-./refresh_releases --source rugby24 --rugby24-pages 2 --apply
+./refresh_releases --source rugby24 --rugby24-category championship --rugby24-pages 2 --apply
 ./match_championship                   # inspect linked/ambiguous fixtures
 ./acquire_rugby --series Rugby_Mens_Championship --limit 10
 ./run_rugby --series Rugby_Mens_Championship --apply --limit 1
@@ -321,8 +321,8 @@ recordings remain unmatched until a distinct cup fixture series exists.
 OK.ru embeds are passed directly to `yt-dlp` and verified with `ffprobe`
 in a temporary directory before atomic MKV publication.
 
-    ./indexers/rugby24 --pages 2
-    ./refresh_releases --source rugby24 --rugby24-pages 2 --apply
+    ./indexers/rugby24 --category prem --pages 2
+    ./refresh_releases --source rugby24 --rugby24-category prem --rugby24-pages 2 --apply
     ./acquire_rugby --series Rugby_Mens_Prem --limit 5
     ./acquire_rugby --series Rugby_Mens_Prem --limit 1 --apply
     ./run_rugby --series Rugby_Mens_Prem --apply
