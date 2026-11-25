@@ -8,7 +8,8 @@ import socket
 import sys
 
 from inventory.scan import identify, make_indexes, probe_video, walk_videos
-from inventory.scan import directory_series, parse_nfo, EXTENSIONS, series_identity
+from inventory.scan import (directory_series, parse_nfo, EXTENSIONS, series_identity,
+                            UNMANAGED_SEASON)
 from filing.publish import (SERIES_PATHS, validate_nfo, canonical_paths,
                             _write_exclusive, stat_identity)
 from orchestration.locks import episode_lock, LockBusy
@@ -48,6 +49,8 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         {"_id": 1, "series_id": 1, "season": 1, "episode": 1,
          "scheduled": 1, "status": 1, "nfo_path": 1, "nfo": 1}
     )) if roots else []
+    managed_seasons = {(ep["series_id"], ep["season"]) for ep in episodes
+                       if ep.get("series_id") in selected and type(ep.get("season")) is int}
     episodes = [ep for ep in episodes
                 if ep.get("series_id") in selected
                 and type(ep.get("season")) is int
@@ -58,8 +61,13 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         {"episode_id": {"$in": ids}},
         {"_id": 1, "episode_id": 1}
     )) if ids else []
-    previous = {row["_id"]: row for row in database.files.find(
-        {"host": hostname, "episode_id": {"$in": ids}})} if ids else {}
+    paths = list(walk_videos(roots))
+    # Look up actual paths, including associations outside the selected series.
+    previous = {}
+    for start in range(0, len(paths), 500):
+        file_ids = [f"{hostname}:{path.absolute()}" for path in paths[start:start + 500]]
+        previous.update((row["_id"], row) for row in database.files.find(
+            {"host": hostname, "_id": {"$in": file_ids}}))
     by_number, linked = make_indexes(episodes, releases)
     counts = collections.Counter()
     rows = []
@@ -68,12 +76,17 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
     observed_episodes = set()
     sidecars = []
     renames = []
+    reappeared = {}
 
-    for path in walk_videos(roots):
+    for path in paths:
         counts["scanned"] += 1
-        episode, release_uri, evidence, reason = identify(path, by_number, linked)
+        episode, release_uri, evidence, reason = identify(
+            path, by_number, linked, managed_seasons=managed_seasons,
+            current_year=now.year)
         item = {"path": str(path.absolute())}
-        if reason:
+        if reason == UNMANAGED_SEASON:
+            item.update(status="unmanaged", reason=reason)
+        elif reason:
             item.update(status="conflict", reason=reason)
         elif episode is None:
             item["status"] = "unmatched"
@@ -83,15 +96,27 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                         episode=episode["episode"], evidence=evidence)
             if release_uri:
                 item["release_uri"] = release_uri
+            file_id = f"{hostname}:{path.absolute()}"
+            old = previous.get(file_id) or {}
+            if old and old.get("episode_id") not in (None, episode["_id"]):
+                item.update(status="conflict", reason="Existing inventory association conflicts",
+                            existing_episode_id=old["episode_id"])
+                counts["conflict"] += 1
+                print(json.dumps(item, ensure_ascii=False), file=stream)
+                continue
+            revived = old.get("file_state") == "moved"
+            if revived and old.get("episode_id") != episode["_id"]:
+                item.update(status="conflict", reason="Moved inventory association conflicts")
+                counts["conflict"] += 1
+                print(json.dumps(item, ensure_ascii=False), file=stream)
+                continue
+            if revived:
+                item["reappeared"] = True
             try:
                 before = path.stat()
                 snapshot = stat_identity(path)
-                file_id = f"{hostname}:{path.absolute()}"
-                old = previous.get(file_id) or {}
-                if old and (old.get("episode_id") != episode["_id"]
-                            or old.get("file_state") == "moved"):
-                    raise ValueError("Existing inventory association conflicts")
-                cached = (old.get("size_bytes") == before.st_size
+                cached = (not revived and old.get("episode_id") == episode["_id"]
+                          and old.get("size_bytes") == before.st_size
                           and old.get("mtime_ns") == before.st_mtime_ns
                           and isinstance(old.get("media"), dict)
                           and bool(old["media"].get("video")))
@@ -147,8 +172,8 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                         "series_id": episode["series_id"],
                         "season": episode["season"],
                         "episode": episode["episode"],
-                        "match_evidence": list(dict.fromkeys((old.get("match_evidence") or []) + evidence)),
-                        "release_uri": release_uri or old.get("release_uri"),
+                        "match_evidence": list(dict.fromkeys(([] if revived else (old.get("match_evidence") or [])) + evidence)),
+                        "release_uri": release_uri or (None if revived else old.get("release_uri")),
                         "size_bytes": before.st_size,
                         "mtime_ns": before.st_mtime_ns,
                         "media": media,
@@ -156,6 +181,9 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                     }
                     if item.get("nfo") == "present" or nfo_bytes is not None:
                         data["nfo_path"] = str(nfo_path.absolute())
+                    if revived:
+                        reappeared[file_id] = old
+                        counts["reappeared"] += 1
                     if not cached or any(old.get(k) != v for k, v in data.items()
                                          if k != "last_seen"):
                         rows.append(data)
@@ -173,7 +201,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
                 item["reason"] = str(exc)
                 item.pop("media", None)
         counts[item["status"]] += 1
-        if verbose or (item["status"] != "unmatched" and
+        if verbose or (item["status"] not in ("unmatched", "unmanaged") and
                        (not quiet or item["status"] != "present" or not cached
                         or item.get("nfo") == "missing" or item.get("nfo_error")
                         or item.get("rename"))):
@@ -205,7 +233,7 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
 
     # All filesystem observations are complete before any Atlas updates.
     if apply and rows:
-        persist(database, rows, now=now)
+        persist(database, rows, now=now, reappeared=reappeared)
     for path, snapshot, target, data, content, episode, missing_nfo in renames:
         lock_dir = pathlib.Path(lock_root) if lock_root else (
             pathlib.Path("/data/incoming") if pathlib.Path("/data/incoming").is_dir()
@@ -244,7 +272,8 @@ def scan(database, *, roots=None, apply=False, probe=True, ffprobe="ffprobe",
         "roots": [str(r) for r in roots],
         "fixtures": len(episodes), "scanned": counts["scanned"],
         "present": counts["present"], "unprobed": counts["unprobed"],
-        "unmatched": counts["unmatched"], "conflict": counts["conflict"],
+        "unmatched": counts["unmatched"], "unmanaged": counts["unmanaged"],
+        "reappeared": counts["reappeared"], "conflict": counts["conflict"],
         "probe_error": counts["probe_error"], "cached": counts["cached"],
         "nfo_created": counts["nfo_created"], "renamed": counts["renamed"],
         "rename_skipped": counts["rename_skipped"],
@@ -336,19 +365,30 @@ def rename_recording(database, source, snapshot, target, data, nfo_xml, episode)
     return "renamed"
 
 
-def persist(database, rows, *, now=None):
+def persist(database, rows, *, now=None, reappeared=None):
     """Idempotent, non-destructive upsert; refuse to reassign existing paths."""
     from pymongo import UpdateOne
 
     now = now or dt.datetime.now(dt.timezone.utc)
+    reappeared = reappeared or {}
     ids = [r["_id"] for r in rows]
     if len(ids) != len(set(ids)):
         raise ValueError("Duplicate local file identities")
     previous = list(database.files.find({"_id": {"$in": ids}},
-                                        {"_id": 1, "episode_id": 1, "file_state": 1}))
+                                        {"_id": 1, "episode_id": 1, "file_state": 1,
+                                         "moved_to": 1, "moved_at": 1}))
     expected = {r["_id"]: r["episode_id"] for r in rows}
-    conflicts = [r["_id"] for r in previous if r.get("episode_id") not in
-                 (None, expected[r["_id"]]) or r.get("file_state") == "moved"]
+    def same_move(row, old):
+        return (row.get("episode_id") == old.get("episode_id")
+                and row.get("file_state") == "moved"
+                and all(row.get(k) == old.get(k) for k in ("moved_to", "moved_at")))
+
+    prior = {r["_id"]: r for r in previous}
+    conflicts = [r["_id"] for r in previous
+                 if r.get("episode_id") not in (None, expected[r["_id"]])
+                 or (r.get("file_state") == "moved" and r["_id"] not in reappeared)]
+    conflicts.extend(file_id for file_id, old in reappeared.items()
+                     if file_id not in prior or not same_move(prior[file_id], old))
     if conflicts:
         raise ValueError("Existing file associations conflict: " +
                          ", ".join(conflicts[:5]))
@@ -357,16 +397,23 @@ def persist(database, rows, *, now=None):
     database.files.create_index([("episode_id", 1)])
     # A changed association between preflight and write triggers a duplicate
     # key error instead of silently replacing somebody else's episode link.
-    operations = [
-        UpdateOne(
-            {"_id": row["_id"], "episode_id": {"$in": [None, row["episode_id"]]},
-             "file_state": {"$ne": "moved"}},
-            {"$set": {k: v for k, v in row.items() if k != "_id"},
-             "$setOnInsert": {"first_seen": now}},
-            upsert=True,
-        )
-        for row in rows
-    ]
+    operations = []
+    for row in rows:
+        query = {"_id": row["_id"], "episode_id": {"$in": [None, row["episode_id"]]},
+                 "file_state": {"$ne": "moved"}}
+        update = {"$set": {k: v for k, v in row.items() if k != "_id"},
+                  "$setOnInsert": {"first_seen": now}}
+        if old := reappeared.get(row["_id"]):
+            # A reappearing path is a new observation, not proof it is the
+            # same bytes. Only revive the exact move we observed, retaining
+            # the destination record and clearing stale move/provenance fields.
+            query.update(episode_id=row["episode_id"], file_state="moved",
+                         moved_to=old.get("moved_to"), moved_at=old.get("moved_at"))
+            update["$unset"] = {k: "" for k in ("file_state", "moved_to", "moved_at",
+                                               "previous_file_id")}
+            if "nfo_path" not in row:
+                update["$unset"]["nfo_path"] = ""
+        operations.append(UpdateOne(query, update, upsert=True))
     if operations:
         database.files.bulk_write(operations, ordered=True)
     return len(operations)

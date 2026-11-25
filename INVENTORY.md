@@ -1,13 +1,14 @@
-# Inventory existing PWR recordings
+# Inventory existing sports recordings
 
 `inventory_files` scans locally stored video files, identifies which canonical
-PWR fixture each recording belongs to, and probes technical quality using
+fixture each recording belongs to, and probes technical quality using
 `ffprobe`. It is **read-only by default**. With `--apply`, verified files
-are upserted into MongoDB Atlas `pvr.files`; neither mode moves, renames,
-modifies, deletes or downloads media.
+are upserted into MongoDB Atlas `pvr.files`; installed recordings may be
+renamed to their canonical filenames and missing NFOs generated. Existing
+destinations are never overwritten.
 
-The first inventory adapter is scoped to **Rugby Womens PWR**, 2025/26
-(`Season_2025`) onward. It uses the existing Atlas `pvr.episodes` and
+The inventory defaults to all supported sports series and can be restricted
+with repeatable `--series` or `--root` arguments. It uses the existing Atlas `pvr.episodes` and
 already-linked `pvr.releases` collections, not calendar scraping or a second
 episode numbering system.
 
@@ -43,8 +44,8 @@ python3 inventory_files --apply
 ```
 
 Use `--root /data/sports` to search other directories under that tree too.
-Only files positively identified as PWR will be associated with its episodes.
-`--verbose` includes unrelated video files in the output; otherwise only
+Only files positively identified with canonical episodes are associated.
+`--verbose` includes unrelated and unmanaged historical files; otherwise only
 identified and problematic files are printed.
 
 The summary includes `episodes_with_files` and
@@ -52,7 +53,11 @@ The summary includes `episodes_with_files` and
 three hours past scheduled kickoff, and **only means not found among the
 directories scanned**. Other disks, directories and unprocessed files may
 contain recordings. `--show-unseen` prints those episodes individually.
-An NFO/filename conflict or failed probe is not counted as a verified file.
+An NFO/filename or existing inventory association conflict, or failed probe,
+is not counted as a verified file. A past calendar-year season absent from
+Atlas is counted as `unmanaged`, omitted from normal output, and never probed,
+renamed or written. Missing/ambiguous episode numbers within an imported
+season remain conflicts.
 
 There are no added credentials: this uses the existing `~/.mongodb/pvr`,
 `MONGODB_URI`, and `MONGODB_DATABASE` configuration. `--host` can override
@@ -126,15 +131,19 @@ An example `pvr.files` document:
 The `_id` combines host and absolute path: files with the same path on
 different machines are distinct. Observations update `last_seen` and preserve
 `first_seen` and unrelated operational fields on repeat scans. An existing
-file association to another episode is rejected, never silently replaced.
+file association to another episode is reported as `conflict`, never silently
+replaced. A file reappearing at a previously moved path with the same episode
+identity is probed again and counted as `reappeared`. On apply, the exact
+previous move record is revived, stale move markers and unverified release
+provenance cleared, and any existing canonical destination preserved. No
+automatic duplicate deletion is attempted.
 If the filename does not reveal a unique source, `release_uri` remains null;
 do not assume a particular YouTube or BBC recording based only on episode ID.
 
-**Not yet implemented:** tracking vanished/moved files as missing, validating
+**Not yet implemented:** tracking vanished files as missing, validating
 full-file playback beyond `ffprobe`, calculating cryptographic content hashes,
 ranking quality, or selecting files for replacement. The scanner never deletes
 file records from Atlas. For now, a record means the file was present and
 probed at `last_seen`, not guaranteed still present later.
 
-The next step after reviewing the report is to integrate the downloader and
-filer with `pvr.files` so acquisition can avoid already-owned recordings.
+Applied `run_rugby` and `run_f1` perform this inventory before acquisition.

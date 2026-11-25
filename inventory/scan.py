@@ -17,6 +17,7 @@ from matchers.pwr import SERIES_ID
 EXTENSIONS = {".mkv", ".mp4", ".m4v", ".ts", ".mov", ".webm"}
 SEASON_EPISODE = re.compile(r"(?i)(?<![a-z0-9])s(?P<season>(?:19|20)\d{2})e(?P<episode>\d{1,4})(?!\d)")
 FOLDER_SEASON = re.compile(r"(?i)^Season_((?:19|20)\d{2})$")
+UNMANAGED_SEASON = "Historical season not managed in Atlas"
 SERIES_DIR = "rugby_womens_pwr"
 SERIES_ALIASES = {"rugbywomenspwr", "premiershipwomensrugby"}
 
@@ -90,7 +91,7 @@ def ids_in_filename(name, linked_releases):
     return found
 
 
-def identify(path, by_number, linked_releases):
+def identify(path, by_number, linked_releases, *, managed_seasons=None, current_year=None):
     """Identify a recording by series/season/episode, never its title."""
     try:
         nfo = parse_nfo(path)
@@ -130,6 +131,14 @@ def identify(path, by_number, linked_releases):
         return None, None, [], "Series directory, filename and NFO disagree"
     series = next(iter(hints)) if hints else None
     evidence = []
+    # Only skip a positively identified past season absent from Atlas.
+    # Keep contradictory identities and missing numbers within managed
+    # seasons as conflicts. Direct identity callers can omit this policy.
+    year = key[0] if key else folder_season
+    if (managed_seasons is not None and series and year is not None
+            and year < (current_year if current_year is not None else dt.datetime.now(dt.timezone.utc).year)
+            and (series, year) not in managed_seasons):
+        return None, None, [], UNMANAGED_SEASON
     if key and series:
         found = by_number.get((series, *key))
         if not found:
