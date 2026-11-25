@@ -167,8 +167,7 @@ def run(*, apply=False, skip_discovery=False, force_discovery=False, series=None
                 if source != "rugby24":
                     jobs.append((source, source, None, decisions[source]))
                 elif selected_category:
-                    jobs.append((source, "rugby24:" + selected_category,
-                                 selected_category, decisions[source]))
+                    jobs.append((source, "rugby24:" + selected_category, selected_category, decisions[source]))
                 else:
                     for category, selected_series in category_series:
                         category_decisions, _ = polling.plan(
