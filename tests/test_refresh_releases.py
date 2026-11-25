@@ -49,7 +49,7 @@ class RefreshTests(unittest.TestCase):
         return {key: self.releases[key] for key in sources}
 
     def test_preview_validates_sources_but_makes_no_atlas_writes(self):
-        result = CLI.run(self.db, rugby24_category="both", discover=self.discover, output=io.StringIO())
+        result = CLI.run(self.db, rugby24_category="all", discover=self.discover, output=io.StringIO())
         self.assertEqual(result["total_releases"], 4)
         self.assertEqual(result["releases"], {"bbc": 1, "youtube": 1, "rugbypass": 1, "rugby24": 1})
         self.assertEqual(result["mode"], "preview")
@@ -60,14 +60,14 @@ class RefreshTests(unittest.TestCase):
     def test_source_mismatch_aborts_before_any_writes(self):
         self.releases["bbc"][0]["source"] = "youtube"
         with self.assertRaisesRegex(ValueError, "Release URI does not match source"):
-            CLI.run(self.db, apply=True, rugby24_category="both", discover=self.discover,
+            CLI.run(self.db, apply=True, rugby24_category="all", discover=self.discover,
                     output=io.StringIO())
         self.db.releases.bulk_write.assert_not_called()
 
     def test_duplicate_uris_are_rejected(self):
         self.releases["youtube"].append(dict(self.releases["youtube"][0]))
         with self.assertRaisesRegex(ValueError, "duplicate release URI"):
-            CLI.run(self.db, rugby24_category="both", discover=self.discover, output=io.StringIO())
+            CLI.run(self.db, rugby24_category="all", discover=self.discover, output=io.StringIO())
 
     def test_apply_upserts_then_matches_fixtures(self):
         indexer = CLI.load_file("pvr_test_indexer", "index_releases")
@@ -82,7 +82,7 @@ class RefreshTests(unittest.TestCase):
         championship.run.return_value = {"linked": 7, "fixtures": 48}
         with patch.object(CLI, "load_file", side_effect=[
                 indexer, matcher, national, prem, championship]):
-            report = CLI.run(self.db, apply=True, rugby24_category="both", discover=self.discover,
+            report = CLI.run(self.db, apply=True, rugby24_category="all", discover=self.discover,
                              output=io.StringIO())
         self.assertEqual(indexer.upsert_releases.call_count, 4)
         matcher.run.assert_called_once()
@@ -187,10 +187,10 @@ class RefreshTests(unittest.TestCase):
                                  {"retry_not_before": "", "failure_reason": ""})
                 self.assertTrue(kwargs["upsert"])
 
-    def test_successful_both_categories_clears_both_backoffs(self):
+    def test_successful_all_categories_clears_all_backoffs(self):
         self.assertEqual(self.run_with_mock_matchers(
             sources=("rugby24",), apply=True,
-            rugby24_category="both")["mode"], "apply")
+            rugby24_category="all")["mode"], "apply")
         self.assertEqual([
             call.args[0]["_id"] for call in
             self.db.indexer_poll_state.update_one.call_args_list
@@ -209,7 +209,7 @@ class RefreshTests(unittest.TestCase):
             raise RuntimeError("Cloudflare challenge")
         with self.assertRaisesRegex(RuntimeError, "Cloudflare challenge"):
             CLI.run(self.db, sources=("rugby24",), apply=True,
-                    rugby24_category="both", discover=failing_discovery,
+                    rugby24_category="all", discover=failing_discovery,
                     output=io.StringIO())
         self.db.indexer_poll_state.update_one.assert_not_called()
 
@@ -223,7 +223,7 @@ class RefreshTests(unittest.TestCase):
                 indexer, matcher, prem, championship]):
             with self.assertRaisesRegex(RuntimeError, "Matching failed"):
                 CLI.run(self.db, sources=("rugby24",), apply=True,
-                        rugby24_category="both", discover=self.discover,
+                        rugby24_category="all", discover=self.discover,
                         output=io.StringIO())
         self.db.indexer_poll_state.update_one.assert_not_called()
 

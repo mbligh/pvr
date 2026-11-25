@@ -408,7 +408,7 @@ def discover_all(*, category, pages=2, fetch=None, cached=None, now=None):
     articles with OK.ru embeds are emitted. A category failure fails the
     whole scan instead of silently treating its matches as unavailable.
     """
-    if category not in ("both", "prem", "championship"):
+    if category not in ("all", "prem", "championship"):
         raise ValueError("Unsupported Rugby24 category")
     if fetch is None:
         with tempfile.TemporaryDirectory(prefix="pvr-rugby24-cookies-") as temporary:
@@ -425,7 +425,7 @@ def discover_all(*, category, pages=2, fetch=None, cached=None, now=None):
             return discover_all(pages=pages, category=category, fetch=shared_fetch,
                                 cached=cached, now=now)
     rows = {}
-    targets = CATEGORY_URLS if category == "both" else (CATEGORIES[category],)
+    targets = CATEGORY_URLS if category == "all" else (CATEGORIES[category],)
     for target in targets:
         for row in discover(target, pages=pages, fetch=fetch,
                             cached=cached, now=now):
@@ -440,8 +440,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--url", help="Explicit Rugby24 competition listing URL")
-    selection.add_argument("--category", choices=("both", "prem", "championship"),
-                           help="Competition to scan (both explicitly selects both)")
+    selection.add_argument("--category", choices=("all", "prem", "championship"),
+                           help="Competition to scan (all explicitly selects all)")
     parser.add_argument("--pages", type=int, default=2,
                         help="Pages per category, not total pages")
     parser.add_argument("--search", help="Only output titles containing this text")

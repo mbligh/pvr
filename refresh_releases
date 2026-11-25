@@ -55,8 +55,8 @@ def scan_rugbypass(*, script="~/tools/video/rugbypass", pages=5,
 
 
 def validate_rugby24_category(sources, category):
-    if "rugby24" in sources and category not in ("prem", "championship", "both"):
-        raise ValueError("Specify an explicit Rugby24 category: prem, championship, or both")
+    if "rugby24" in sources and category not in ("prem", "championship", "sixnations", "all"):
+        raise ValueError("Specify an explicit Rugby24 category: prem, championship, sixnations, or all")
 
 
 def discover_sources(sources, *, youtube_limit=100, bbc_pages=10,
@@ -172,8 +172,7 @@ def _run_unlocked(database, *, apply=False, sources=SOURCES, youtube_limit=100,
     # the repeated update is idempotent. Preview and failed refreshes do
     # not alter polling state.
     if apply and "rugby24" in sources:
-        categories = ("prem", "championship") if rugby24_category == "both" else (
-            rugby24_category,)
+        categories = ("prem", "championship", "sixnations") if rugby24_category == "all" else (rugby24_category,)
         for category in categories:
             polling.record_success(database, "rugby24:" + category)
     outcome = {"mode": "apply" if apply else "preview",
@@ -222,8 +221,7 @@ def main(argv=None):
     parser.add_argument("--bbc-pages", type=int, default=10)
     parser.add_argument("--rugbypass-pages", type=int, default=5)
     parser.add_argument("--rugby24-pages", type=int, default=2)
-    parser.add_argument("--rugby24-category",
-                        choices=("both", "prem", "championship"),
+    parser.add_argument("--rugby24-category", choices=("all", "prem", "championship", "sixnations"),
                         help="Required when refreshing Rugby24 (including all-provider refreshes)")
     parser.add_argument("--rugbypass", default="~/tools/video/rugbypass")
     parser.add_argument("--yt-dlp", default="yt-dlp")

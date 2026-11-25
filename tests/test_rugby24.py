@@ -81,7 +81,7 @@ class IndexerTests(unittest.TestCase):
         def fetch(url):
             seen.append(url)
             return pages[url]
-        rows = indexer.discover_all(category="both", pages=1, fetch=fetch)
+        rows = indexer.discover_all(category="all", pages=1, fetch=fetch)
         self.assertEqual(len(rows), 3)
         self.assertEqual({x["metadata"]["competition"] for x in rows},
                          {"league", "cup", "champions-cup"})
@@ -103,7 +103,7 @@ class IndexerTests(unittest.TestCase):
             indexer.main([])
         self.assertEqual(exc.exception.code, 2)
         with self.assertRaises(SystemExit) as exc:
-            indexer.main(["--category", "both", "--url", indexer.PREM_URL])
+            indexer.main(["--category", "all", "--url", indexer.PREM_URL])
         self.assertEqual(exc.exception.code, 2)
 
     def test_championship_only_never_fetches_premiership(self):
