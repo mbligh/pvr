@@ -275,7 +275,7 @@ Nations Championship fixtures prefixed `NC:`. The importer
 previously preserved those events indefinitely when merging snapshots,
 creating 24 duplicate 2026 Atlas episodes and NFO assignments.
 
-The importer now removes `NC:` events **only** from Rugby_Mens_Intl
+The importer now removes `NC:` and `6N:` events **only** from Rugby_Mens_Intl
 after every snapshot merge, including `--no-refresh`. The official
 World Rugby Rugby_Mens_Nations series remains authoritative and
 unchanged. Existing episode numbers for non-NC Men's Internationals
@@ -328,3 +328,5 @@ the old Round 3 numbers. It previews counts of missing and renumbered entries.
 The historical exception is never active for ordinary `./import_rugby --apply`.
 After applying, publish the authoritative Atlas calendars through the existing
 `mbligh/calendar/build_rugby_calendars --apply --publish` workflow when desired.
+
+The same duplicate cleanup covers the 2027 men's Six Nations entries (legacy `6N:` prefix), whose fixtures are already owned by `Rugby_Mens_6N`. The scheduler removes these from its source snapshot and checks for linked files, releases and jobs before deleting stale Atlas episodes.
