@@ -153,3 +153,46 @@ updates its canonical episode number/NFO.
 
 See [ACQUISITION.md](ACQUISITION.md) for preview-only acquisition and safe
 canonical filing of those matches.
+
+## Source-independent team/date matching
+
+`matchers/teams_date.py` provides a read-only cross-competition matcher for
+sources that have an explicit fixture date but no reliable competition label.
+The caller must supply a nonempty allowlist of canonical `Rugby_...` series
+IDs. The matcher never assumes men's rugby from missing gender information.
+
+```python
+from matchers.teams_date import match_listing, load_episodes, match_teams_date
+
+series = ["Rugby_Mens_Intl", "Rugby_Mens_Nations", "Rugby_Mens_6N",
+          "Rugby_Mens_Prem", "Rugby_Mens_Championship"]
+result = match_listing(db, "Ireland v South Africa 21.11.2026", series)
+
+# For batch indexers, load the fixture pool once:
+episodes = load_episodes(db, series)
+result = match_teams_date("Northampton v Gloucester 31.10.2026",
+                          series, episodes)
+```
+
+The pure matcher accepts ordered sides separated by v/vs/versus, an explicit
+UK numeric date (DD.MM.YYYY, DD/MM/YY, DD-MM-YYYY), ISO date or English named
+month, and known outer labels (e.g. FINAL, FULL MATCH REPLAY, Round 2).
+Unknown surrounding text is not guessed; callers can pass a clean substring
+or concatenate known team/date fields. Invalid or conflicting dates, youth,
+explicit rugby league/sevens and highlights are rejected. Established
+competition-specific team aliases are reused; squad suffixes such as A and
+XV are preserved. Explicit gender markers cannot match the opposite gender.
+The source must independently establish that its listings represent full
+rugby union matches: bare national team names cannot distinguish union
+from league or an undisclosed age grade.
+
+Dates are compared in Europe/London (naive BSON timestamps are UTC), with a
+default ±1 calendar day window (configurable 0–7). Across the entire allowlist
+exactly one active fixture must match; even an exact date is not preferred
+over another candidate inside the window. Unnumbered matches cannot link
+and still count toward ambiguity. Cancelled, superseded, postponed and
+abandoned fixtures are ignored. Results use the existing `candidate`,
+`no_fixture`, `ambiguous`, `unnumbered_fixture` conventions; a candidate
+includes canonical IDs/numbers and date/team evidence. The method is
+`rugby-teams-date-v1`. No releases or episodes are written, and existing
+source-specific matching and acquisition are unchanged.
