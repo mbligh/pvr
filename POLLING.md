@@ -85,6 +85,11 @@ timestamp for only the Rugby24 categories it scanned: `prem`,
 A preview never changes polling state, and a failed refresh never clears
 a cooldown. A successful scan with zero new recordings still counts as
 success. Failure does not change last-success time.
+For run_rugby, a failed discovery is logged and does not stop other due
+providers or categories, nor the single acquisition worker using existing
+validated Atlas links. The runner returns nonzero after acquisition when
+a discovery failed; a nonzero acquisition status takes precedence. Database
+state or inventory failures are not treated as isolated provider errors.
 State is stored in MongoDB Atlas pvr.indexer_poll_state, one document per
 source with last_success, last_attempt, failures and (for failures)
 retry_not_before. The first successful check creates its state; no

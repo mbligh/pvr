@@ -1,4 +1,4 @@
-"""run_rugby orchestration: read-only preview, discovery, fail-closed acquisition."""
+"""run_rugby orchestration: read-only preview, isolated discovery failures, indexed acquisition."""
 import contextlib
 import datetime as dt
 import importlib.machinery
@@ -123,27 +123,72 @@ class RugbyRunTests(unittest.TestCase):
         self.assertEqual([Path(x[0][1]).name for x in self.calls], ["acquire_rugby"])
         self.assertIn("--apply", self.calls[0][0])
 
-    def test_discovery_failure_never_calls_acquisition(self):
-        def fail_discovery(cmd, **kwargs):
-            self.calls.append((cmd, kwargs))
-            return Result(code=7, stderr="catalogue unavailable\n")
-        self.execute = fail_discovery
-        with self.assertRaisesRegex(RuntimeError, "refusing acquisition"):
-            self.invoke(apply=True)
-        self.assertEqual(len(self.calls), 1)
+    def test_discovery_failure_continues_other_indexers_and_acquisition(self):
+        original = self.execute
 
-    def test_malformed_discovery_fails_closed_but_valid_empty_is_success(self):
-        for body in ("invalid JSON", '{"mode": "preview", "sources": ["bbc"], "total_releases": 5}'):
+        def fail_discovery(cmd, **kwargs):
+            if Path(cmd[1]).name == "refresh_releases" and (
+                    cmd[cmd.index("--source") + 1] == "bbc"):
+                self.calls.append((cmd, kwargs))
+                return Result(code=7, stderr="catalogue unavailable\n")
+            return original(cmd, **kwargs)
+
+        self.execute = fail_discovery
+        self.assertEqual(self.invoke(apply=True), 1)
+        self.assertEqual([Path(x[0][1]).name for x in self.calls],
+                         ["refresh_releases", "refresh_releases",
+                          "refresh_releases", "acquire_rugby"])
+        self.assertEqual(
+            [c.args[0]["_id"] for c in self.db.indexer_poll_state.update_one.call_args_list],
+            ["bbc", "youtube", "rugbypass"])
+        updates = self.db.indexer_poll_state.update_one.call_args_list
+        self.assertIn("retry_not_before", updates[0].args[1]["$set"])
+        self.assertEqual(updates[1].args[1]["$set"]["failures"], 0)
+        self.assertIn("continuing with indexed releases", self.stderr.getvalue())
+        cmd = self.calls[-1][0]
+        self.assertEqual([cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--source"],
+                         ["bbc", "youtube", "rugbypass"])
+
+    def test_malformed_discovery_records_failure_but_valid_empty_is_success(self):
+        for body in ("invalid JSON", "[]",
+                     '{"mode": "preview", "sources": ["bbc"], "total_releases": 5}'):
             with self.subTest(body=body):
                 self.calls.clear()
                 self.discovery = body
-                with self.assertRaises(Exception):
-                    self.invoke(apply=True)
-                self.assertEqual(len(self.calls), 1)
+                # Return raw output rather than decoding it in the fake.
+                def malformed(cmd, **kwargs):
+                    self.calls.append((cmd, kwargs))
+                    if Path(cmd[1]).name == "refresh_releases":
+                        return Result(stdout=body)
+                    return Result(stderr='{"planned": 1}\n')
+                with patch.object(self, "execute", side_effect=malformed):
+                    self.assertEqual(self.invoke(apply=True, sources=["bbc"]), 1)
+                self.assertEqual([Path(x[0][1]).name for x in self.calls],
+                                 ["refresh_releases", "acquire_rugby"])
+                self.assertIn("retry_not_before",
+                              self.db.indexer_poll_state.update_one.call_args.args[1]["$set"])
         self.calls.clear()
         self.discovery = '{"mode": "apply", "sources": ["bbc"], "total_releases": 0}'
         self.assertEqual(self.invoke(apply=True, sources=["bbc"]), 0)
         self.assertEqual(len(self.calls), 2)
+
+    def test_discovery_failure_without_missing_still_returns_nonzero(self):
+        self.missing = []
+        def failed(cmd, **kwargs):
+            self.calls.append((cmd, kwargs))
+            return Result(code=7)
+        self.execute = failed
+        self.assertEqual(self.invoke(apply=True, sources=["rugbypass"]), 1)
+        self.assertEqual([Path(x[0][1]).name for x in self.calls], ["refresh_releases"])
+
+    def test_acquisition_exit_status_takes_precedence_over_discovery_failure(self):
+        def failed(cmd, **kwargs):
+            self.calls.append((cmd, kwargs))
+            return Result(code=7 if Path(cmd[1]).name == "refresh_releases" else 2)
+        self.execute = failed
+        self.assertEqual(self.invoke(apply=True, sources=["rugbypass"]), 2)
+        self.assertEqual([Path(x[0][1]).name for x in self.calls],
+                         ["refresh_releases", "acquire_rugby"])
 
     def test_prem_series_refresh_is_only_rugby24(self):
         self.assertIn("rugby24", runner.source_set(None, None))
@@ -210,8 +255,12 @@ class RugbyRunTests(unittest.TestCase):
                     "total_releases": 1}))
             return Result(stderr='{"planned": 0}\n')
         self.execute = partial_failure
-        with self.assertRaisesRegex(RuntimeError, "refusing acquisition"):
-            self.invoke(apply=True, sources=["rugby24"])
+        self.missing = [{"series_id": "Rugby_Mens_Nations",
+                         "episode_id": "nations:701", "finished": self.finished},
+                        {"series_id": "Rugby_Mens_Championship",
+                         "episode_id": "epcr:101", "finished": self.finished}]
+        self.assertEqual(self.invoke(apply=True, sources=["rugby24"]), 1)
+        self.assertEqual(Path(self.calls[-1][0][1]).name, "acquire_rugby")
         self.assertEqual(
             [cmd[cmd.index("--rugby24-category") + 1] for cmd, _ in
              self.calls if Path(cmd[1]).name == "refresh_releases"],
@@ -230,8 +279,8 @@ class RugbyRunTests(unittest.TestCase):
                 "Rugby24 indexer: Rugby24 Cloudflare challenge (HTTP 403) "
                 "at /champions-cup\n"))
         self.execute = blocked
-        with self.assertRaisesRegex(RuntimeError, "refusing acquisition"):
-            self.invoke(apply=True, series="Rugby_Mens_Championship")
+        self.assertEqual(self.invoke(apply=True, series="Rugby_Mens_Championship"), 1)
+        self.assertEqual(Path(self.calls[-1][0][1]).name, "acquire_rugby")
         update = self.db.indexer_poll_state.update_one.call_args
         self.assertEqual(update.args[0]["_id"], "rugby24:championship")
         self.assertEqual(update.args[1]["$set"]["failure_reason"],

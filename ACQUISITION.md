@@ -13,8 +13,12 @@ Three one-shot commands separate rugby discovery and acquisition:
 - **run_rugby** orchestrates both. On --apply it checks Atlas's
   per-source polling schedule (age-based backoff and daily fallback),
   runs refresh_releases --apply for due sources, then attempts
-  bounded acquisition. Discovery errors abort acquisition, while
-  valid empty scans count as successful checks. Without --apply it
+  bounded acquisition. Discovery errors are isolated by source or Rugby24
+  category: the remaining checks run, then acquisition uses existing Atlas
+  links (including those from a failed refresh's provider). The runner logs
+  each failure, preserves retry cooldowns, and exits nonzero after acquisition
+  if any discovery failed. An acquisition error takes precedence over the
+  discovery exit status. Valid empty scans count as successful checks. Without --apply it
   previews poll decisions and indexed acquisition candidates.
   --skip-discovery bypasses refresh even on --apply.
 
