@@ -40,3 +40,5 @@ World Rugby enrichment is rate-limited (sequential, 10 seconds, max 24 pages/run
 - Men's international fixture imports strip legacy `NC:` and `6N:` entries from snapshots, and remove their duplicate Atlas episodes only after checking for linked files, releases and jobs. Dedicated Nations Championship and men's Six Nations episodes remain authoritative; see `RUGBY_IMPORT.md`.
 
 - Rugby discovery errors are isolated by provider/category. `run_rugby` continues other due checks and its single globally budgeted acquisition worker using existing validated Atlas links, preserves independent failure backoff, and reports a nonzero exit after acquisition if a refresh failed. Database/inventory failures still abort rather than bypass safety checks.
+
+- `publish_status` exports a public-safe snapshot of seven indexer poll states to the generic dashboard Worker. Preview is read-only; `--apply` uses a separate HMAC secret, local locked change detection and hourly heartbeat. Independent five-minute cron preserves normal acquisition behavior and minimizes KV writes. See `STATUS_PUBLISHING.md`.
