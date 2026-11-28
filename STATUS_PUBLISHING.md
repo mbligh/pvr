@@ -17,9 +17,9 @@ any polling schedules. Missing indexer records show Unknown.
    cd ~/pvr
    git pull --ff-only
    mkdir -p ~/.config/pvr
-   (umask 077; test ! -e ~/.config/pvr/dashboard-secret &&
-       openssl rand -hex 32 > ~/.config/pvr/dashboard-secret)
-   chmod 600 ~/.config/pvr/dashboard-secret
+   (umask 077; test ! -e ~/.auth/pvr-dashboard-secret &&
+       openssl rand -hex 32 > ~/.auth/pvr-dashboard-secret)
+   chmod 600 ~/.auth/pvr-dashboard-secret
    ```
 
    Copy the file's value privately into a new Cloudflare Worker **Secret**
