@@ -45,7 +45,7 @@ file_recording = _load_cli("pvr_acquire_filer", "file_recording")
 def run(database, *, apply=False, limit=1, season=None, round_no=None,
         episode_number=None, series_id=SERIES_ID,
         sports_root="/data/sports", incoming_root="/data/incoming",
-        hostname=None, min_age_hours=3, retry_after_hours=6,
+        hostname=None, min_age_hours=0, retry_after_hours=6,
         max_candidates=3, sources=None,
         yt_dlp="yt-dlp", get_iplayer="get_iplayer",
         rugbypass="~/tools/video/rugbypass", ffmpeg="ffmpeg",
@@ -248,7 +248,8 @@ def main(argv=None):
     parser.add_argument("--sports-root", default="/data/sports")
     parser.add_argument("--incoming-root", default="/data/incoming")
     parser.add_argument("--host", help="Local inventory host (default hostname)")
-    parser.add_argument("--min-age-hours", type=float, default=3)
+    parser.add_argument("--min-age-hours", type=float, default=0,
+                        help="Optional minimum age after kickoff (default 0h)")
     parser.add_argument("--retry-after-hours", type=float, default=6)
     parser.add_argument("--show-skipped", action="store_true")
     parser.add_argument("--yt-dlp", default="yt-dlp")

@@ -351,9 +351,11 @@ class F1AcquisitionTests(unittest.TestCase):
         self.assertNotIn(("check", second["_id"]), self.calls)
 
     def test_official_end_and_minimum_age_are_respected(self):
-        self.db.episodes.rows[0]["scheduled_end"] = NOW - dt.timedelta(hours=1)
+        self.db.episodes.rows[0]["scheduled_end"] = NOW - dt.timedelta(seconds=1)
+        self.assertEqual(self.plans()[1]["due"], 1)
+        self.assertEqual(self.plans(min_age_hours=2)[1]["due"], 0)
+        self.db.episodes.rows[0]["scheduled_end"] = NOW + dt.timedelta(seconds=1)
         self.assertEqual(self.plans()[1]["due"], 0)
-        self.assertEqual(self.plans(min_age_hours=0)[1]["due"], 1)
 
     def test_episode_lock_refuses_same_episode_only(self):
         from orchestration.locks import episode_lock, LockBusy

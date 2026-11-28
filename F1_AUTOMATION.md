@@ -36,7 +36,7 @@ For historical recordings, explicitly opt into backfill:
 Defaults: --limit 1 (at most one successfully filed session),
 --max-checks 8 (at most eight live TransferNow checks per run),
 --recent-hours 120 (sessions ending within five days),
---min-age-hours 2 (after the scheduled session end),
+--min-age-hours 0 (no added wait after the scheduled session end),
 --retry-after-hours 6 and --unavailable-recheck-hours 24.
 Unknown session-end times, future and cancelled events are excluded.
 Missing releases and sessions with existing recordings are skipped.

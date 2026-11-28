@@ -53,7 +53,7 @@ def recent_failed_jobs(database, hostname, now, hours):
 
 def run(database, *, apply=False, year=2026, round_no=None, episode_number=None,
         limit=1, max_checks=8, sports_root="/data/sports", incoming_root="/data/incoming",
-        hostname=None, min_age_hours=2, recent_hours=120, backfill=False,
+        hostname=None, min_age_hours=0, recent_hours=120, backfill=False,
         retry_after_hours=6, unavailable_recheck_hours=24,
         ffprobe="ffprobe", ffmpeg="ffmpeg", show_skipped=False, now=None,
         inspector=None, downloader=download_release.run,
@@ -269,8 +269,8 @@ def main(argv=None):
                         help="Only sessions ending in last N hours (default 120)")
     parser.add_argument("--backfill", action="store_true",
                         help="Ignore recent-window limit; manually work older episodes")
-    parser.add_argument("--min-age-hours", type=float, default=2,
-                        help="Wait after official session end (default 2h)")
+    parser.add_argument("--min-age-hours", type=float, default=0,
+                        help="Optional wait after scheduled session end (default 0h)")
     parser.add_argument("--retry-after-hours", type=float, default=6)
     parser.add_argument("--unavailable-recheck-hours", type=float, default=24)
     parser.add_argument("--sports-root", default="/data/sports")

@@ -15,7 +15,7 @@ SOURCE = F1_SOURCES[0]
 
 def rows(database, *, year=2026, round_no=None, episode_number=None,
          sports_root="/data/sports", incoming_root="/data/incoming",
-         hostname=None, min_age_hours=2, recent_hours=120, backfill=False,
+         hostname=None, min_age_hours=0, recent_hours=120, backfill=False,
          now=None):
     """Plan due sessions; no network checks, writes or directory creation."""
     now = aware(now) or dt.datetime.now(dt.timezone.utc)

@@ -272,10 +272,11 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(self.rows(retry_after_hours=0)[0]["action"], "download_then_file")
 
     def test_recent_cancelled_and_invalid_metadata(self):
-        self.episodes[0]["scheduled"] = NOW - dt.timedelta(hours=2)
+        self.episodes[0]["scheduled"] = NOW + dt.timedelta(seconds=1)
         self.assertEqual(self.rows(), [])
-        self.episodes[0]["scheduled"] = NOW - dt.timedelta(hours=3)
+        self.episodes[0]["scheduled"] = NOW - dt.timedelta(seconds=1)
         self.assertEqual(self.rows()[0]["action"], "download_then_file")
+        self.assertEqual(self.rows(min_age_hours=3), [])
         self.episodes[0]["status"] = "cancelled"
         self.assertEqual(self.rows(), [])
         self.episodes[0]["status"] = "active"

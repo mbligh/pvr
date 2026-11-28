@@ -41,6 +41,11 @@ run_rugby or refresh_releases, not acquire_rugby.
 `./run_rugby --apply`. The --refresh flag is no longer
 accepted by acquire_rugby. No crontab changes are performed automatically.
 
+Acquisition defaults to `--min-age-hours 0`: no added wait after kickoff
+for an already indexed rugby release. The runner's discovery eligibility
+continues to use expected fixture completion. The optional explicit
+minimum age and retry cooldown remain available.
+
 ## Getting started on slagg
 
 ```sh

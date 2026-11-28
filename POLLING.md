@@ -171,9 +171,12 @@ Ensure log directories exist. Replace old cron entries rather than
 adding a duplicate schedule. GitHub does not install cron jobs.
 Provider checks follow the adaptive policy, not the cron frequency.
 
-Acquisition eligibility remains independent: acquire_rugby defaults to
-at least three hours after kickoff, and acquire_f1 defaults to two hours
-after a session ends. Early indexing therefore does not remove these
-age gates. Older F1 recordings beyond the five-day acquisition window
+Acquisition has no additional default age delay: acquire_rugby accepts
+matched releases once kickoff has passed, and acquire_f1 accepts them
+once the scheduled session ends. The runners still use expected event
+completion for event-driven discovery and missing-event eligibility.
+An explicit positive --min-age-hours remains available for acquisition,
+and provider/download retry cooldowns are unchanged.
+Older F1 recordings beyond the five-day acquisition window
 still need manual ./acquire_f1 --backfill operation. Every source continues
 daily fallback polling, even if no sessions are in the acquisition window.

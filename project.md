@@ -44,3 +44,5 @@ World Rugby enrichment is rate-limited (sequential, 10 seconds, max 24 pages/run
 - `publish_status` exports a public-safe snapshot of seven indexer poll states to the generic dashboard Worker. Preview is read-only; `--apply` uses a separate HMAC secret, local locked change detection and hourly heartbeat. Independent five-minute cron preserves normal acquisition behavior and minimizes KV writes. See `STATUS_PUBLISHING.md`.
 
 - The existing PVR status snapshot includes downloader activity plus independent latest success/failure from Atlas download jobs. Host-local provider locks distinguish interrupted jobs, and remote activity is unknown. Canonical public event titles and UTC timestamps are rendered in the browser's local timezone; failure codes are sanitized. Same cron, HMAC and KV key; no additional writes or download progress instrumentation. See `STATUS_PUBLISHING.md`.
+
+- F1 and rugby acquisition default to zero extra age delay. F1 uses scheduled session end, and direct rugby acquisition uses kickoff; runner discovery/missing-event demand still uses expected completion. Optional positive age overrides and retry cooldowns remain supported.

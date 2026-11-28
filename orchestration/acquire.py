@@ -98,7 +98,7 @@ def local_published(records, sports_root):
 def planning_rows(database, *, sports_root="/data/sports",
                   incoming_root="/data/incoming", season=None,
                   round_no=None, episode_number=None,
-                  min_age_hours=3, retry_after_hours=6, hostname=None,
+                  min_age_hours=0, retry_after_hours=6, hostname=None,
                   max_candidates=3, sources=None, series_id=SERIES_ID,
                   now=None):
     """Return (rows, counts) for due rugby episodes; no writes/downloads.
