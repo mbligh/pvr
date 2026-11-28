@@ -11,6 +11,8 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import socket
 from pathlib import Path
 import sys
 import tempfile
@@ -31,6 +33,13 @@ INDEXERS = (
     ("rugby24:championship", "Rugby24 — Champions Cup"),
     ("rugby24:sixnations", "Rugby24 — Six Nations"),
 )
+DOWNLOADERS = (
+    ("bbc", "BBC iPlayer"),
+    ("youtube", "YouTube"),
+    ("rugbypass", "RugbyPass"),
+    ("rugby24", "Rugby24"),
+    ("transfernow", "TransferNow"),
+)
 HEARTBEAT_SECONDS = 3600
 
 
@@ -42,6 +51,95 @@ def timestamp(value):
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def local_download_activity(job):
+    """Read the existing provider lock without creating or changing files."""
+    if job.get("host") != socket.gethostname():
+        return "unknown"
+    destination = job.get("destination")
+    if not isinstance(destination, str) or not Path(destination).is_absolute():
+        return "unknown"
+    lock = Path(destination).parent / (".pvr-download-" + job["adapter"] + ".lock")
+    try:
+        fd = os.open(lock, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return "interrupted"
+    except OSError:
+        return "unknown"
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return "running"
+        except OSError:
+            return "unknown"
+        return "interrupted"
+    finally:
+        os.close(fd)
+
+
+def safe_failure(error):
+    # Classify locally; raw diagnostics can include URLs, paths and tokens.
+    text = str(error or "").lower()
+    for code in ("403", "404", "429"):
+        if re.search(r"(?:http(?: error| status)?[: ]+|status code[: ]+)" + code + r"\b", text):
+            return "http_" + code
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    if any(word in text for word in ("ffprobe", "verification", "no video")):
+        return "verification_failed"
+    return "download_failed"
+
+
+def downloader_snapshot(db, *, activity=None):
+    """At most three bounded job lookups per adapter, with cached event titles."""
+    activity = activity or local_download_activity
+    titles = {}
+    def title(job):
+        episode_id = job.get("episode_id")
+        if not isinstance(episode_id, str):
+            return "Unknown event"
+        if episode_id not in titles:
+            ep = db.episodes.find_one({"_id": episode_id},
+                                      {"title": 1, "home": 1, "away": 1}) or {}
+            value = ep.get("title")
+            if not value and ep.get("home") and ep.get("away"):
+                value = f'{ep["home"]} vs {ep["away"]}'
+            # Only canonical episode titles, never release URLs or destinations.
+            value = " ".join(value.split()) if isinstance(value, str) else ""
+            if re.search(r"https?://|[\\\\]|(?:^| )/(?:home|data|tmp|srv)/", value, re.I):
+                value = ""
+            titles[episode_id] = value[:200] or "Unknown event"
+        return titles[episode_id]
+
+    def event(job, status, field, reason=None):
+        if not job or not isinstance(job.get(field), dt.datetime):
+            return None
+        return dict(status=status, title=title(job),
+                    **{field: timestamp(job[field])}, reason=reason)
+
+    result = []
+    for adapter, name in DOWNLOADERS:
+        query = {"type": "download", "adapter": adapter}
+        fields = {"episode_id": 1, "adapter": 1, "host": 1, "destination": 1,
+                  "status": 1, "started_at": 1, "finished_at": 1, "error": 1}
+        latest = db.jobs.find_one(query, fields,
+                                  sort=[("started_at", -1), ("_id", -1)])
+        success = db.jobs.find_one(dict(query, status="succeeded"), fields,
+                                   sort=[("finished_at", -1), ("_id", -1)])
+        failure = db.jobs.find_one(dict(query, status="failed"), fields,
+                                   sort=[("finished_at", -1), ("_id", -1)])
+        current = None
+        if latest and latest.get("status") == "running":
+            state = activity(latest)
+            reason = {"interrupted": "interrupted", "unknown": "activity_unknown"}.get(state)
+            current = event(latest, state, "started_at", reason)
+        result.append(dict(id=adapter, name=name, current=current,
+                           last_success=event(success, "succeeded", "finished_at"),
+                           last_failure=event(failure, "failed", "finished_at",
+                                              safe_failure(failure.get("error")) if failure else None)))
+    return result
 
 
 def snapshot(db):
@@ -67,7 +165,8 @@ def snapshot(db):
                           last_success=last_success,
                           retry_not_before=timestamp(row.get("retry_not_before")),
                           reason=reason))
-    return {"version": 1, "group": "pvr", "title": "PVR — Indexers", "items": items}
+    return {"version": 1, "group": "pvr", "title": "PVR — Indexers", "items": items,
+            "downloaders": downloader_snapshot(db)}
 
 
 def encode(data):

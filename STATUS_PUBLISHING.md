@@ -54,7 +54,7 @@ for this group, with a synchronized clock; KV is eventually consistent.
 
 The only public information sent is indexer names, status, consecutive
 failure count, last attempt, last success, retry deadline and a fixed
-sanitized failure reason. No raw exceptions, media titles, credentials,
+sanitized failure reason. No raw exceptions, indexer media titles, credentials,
 internal paths or hostnames are sent. Requests use HTTPS and a
 body-specific HMAC-SHA256 signature with a signed publication timestamp;
 redirects are rejected. The dashboard Worker has a separate group secret
@@ -64,3 +64,24 @@ KV list operations. Local preview does not require the dashboard secret.
 The dashboard implementation is in mbligh/dashboard. Worker redeployment
 and cron installation are manual; pushing these repositories does not
 perform those steps.
+
+## Downloader status
+
+The same signed snapshot now contains five downloader rows (BBC, YouTube,
+RugbyPass, Rugby24 and TransferNow) from existing `pvr.jobs` records. The
+latest success and failure are selected independently by finish time; the
+latest started job, if running, is checked against its existing host-local
+provider lock without creating a file. A released lock means interrupted;
+remote hosts or inaccessible locks show activity unknown. No job records
+are modified. Existing history is included without a migration. No progress
+percentage is reported. The browser formats start and finish timestamps in
+its local timezone, including daylight-saving changes. Five-minute publishing
+can miss short active downloads but retains their completed results.
+
+**Public information change:** canonical episode titles and job timestamps
+are published to the public dashboard; raw errors, source URIs, internal
+paths, hosts and credentials remain excluded. Failures use fixed categories.
+Deploy the updated dashboard Worker first, then pull the PVR repository on
+slagg; the existing cron and secret need no change. An old Worker silently
+strips the new section, so after redeploying it, remove the local publisher
+cache or wait for the hourly heartbeat if an update has already been sent.
