@@ -93,6 +93,7 @@ def send(data, secret):
     signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     req = urllib.request.Request(ENDPOINT, data=body, method="POST",
                                  headers={"Content-Type": "application/json",
+                                          "User-Agent": "mbligh-pvr-status/1.0",
                                           "X-Status-Signature": "sha256=" + signature})
     with urllib.request.build_opener(NoRedirect()).open(req, timeout=20) as response:
         reply = json.loads(response.read(8192))
@@ -153,7 +154,12 @@ def main(argv=None):
     try:
         secret = None
         if args.apply:
-            secret = args.secret_file.expanduser().read_text(encoding="utf-8").strip()
+            try:
+                secret = args.secret_file.expanduser().read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                print(f"Dashboard publisher: missing secret file {args.secret_file.expanduser()}",
+                      file=sys.stderr)
+                return 1
             if not secret:
                 raise ValueError("Empty dashboard secret")
         with database_connection(args.database) as client:
@@ -167,7 +173,30 @@ def main(argv=None):
                 print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
     except urllib.error.HTTPError as exc:
-        print(f"Dashboard publisher: HTTP {exc.code}", file=sys.stderr)
+        # Report only fixed, safe diagnostics; never print arbitrary
+        # response bodies, which may contain reflected request data.
+        details = []
+        if exc.headers:
+            if exc.headers.get("cf-mitigated", "").lower() == "challenge":
+                details.append("Cloudflare challenge")
+            content_type = exc.headers.get_content_type()
+            if content_type in ("text/html", "application/json", "text/plain"):
+                details.append(content_type)
+            if content_type == "application/json":
+                try:
+                    reply = json.loads(exc.read(8192))
+                    reason = reply.get("error") if isinstance(reply, dict) else None
+                    if reason in ("Invalid signature", "Not configured",
+                                  "Unknown group", "Invalid or expired snapshot",
+                                  "Body too large", "Internal error"):
+                        details.append(reason)
+                except (OSError, ValueError):
+                    pass
+            ray = exc.headers.get("cf-ray", "")
+            if ray and len(ray) <= 40 and all(c.isalnum() or c == "-" for c in ray):
+                details.append("CF-Ray " + ray)
+        suffix = " (" + "; ".join(details) + ")" if details else ""
+        print(f"Dashboard publisher: HTTP {exc.code}{suffix}", file=sys.stderr)
     except Exception as exc:
         # Do not print arbitrary exceptions: credentials can be present in
         # connection diagnostics. The cron log receives a safe error type.
