@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 from orchestration import polling
+from orchestration.subprocess_output import stream_stderr
 from inventory import library as inventory
 from orchestration.locks import LockBusy, site_lock
 
@@ -41,12 +42,17 @@ def run(*, apply=False, pages=3, year=2026, limit=1,
             "--database", str(database)]
 
     def invoke(script, *parameters, **kwargs):
-        result = execute(command(script, *parameters), capture_output=True,
-                         text=True, check=False, **kwargs)
+        cmd = command(script, *parameters)
+        live = script == "acquire_f1" and execute is subprocess.run
+        if live:
+            output.flush()
+            result = stream_stderr(cmd, sys.stderr)
+        else:
+            result = execute(cmd, capture_output=True, text=True, check=False, **kwargs)
         if result.stdout:
-            print(result.stdout, end="", file=output)
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
+            print(result.stdout, end="", file=output, flush=True)
+        if result.stderr and not live:
+            print(result.stderr, end="", file=sys.stderr, flush=True)
         return result
 
     def work():

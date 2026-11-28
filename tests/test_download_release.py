@@ -192,6 +192,23 @@ class AtlasDownloaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "2025"):
             self.run_cli()
 
+    def test_download_start_is_announced_before_adapter_runs(self):
+        import contextlib
+        notice = io.StringIO()
+        def save(uri, destination, **kwargs):
+            self.assertIn("Download started: youtube", notice.getvalue())
+            self.assertIn("s2025e102", notice.getvalue())
+            self.db.jobs.insert_one.assert_called_once()
+            pathlib.Path(destination).write_bytes(b"downloaded video")
+            return MEDIA
+        with contextlib.redirect_stderr(notice):
+            self.run_cli()
+            self.assertEqual(notice.getvalue(), "")
+            self.run_cli(apply=True, downloader=save)
+            self.assertEqual(len(notice.getvalue().splitlines()), 1)
+            self.run_cli(apply=True)
+            self.assertEqual(len(notice.getvalue().splitlines()), 1)
+
     def test_apply_records_file_and_successful_job(self):
         def save(uri, destination, **kwargs):
             self.assertEqual(uri, URI)

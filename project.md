@@ -46,3 +46,5 @@ World Rugby enrichment is rate-limited (sequential, 10 seconds, max 24 pages/run
 - The existing PVR status snapshot includes downloader activity plus independent latest success/failure from Atlas download jobs. Host-local provider locks distinguish interrupted jobs, and remote activity is unknown. Canonical public event titles and UTC timestamps are rendered in the browser's local timezone; failure codes are sanitized. Same cron, HMAC and KV key; no additional writes or download progress instrumentation. See `STATUS_PUBLISHING.md`.
 
 - F1 and rugby acquisition default to zero extra age delay. F1 uses scheduled session end, and direct rugby acquisition uses kickoff; runner discovery/missing-event demand still uses expected completion. Optional positive age overrides and retry cooldowns remain supported.
+
+- The common `download_release` emits one flushed stderr start notice after locking, validation and Atlas job creation. `run_f1` and `run_rugby` relay acquisition stderr immediately, preserving the existing captured stdout/results and summary parsing; no progress bars or additional provider calls.

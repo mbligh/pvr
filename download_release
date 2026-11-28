@@ -195,6 +195,11 @@ def _run_unlocked(database, uri, destination, *, apply=False, allow_existing_epi
         "host": checked["host"], "status": "running", "started_at": started,
     })
     try:
+        # Only announce a real attempt, after validation, lock and job creation.
+        title = " ".join(str(checked.get("source_title") or "").split())
+        episode = f'{checked["series_id"]} s{checked["season"]}e{checked["episode"]:03d}'
+        print(f'Download started: {checked["adapter"]} | {episode}'
+              + (f" | {title}" if title else ""), file=sys.stderr, flush=True)
         if checked["adapter"] == "transfernow":
             media = transfernow_downloader(
                 uri, checked["source_url"], checked["destination"],
